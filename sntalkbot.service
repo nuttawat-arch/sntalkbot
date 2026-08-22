@@ -1,0 +1,19 @@
+[Unit]
+Description=SN TalkBot TeamTalk Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sntalkbot
+WorkingDirectory=/opt/sntalkbot
+Environment=TTUTIL_DATA_DIR=/opt/sntalkbot/data
+Environment=TTUTIL_CONFIG=/opt/sntalkbot/config.ini
+Environment=XDG_RUNTIME_DIR=/tmp/sntalkbot-runtime
+Environment=TTUTIL_AUTO_PULSE=1
+ExecStart=/opt/sntalkbot/run_linux.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

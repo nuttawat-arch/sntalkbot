@@ -1,0 +1,15 @@
+services:
+  sntalkbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sntalkbot
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    environment:
+      TTUTIL_CONFIG: /app/data/config.ini
+      TTUTIL_DATA_DIR: /app/data
+      TTUTIL_PULSE_SINK: sntalkbot
+      TTUTIL_MPV_AO: pulse
+    # No inbound port mapping is required. The bot connects outbound to TeamTalk.

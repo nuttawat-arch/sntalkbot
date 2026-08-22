@@ -1,0 +1,12 @@
+# Core runtime dependencies
+requests>=2.32.0
+tqdm>=4.67.0
+paramiko>=3.5.0
+wikipedia>=1.4.0
+langdetect>=1.0.9
+gTTS>=2.5.4
+deep-translator>=1.11.4
+edge-tts==7.2.8
+python-mpv==1.0.8
+yt-dlp[default,curl-cffi]==2026.8.19
+

@@ -1,0 +1,35 @@
+# Local runtime configuration / credentials
+config.ini
+cookies.txt
+.env
+.env.*
+!.env.example
+
+# Runtime data and logs
+data/
+*.log
+
+# Python / virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Native TeamTalk SDK artifacts downloaded by setup/build
+TeamTalk5.dll
+libTeamTalk5.so
+TeamTalk5.py
+teamtalk-sdk-*.7z
+teamtalk-sdk-*.zip
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Generated archives/checksums
+*.zip
+*.tar
+*.tar.gz
+*.sha256

@@ -1,0 +1,4 @@
+-r requirements.txt
+# Optional Windows setup GUI. If wxPython has no wheel for your Python build,
+# use the terminal config or edit config.ini directly.
+wxPython>=4.2.2
