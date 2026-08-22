@@ -44,3 +44,8 @@ git push
 ## Line endings
 
 Repository มี `.gitattributes` เพื่อบังคับไฟล์ shell เป็น LF สำหรับ Linux/Docker ไม่ให้เกิด `/bin/bash^M`.
+
+
+## ขอบเขตแพลตฟอร์ม
+
+Repository นี้เป็น Linux/Docker only ไม่มี GUI/wxPython และไม่มีไฟล์ `.bat` สำหรับ Windows Server

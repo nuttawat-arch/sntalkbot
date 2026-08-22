@@ -1,5 +1,8 @@
 # SNTalkBot
 
+> **Platform:** Linux/Docker only. Windows GUI support has been removed intentionally.
+
+
 SNTalkBot is a Linux/Docker-ready TeamTalk bot combining server administration, moderation, media playback, YouTube/YouTube Music queues, TTS announcements, localization, and multi-instance deployment support.
 
 The project can run in three instance modes:

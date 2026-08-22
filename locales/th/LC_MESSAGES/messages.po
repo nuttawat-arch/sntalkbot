@@ -3,19 +3,19 @@
 msgid ""
 msgstr "Project-Id-Version: SNTalkBot 2026\nLanguage: th\nMIME-Version: 1.0\nContent-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: 8bit\nPlural-Forms: nplurals=1; plural=0;\n"
 
-#: bot/config_handler.py:439
+#: bot/config_handler.py:402
 msgid "\nConfiguration saved to config.ini! You can now start the bot normally."
 msgstr "\nบันทึกการตั้งค่าลง config.ini แล้ว ตอนนี้คุณสามารถเปิดบอทได้ตามปกติ"
 
-#: bot/config_handler.py:79
+#: bot/config_handler.py:78
 msgid "A comma-separated list of country names to ban from the server (e.g., North Korea,Israel)."
 msgstr "รายชื่อประเทศที่ต้องการแบนออกจากเซิร์ฟเวอร์ คั่นแต่ละชื่อด้วยเครื่องหมายจุลภาค เช่น North Korea,Israel"
 
-#: bot/config_handler.py:84
+#: bot/config_handler.py:83
 msgid "A comma-separated list of nicknames to confine to the jail channel."
 msgstr "รายชื่อชื่อเล่นที่จะให้ย้ายเข้าห้องกักกันอัตโนมัติ คั่นด้วยจุลภาค"
 
-#: bot/config_handler.py:83
+#: bot/config_handler.py:82
 msgid "A comma-separated list of usernames to automatically confine to the jail channel upon login."
 msgstr "รายชื่อชื่อผู้ใช้ที่จะให้ย้ายเข้าห้องกักกันอัตโนมัติเมื่อเข้าสู่ระบบ คั่นด้วยจุลภาค"
 
@@ -27,7 +27,7 @@ msgstr "ส่งรหัสยืนยันแล้ว กรุณาก�
 msgid "A warm welcome to {nickname} from {country}!"
 msgstr "ขอต้อนรับ {nickname} จาก {country} ด้วยความอบอุ่นครับ!"
 
-#: bot/config_handler.py:102
+#: bot/config_handler.py:101
 msgid "API key for the weather command. See the README for instructions on how to get one."
 msgstr "API key สำหรับคำสั่งสภาพอากาศ ดูวิธีขอคีย์ได้ใน README"
 
@@ -35,7 +35,7 @@ msgstr "API key สำหรับคำสั่งสภาพอากาศ 
 msgid "Account '{username}' created successfully."
 msgstr "สร้างบัญชี '{username}' สำเร็จ"
 
-#: bot/config_handler.py:97
+#: bot/config_handler.py:96
 msgid "Account Detection Mode"
 msgstr "โหมดตรวจจับบัญชี"
 
@@ -59,15 +59,11 @@ msgstr "ไม่สามารถขอสร้างบัญชีได้
 msgid "Account requests have been {state}."
 msgstr "ระบบขอสร้างบัญชีถูก{state}แล้ว"
 
-#: bot/gui.py:47
-msgid "Action for Blacklisted Nicknames or words"
-msgstr "การดำเนินการสำหรับชื่อเล่นหรือคำที่อยู่ในบัญชีดำ"
-
-#: bot/config_handler.py:78
+#: bot/config_handler.py:77
 msgid "Action for Blacklisted Words"
 msgstr "การจัดการเมื่อพบคำต้องห้าม"
 
-#: bot/config_handler.py:77 bot/gui.py:46
+#: bot/config_handler.py:76
 msgid "Action for Long Nicknames"
 msgstr "การดำเนินการสำหรับชื่อเล่นที่ยาวเกินไป"
 
@@ -87,7 +83,7 @@ msgstr "เพิ่มเพลง {count} รายการเข้าคิ
 msgid "Adding URL to queue..."
 msgstr "กำลังเพิ่ม URL เข้าคิว..."
 
-#: bot/config_handler.py:94
+#: bot/config_handler.py:93
 msgid "Administrator and Account Settings"
 msgstr "การตั้งค่าผู้ดูแลและบัญชี"
 
@@ -263,15 +259,11 @@ msgstr "คำสั่งลัดของ /restart"
 msgid "Alias for /shutdown."
 msgstr "คำสั่งลัดของ /shutdown"
 
-#: bot/gui.py:89 bot/gui.py:396
-msgid "All Accounts"
-msgstr "ทุกบัญชี"
-
 #: bot/sntalkbot.py:231
 msgid "All command modules have been registered."
 msgstr "ลงทะเบียนโมดูลคำสั่งทั้งหมดเรียบร้อยแล้ว"
 
-#: bot/config_handler.py:75
+#: bot/config_handler.py:74
 msgid "Allows the bot to 'see' messages in all channels for features like word blacklisting and general bot commands, such as weather and other commands, even if it's not in that channel. Highly recommended."
 msgstr "อนุญาตให้บอทรับข้อความจากทุกห้อง เพื่อใช้ระบบคำต้องห้ามและคำสั่งทั่วไป เช่น สภาพอากาศ แม้บอทไม่ได้อยู่ในห้องนั้น แนะนำให้เปิด"
 
@@ -291,11 +283,11 @@ msgstr "ตกลง ระบบจะแจ้งเมื่อ {username} �
 msgid "An error occurred: {e}"
 msgstr "เกิดข้อผิดพลาด: {e}"
 
-#: bot/config_handler.py:56
+#: bot/config_handler.py:55
 msgid "An optional status message for the bot."
 msgstr "ข้อความสถานะของบอท (ไม่บังคับ)"
 
-#: bot/config_handler.py:66
+#: bot/config_handler.py:65
 msgid "Announce playback actions (play/pause/stop/volume) in the channel."
 msgstr "ประกาศการทำงานของเครื่องเล่น เช่น เล่น พัก หยุด และระดับเสียงในห้อง"
 
@@ -307,7 +299,7 @@ msgstr "กำลังสร้างเสียงพูดรายการ
 msgid "Attention, The server is rebooting..."
 msgstr "โปรดทราบ, เซิร์ฟเวอร์กำลังรีบูต..."
 
-#: bot/config_handler.py:60
+#: bot/config_handler.py:59
 msgid "Audio and Playback Settings"
 msgstr "การตั้งค่าเสียงและการเล่นสื่อ"
 
@@ -315,15 +307,11 @@ msgstr "การตั้งค่าเสียงและการเล่
 msgid "Audio devices Initialized."
 msgstr "เริ่มต้นอุปกรณ์เสียงเรียบร้อยแล้ว"
 
-#: bot/gui.py:91
-msgid "Authorized Usernames (comma-separated)"
-msgstr "ชื่อผู้ใช้ที่ได้รับอนุญาต (คั่นด้วยจุลภาค)"
-
-#: bot/config_handler.py:95
+#: bot/config_handler.py:94
 msgid "Authorized Users"
 msgstr "ผู้ใช้ที่ได้รับอนุญาต"
 
-#: bot/config_handler.py:96
+#: bot/config_handler.py:95
 msgid "Auto-authorize Server Admins?"
 msgstr "อนุญาตผู้ดูแลเซิร์ฟเวอร์โดยอัตโนมัติหรือไม่"
 
@@ -335,13 +323,9 @@ msgstr "ปิดการแปลอัตโนมัติแล้ว"
 msgid "Auto-translation enabled from {source} to {target}."
 msgstr "เปิดการแปลอัตโนมัติจาก {source} เป็น {target} แล้ว"
 
-#: bot/config_handler.py:73
+#: bot/config_handler.py:72
 msgid "Automatically kick users who log in with the default 'NoName' nickname."
 msgstr "เตะผู้ใช้ที่เข้าสู่ระบบด้วยชื่อเริ่มต้น 'NoName' โดยอัตโนมัติ"
-
-#: bot/gui.py:36
-msgid "Automatically kick users with no name"
-msgstr "เตะผู้ใช้ที่ไม่มีชื่อโดยอัตโนมัติ"
 
 #: bot/modules/player.py:634
 msgid "Autoplay is {state}."
@@ -359,15 +343,7 @@ msgstr "คำสั่งที่ใช้ได้:"
 msgid "Available modes are: m for male, f for female, n for neutral."
 msgstr "โหมดที่ใช้ได้คือ: m สำหรับชาย, f สำหรับหญิง, n สำหรับเพศกลาง"
 
-#: bot/gui.py:134
-msgid "Back"
-msgstr "กลับ"
-
-#: bot/gui.py:46 bot/gui.py:47
-msgid "Ban the user"
-msgstr "แบนผู้ใช้"
-
-#: bot/config_handler.py:79
+#: bot/config_handler.py:78
 msgid "Banned Countries"
 msgstr "ประเทศที่ถูกแบน"
 
@@ -379,33 +355,9 @@ msgstr "เพิ่มเสียงเบส: {state}"
 msgid "Big welcome to {nickname} from {country}!"
 msgstr "ขอต้อนรับ {nickname} จาก {country} อย่างอบอุ่นครับ!"
 
-#: bot/gui.py:30
-msgid "Bot Client Name"
-msgstr "ชื่อไคลเอนต์ของบอท"
-
-#: bot/gui.py:31
-msgid "Bot Gender"
-msgstr "เพศของบอท"
-
-#: bot/config_handler.py:50
+#: bot/config_handler.py:49
 msgid "Bot Identity and Behavior"
 msgstr "ข้อมูลประจำตัวและพฤติกรรมของบอท"
-
-#: bot/gui.py:29
-msgid "Bot Nickname"
-msgstr "ชื่อเล่นบอท"
-
-#: bot/gui.py:26
-msgid "Bot Password"
-msgstr "รหัสผ่านบอท"
-
-#: bot/gui.py:34
-msgid "Bot Status Message"
-msgstr "ข้อความสถานะของบอท"
-
-#: bot/gui.py:25
-msgid "Bot Username"
-msgstr "ชื่อผู้ใช้บอท"
 
 #: bot/modules/admin.py:404
 msgid "Bot configuration saved."
@@ -415,23 +367,23 @@ msgstr "บันทึกการตั้งค่าบอทแล้ว"
 msgid "Bot name changed to '{new_name}'."
 msgstr "เปลี่ยนชื่อบอทเป็น '{new_name}'"
 
-#: bot/config_handler.py:52
+#: bot/config_handler.py:51
 msgid "Bot's Client Name"
 msgstr "ชื่อไคลเอนต์ของบอท"
 
-#: bot/config_handler.py:53
+#: bot/config_handler.py:52
 msgid "Bot's Gender"
 msgstr "เพศของบอท"
 
-#: bot/config_handler.py:51
+#: bot/config_handler.py:50
 msgid "Bot's Nickname"
 msgstr "ชื่อเล่นของบอท"
 
-#: bot/config_handler.py:48
+#: bot/config_handler.py:47
 msgid "Bot's Password"
 msgstr "รหัสผ่านของบอท"
 
-#: bot/config_handler.py:47
+#: bot/config_handler.py:46
 msgid "Bot's Username"
 msgstr "ชื่อผู้ใช้ของบอท"
 
@@ -447,7 +399,7 @@ msgstr "ขนาดแคช: {size:.2f} MB"
 msgid "Channel ID for {path}: {channel_id}"
 msgstr "Channel ID ของ {path}: {channel_id}"
 
-#: bot/config_handler.py:55
+#: bot/config_handler.py:54
 msgid "Channel Password"
 msgstr "รหัสผ่านห้อง"
 
@@ -455,23 +407,15 @@ msgstr "รหัสผ่านห้อง"
 msgid "Channel not found."
 msgstr "ไม่พบห้อง"
 
-#: bot/gui.py:33
-msgid "Channel password"
-msgstr "รหัสผ่านช่อง"
-
 #: bot/modules/player.py:261
 msgid "Channel selection expired. Use /channel again."
 msgstr "รายการเลือกห้องหมดอายุแล้ว ใช้ /channel อีกครั้ง"
-
-#: bot/gui.py:45
-msgid "Character Limit for Nicknames"
-msgstr "จำกัดความยาวตัวอักษรสำหรับชื่อเล่น"
 
 #: bot/help.py:74
 msgid "Check current queue position."
 msgstr "ตรวจสอบตำแหน่งปัจจุบันในคิว"
 
-#: bot/config_handler.py:72
+#: bot/config_handler.py:71
 msgid "Check if users are connecting via a known VPN or proxy service."
 msgstr "ตรวจสอบว่าผู้ใช้เชื่อมต่อผ่าน VPN หรือพร็อกซีที่รู้จักหรือไม่"
 
@@ -487,11 +431,11 @@ msgstr "เลือกเพลย์ลิสต์ด้วยหมายเ
 msgid "Choose a tab by number:"
 msgstr "เลือกแท็บด้วยหมายเลข:"
 
-#: bot/config_handler.py:40
+#: bot/config_handler.py:39
 msgid "Choose the language for the bot and setup process."
 msgstr "เลือกภาษาสำหรับบอทและขั้นตอนการตั้งค่า"
 
-#: bot/config_handler.py:67
+#: bot/config_handler.py:66
 msgid "Choose whether to send playback messages privately or stay silent when channel announcements are disabled."
 msgstr "เมื่อปิดการประกาศในห้อง ให้เลือกว่าเครื่องเล่นจะส่งข้อความส่วนตัวหรือไม่ส่งข้อความเลย"
 
@@ -519,23 +463,23 @@ msgstr "ล้างการเตะตามระยะเวลาสำห
 msgid "Cleared pending kick for {target}."
 msgstr "ล้างรายการรอเตะของ {target} แล้ว"
 
-#: bot/config_handler.py:90
+#: bot/config_handler.py:89
 msgid "Comma-separated list of IP addresses immune to moderation rules. The stats IP is excluded by default."
 msgstr "รายการ IP ที่ยกเว้นจากกฎดูแลระบบ คั่นด้วยจุลภาค โดย IP สถิติจะถูกยกเว้นตามค่าเริ่มต้น"
 
-#: bot/config_handler.py:92
+#: bot/config_handler.py:91
 msgid "Comma-separated list of nicknames immune to moderation rules."
 msgstr "รายชื่อชื่อเล่นที่ยกเว้นจากกฎดูแลระบบ คั่นด้วยจุลภาค"
 
-#: bot/config_handler.py:107
+#: bot/config_handler.py:106
 msgid "Comma-separated list of user IP addresses allowed to use SSH commands via the bot."
 msgstr "รายการ IP ผู้ใช้ที่อนุญาตให้ใช้คำสั่ง SSH ผ่านบอท คั่นด้วยจุลภาค"
 
-#: bot/config_handler.py:91
+#: bot/config_handler.py:90
 msgid "Comma-separated list of usernames immune to moderation rules."
 msgstr "รายชื่อผู้ใช้ที่ยกเว้นจากกฎดูแลระบบ คั่นด้วยจุลภาค"
 
-#: bot/config_handler.py:95
+#: bot/config_handler.py:94
 msgid "Comma-separated list of usernames who can use the bot's admin commands."
 msgstr "รายชื่อผู้ใช้ที่ใช้คำสั่งผู้ดูแลของบอทได้ คั่นด้วยจุลภาค"
 
@@ -559,14 +503,6 @@ msgstr "ล็อกคำสั่งแล้ว เฉพาะผู้ด�
 msgid "Commands unlocked. Commands available to everyone."
 msgstr "ปลดล็อกคำสั่งแล้ว ทุกคนสามารถใช้คำสั่งได้"
 
-#: bot/config_handler.py:244
-msgid "Configuration was not saved. Exiting."
-msgstr "ไม่ได้บันทึกการตั้งค่า กำลังออก"
-
-#: bot/gui.py:482
-msgid "Congratulations. The config file  has been created successfully. Please run the bot again!."
-msgstr "ยินดีด้วย สร้างไฟล์ config สำเร็จแล้ว กรุณาเปิดบอทอีกครั้ง!"
-
 #: bot/sntalkbot.py:234
 msgid "Connected successfully!"
 msgstr "เชื่อมต่อสำเร็จ!"
@@ -583,7 +519,7 @@ msgstr "การเชื่อมต่อขาด กำลังพยา�
 msgid "Connection lost. Trying to reconnect..."
 msgstr "การเชื่อมต่อขาดหาย กำลังพยายามเชื่อมต่อใหม่..."
 
-#: bot/config_handler.py:69
+#: bot/config_handler.py:68
 msgid "Cookies File Path"
 msgstr "พาธไฟล์คุกกี้"
 
@@ -591,7 +527,7 @@ msgstr "พาธไฟล์คุกกี้"
 msgid "Could not connect to server {server_address} port={port}"
 msgstr "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ {server_address} พอร์ต={port}"
 
-#: bot/config_handler.py:411
+#: bot/config_handler.py:374
 msgid "Could not find any {type} devices. You may need to set this manually in config.ini."
 msgstr "ไม่พบอุปกรณ์ประเภท {type} คุณอาจต้องตั้งค่าเองใน config.ini"
 
@@ -627,15 +563,7 @@ msgstr "กำลังเล่น: {title} [{elapsed}/{total}]"
 msgid "Currently: "
 msgstr "ปัจจุบัน: "
 
-#: bot/gui.py:90
-msgid "Custom Username"
-msgstr "ชื่อผู้ใช้ที่กำหนดเอง"
-
-#: bot/gui.py:89 bot/gui.py:398
-msgid "Custom Username Account"
-msgstr "บัญชีชื่อผู้ใช้ที่กำหนดเอง"
-
-#: bot/config_handler.py:98
+#: bot/config_handler.py:97
 msgid "Custom Username for Detection"
 msgstr "ชื่อผู้ใช้เฉพาะสำหรับการตรวจจับ"
 
@@ -643,41 +571,21 @@ msgstr "ชื่อผู้ใช้เฉพาะสำหรับการ
 msgid "Dear {username},\n\nThank you for your request to create a Blindmasters account. Your verification code is:\n\n{code}\n\nThis code expires in {minutes} minute(s). If you did not request this, you can safely ignore this email.\n\nBest regards,\nBlindmasters"
 msgstr "เรียน {username},\n\nขอบคุณที่ส่งคำขอสร้างบัญชี Blindmasters รหัสยืนยันของคุณคือ:\n\n{code}\n\nรหัสนี้จะหมดอายุใน {minutes} นาที หากคุณไม่ได้เป็นผู้ส่งคำขอนี้ สามารถละเว้นอีเมลฉบับนี้ได้\n\nขอแสดงความนับถือ\nBlindmasters"
 
-#: bot/config_handler.py:54
+#: bot/config_handler.py:53
 msgid "Default Channel"
 msgstr "ห้องเริ่มต้น"
 
-#: bot/config_handler.py:64
+#: bot/config_handler.py:63
 msgid "Default Playback Volume"
 msgstr "ระดับเสียงเล่นเริ่มต้น"
 
-#: bot/gui.py:32
-msgid "Default channel to join after login: "
-msgstr "ช่องเริ่มต้นที่จะเข้าร่วมหลังเข้าสู่ระบบ: "
-
-#: bot/gui.py:37
-msgid "Default message that will be sent to users with no name when they login"
-msgstr "ข้อความเริ่มต้นที่จะส่งไปยังผู้ใช้ที่ไม่มีชื่อเมื่อเข้าสู่ระบบ"
-
-#: bot/config_handler.py:63
+#: bot/config_handler.py:62
 msgid "Default number of seconds to seek forward/backward in media playback."
 msgstr "จำนวนวินาทีเริ่มต้นสำหรับเลื่อนไปข้างหน้าหรือย้อนกลับขณะเล่นสื่อ"
-
-#: bot/gui.py:55
-msgid "Default volume"
-msgstr "ความดังเริ่มต้น"
 
 #: bot/help.py:75
 msgid "Delete item from queue at index."
 msgstr "ลบรายการในคิวตามลำดับ"
-
-#: bot/gui.py:92
-msgid "Detect server administrators as bot's authorized users"
-msgstr "ตรวจจับผู้ดูแลเซิร์ฟเวอร์เป็นผู้ใช้ที่ได้รับอนุญาตของบอท"
-
-#: bot/gui.py:89
-msgid "Detection Mode"
-msgstr "โหมดการตรวจจับ"
 
 #: bot/modules/player.py:779
 msgid "Download already in progress. Please wait."
@@ -699,21 +607,9 @@ msgstr "คุณหรือ {second_name} อยู่ในช่องส่
 msgid "Email service is not configured."
 msgstr "ยังไม่ได้ตั้งค่าบริการอีเมล"
 
-#: bot/gui.py:79
-msgid "Enable Google TTS random broadcast messages"
-msgstr "เปิดข้อความประกาศสุ่มด้วย Google TTS"
-
-#: bot/gui.py:35
-msgid "Enable VPN detection"
-msgstr "เปิดใช้งานการตรวจจับ VPN"
-
-#: bot/config_handler.py:72
+#: bot/config_handler.py:71
 msgid "Enable VPN/Proxy Detection?"
 msgstr "เปิดการตรวจจับ VPN/Proxy หรือไม่"
-
-#: bot/gui.py:38
-msgid "Enable intercepting channel messages for all users: Useful for detecting bad words in all channels as well as allowing some commands to work regardless of the bot's channel"
-msgstr "เปิดใช้งานการดักจับข้อความในทุกช่องสำหรับผู้ใช้ทุกคน: มีประโยชน์สำหรับการตรวจจับคำหยาบในทุกช่อง และเพื่อให้บางคำสั่งทำงานได้โดยไม่คำนึงถึงช่องที่บอทอยู่"
 
 #: bot/help.py:29
 msgid "Enable or disable auto-translation for channel messages. Usage: /tr <source_lang> <target_lang>"
@@ -730,14 +626,6 @@ msgstr "เปิดหรือปิดโหมดแปลส่วนตั
 #: bot/help.py:84
 msgid "Enable whisper translation: translate channel/broadcast messages and send the translated text to you privately."
 msgstr "เปิดโหมดแปลแบบกระซิบ: แปลข้อความในห้อง/ข้อความประกาศ แล้วส่งคำแปลมาให้คุณทางข้อความส่วนตัว"
-
-#: bot/gui.py:24
-msgid "Encrypted server"
-msgstr "เซิร์ฟเวอร์ที่เข้ารหัส"
-
-#: bot/gui.py:59
-msgid "Enter a telegram bot token, Optional: "
-msgstr "ป้อนโทเค็นของบอท Telegram, ไม่บังคับ: "
 
 #: bot/modules/player.py:181
 msgid "Error adding to queue: {e}"
@@ -799,31 +687,19 @@ msgstr "ข้อผิดพลาด: ไม่สามารถอ่าน 
 msgid "Error: {e}. Disabling private translate mode."
 msgstr "ข้อผิดพลาด: {e} กำลังปิดโหมดแปลข้อความส่วนตัว"
 
-#: bot/config_handler.py:90
+#: bot/config_handler.py:89
 msgid "Excluded IP Addresses"
 msgstr "IP ที่ยกเว้น"
 
-#: bot/config_handler.py:92
+#: bot/config_handler.py:91
 msgid "Excluded Nicknames"
 msgstr "ชื่อเล่นที่ยกเว้น"
 
-#: bot/config_handler.py:91
+#: bot/config_handler.py:90
 msgid "Excluded Usernames"
 msgstr "ชื่อผู้ใช้ที่ยกเว้น"
 
-#: bot/gui.py:62
-msgid "Exclusion IPs (comma-separated)"
-msgstr "IP ที่จะยกเว้น (คั่นด้วยจุลภาค)"
-
-#: bot/gui.py:64
-msgid "Exclusion Nicknames (comma-separated)"
-msgstr "ชื่อเล่นที่จะยกเว้น (คั่นด้วยจุลภาค)"
-
-#: bot/gui.py:63
-msgid "Exclusion Usernames (comma-separated)"
-msgstr "ชื่อผู้ใช้ที่จะยกเว้น (คั่นด้วยจุลภาค)"
-
-#: bot/config_handler.py:89
+#: bot/config_handler.py:88
 msgid "Exclusions (Immunity)"
 msgstr "รายการยกเว้นจากการดูแลระบบ"
 
@@ -831,7 +707,7 @@ msgstr "รายการยกเว้นจากการดูแลระ
 msgid "Executes a command on the server via SSH (requires authorization). Usage: /exec [command]"
 msgstr "รันคำสั่งบนเซิร์ฟเวอร์ผ่าน SSH (ต้องได้รับอนุญาต) วิธีใช้: /exec [คำสั่ง]"
 
-#: bot/config_handler.py:68
+#: bot/config_handler.py:67
 msgid "Fade audio when seeking or changing volume. Set to 0 to disable."
 msgstr "ค่อย ๆ ปรับเสียงเมื่อเลื่อนตำแหน่งหรือเปลี่ยนระดับเสียง ตั้งเป็น 0 เพื่อปิด"
 
@@ -851,17 +727,9 @@ msgstr "ส่งอีเมลยืนยันไม่สำเร็จ �
 msgid "Favorites list cleared."
 msgstr "ล้างรายการโปรดแล้ว"
 
-#: bot/gui.py:31 bot/gui.py:389
-msgid "Female"
-msgstr "หญิง"
-
 #: bot/modules/player.py:812
 msgid "File {filename} downloaded. Uploading..."
 msgstr "ดาวน์โหลดไฟล์ {filename} แล้ว กำลังอัปโหลด..."
-
-#: bot/gui.py:146
-msgid "Finish"
-msgstr "เสร็จสิ้น"
 
 #: bot/help.py:49
 msgid "For authorized users only, Adds someone to the jails list and move them to the jail channel. This adds the username to the list and not the nickname."
@@ -927,21 +795,9 @@ msgstr "ดีใจที่ได้เจอคุณ {nickname} จาก {c
 msgid "Good vibes only for {nickname} from {country}! Welcome, my friend!"
 msgstr "ส่งพลังดี ๆ ให้ {nickname} จาก {country}! ยินดีต้อนรับครับ"
 
-#: bot/gui.py:76
-msgid "Google Cloud TTS API key"
-msgstr "API key ของ Google Cloud TTS"
-
 #: bot/modules/tts.py:593
 msgid "Google Cloud TTS API key is not configured."
 msgstr "ยังไม่ได้ตั้งค่า API key ของ Google Cloud TTS"
-
-#: bot/gui.py:78
-msgid "Google TTS base URL"
-msgstr "Base URL ของ Google TTS"
-
-#: bot/gui.py:77
-msgid "Google voice name"
-msgstr "ชื่อเสียง Google"
 
 #: bot/modules/tts.py:604
 msgid "Google voice not found, using default voice."
@@ -978,22 +834,6 @@ msgstr "สวัสดี {nickname} จาก {country}! พร้อมเม
 #: bot/user_manager.py:67
 msgid "Greetings, {nickname} of {country}! We're glad to have you here."
 msgstr "สวัสดี {nickname} จาก {country}! ดีใจที่ได้ต้อนรับคุณนะครับ"
-
-#: bot/gui.py:70
-msgid "Groq API key (translation)"
-msgstr "Groq API key สำหรับการแปล"
-
-#: bot/gui.py:72
-msgid "Groq base URL"
-msgstr "Groq base URL"
-
-#: bot/gui.py:71
-msgid "Groq model"
-msgstr "โมเดล Groq"
-
-#: bot/gui.py:89 bot/gui.py:89 bot/gui.py:394
-msgid "Guest Accounts"
-msgstr "บัญชีผู้เยี่ยมชม"
 
 #: bot/user_manager.py:136
 msgid "Happy to have you here, {nickname} from {country}."
@@ -1139,7 +979,7 @@ msgstr "สวัสดี {nickname}! หวังว่าทุกอย่�
 msgid "Hi {nickname}! Nice to see someone from {country} here."
 msgstr "สวัสดี {nickname}! ดีใจที่ได้เจอเพื่อนจาก {country} ที่นี่ครับ"
 
-#: bot/config_handler.py:103
+#: bot/config_handler.py:102
 msgid "Hostname or IP for the SSH server for the /exec and /reboot commands. Leave blank to disable."
 msgstr "ชื่อโฮสต์หรือ IP ของเซิร์ฟเวอร์ SSH สำหรับคำสั่ง /exec และ /reboot เว้นว่างเพื่อปิดใช้งาน"
 
@@ -1147,11 +987,11 @@ msgstr "ชื่อโฮสต์หรือ IP ของเซิร์ฟ�
 msgid "Howdy, {nickname}! Welcome from {country}."
 msgstr "สวัสดี {nickname}! ยินดีต้อนรับเพื่อนจาก {country} ครับ"
 
-#: bot/config_handler.py:380
+#: bot/config_handler.py:343
 msgid "I'll ask a few questions to create your configuration file."
 msgstr "ระบบจะถามข้อมูลบางอย่างเพื่อสร้างไฟล์ตั้งค่า"
 
-#: bot/config_handler.py:232
+#: bot/config_handler.py:217
 msgid "I'll ask you for the required values now."
 msgstr "ระบบจะถามค่าที่จำเป็นในตอนนี้"
 
@@ -1159,11 +999,11 @@ msgstr "ระบบจะถามค่าที่จำเป็นในต
 msgid "I've been kicked from the channel. Scheduling reconnect..."
 msgstr "บอตถูกเตะออกจากห้อง กำลังเตรียมเชื่อมต่อใหม่..."
 
-#: bot/config_handler.py:67
+#: bot/config_handler.py:66
 msgid "If Disabled, Send Playback Messages By"
 msgstr "เมื่อปิดการประกาศ ให้ส่งข้อความการเล่นแบบ"
 
-#: bot/config_handler.py:98
+#: bot/config_handler.py:97
 msgid "If you chose option 3 above, enter the specific username to watch for here."
 msgstr "หากเลือกตัวเลือก 3 ด้านบน ให้กรอกชื่อผู้ใช้ที่ต้องการเฝ้าติดตาม"
 
@@ -1175,23 +1015,23 @@ msgstr "ลำดับต้องเป็นตัวเลข"
 msgid "Initializing audio devices..."
 msgstr "กำลังเริ่มต้นอุปกรณ์เสียง..."
 
-#: bot/config_handler.py:61 bot/gui.py:52
+#: bot/config_handler.py:60
 msgid "Input Device"
 msgstr "อุปกรณ์อินพุต"
 
-#: bot/config_handler.py:75
+#: bot/config_handler.py:74
 msgid "Intercept All Channel Messages?"
 msgstr "รับข้อความจากทุกห้องหรือไม่"
 
-#: bot/config_handler.py:58
+#: bot/config_handler.py:57
 msgid "Interval in minutes for sending random broadcast messages from messages.txt. Set to 0 to disable."
 msgstr "ช่วงเวลาเป็นนาทีสำหรับส่งข้อความสุ่มจาก messages.txt ตั้งเป็น 0 เพื่อปิด"
 
-#: bot/config_handler.py:350
+#: bot/config_handler.py:313
 msgid "Invalid choice number."
 msgstr "หมายเลขตัวเลือกไม่ถูกต้อง"
 
-#: bot/config_handler.py:322
+#: bot/config_handler.py:285
 msgid "Invalid choice. Please enter 'y' or 'n'."
 msgstr "ตัวเลือกไม่ถูกต้อง กรุณาพิมพ์ 'y' หรือ 'n'"
 
@@ -1287,11 +1127,11 @@ msgstr "รูปแบบไม่ถูกต้อง วิธีใช้: 
 msgid "Invalid format. Usage: /udk <username> <duration>"
 msgstr "รูปแบบไม่ถูกต้อง วิธีใช้: /udk <username> <duration>"
 
-#: bot/config_handler.py:303 bot/config_handler.py:352
+#: bot/config_handler.py:266 bot/config_handler.py:315
 msgid "Invalid input. Please enter a number."
 msgstr "ข้อมูลเข้าไม่ถูกต้อง กรุณาป้อนตัวเลข"
 
-#: bot/config_handler.py:294
+#: bot/config_handler.py:257
 msgid "Invalid input. Please enter a whole number."
 msgstr "ข้อมูลไม่ถูกต้อง กรุณากรอกจำนวนเต็ม"
 
@@ -1347,43 +1187,31 @@ msgstr "ค่าไม่ถูกต้อง ใช้ /tts on หรือ /
 msgid "Invalid volume value. Volume should be between 0.1 and 1.0."
 msgstr "ค่าความดังไม่ถูกต้อง ความดังควรอยู่ระหว่าง 0.1 ถึง 1.0"
 
-#: bot/config_handler.py:46
+#: bot/config_handler.py:45
 msgid "Is the server encrypted?"
 msgstr "เซิร์ฟเวอร์เข้ารหัสหรือไม่"
 
-#: bot/config_handler.py:85 bot/gui.py:41
+#: bot/config_handler.py:84
 msgid "Jail Channel Path"
 msgstr "เส้นทางช่องสำหรับขัง"
 
-#: bot/config_handler.py:87 bot/gui.py:43
+#: bot/config_handler.py:86
 msgid "Jail Flood Count"
 msgstr "จำนวนครั้งที่อนุญาตให้สแปมในห้องขัง"
 
-#: bot/config_handler.py:86
+#: bot/config_handler.py:85
 msgid "Jail Flood Timer (seconds)"
 msgstr "ช่วงเวลาตรวจจับการสแปมห้องกักกัน (วินาที)"
 
-#: bot/gui.py:40
-msgid "Jail Nicknames (comma-separated)"
-msgstr "ชื่อเล่นที่จะถูกขัง (คั่นด้วยจุลภาค)"
-
-#: bot/config_handler.py:82
+#: bot/config_handler.py:81
 msgid "Jail System"
 msgstr "ระบบห้องกักกัน"
 
-#: bot/gui.py:42
-msgid "Jail Timeout (seconds)"
-msgstr "ระยะเวลาหมดเวลาในห้องขัง (วินาที)"
-
-#: bot/gui.py:39
-msgid "Jail Users (comma-separated)"
-msgstr "ผู้ใช้ที่จะถูกขัง (คั่นด้วยจุลภาค)"
-
-#: bot/config_handler.py:84
+#: bot/config_handler.py:83
 msgid "Jailed Nicknames"
 msgstr "ชื่อเล่นที่ถูกกักกัน"
 
-#: bot/config_handler.py:83
+#: bot/config_handler.py:82
 msgid "Jailed Usernames"
 msgstr "ชื่อผู้ใช้ที่ถูกกักกัน"
 
@@ -1399,13 +1227,9 @@ msgstr "เข้าห้องแล้ว: {path}"
 msgid "Joining private channel. Password: {password}"
 msgstr "กำลังเข้าห้องส่วนตัว รหัสผ่าน: {password}"
 
-#: bot/config_handler.py:73
+#: bot/config_handler.py:72
 msgid "Kick 'NoName' users?"
 msgstr "เตะผู้ใช้ชื่อ 'NoName' หรือไม่"
-
-#: bot/gui.py:46 bot/gui.py:47 bot/gui.py:383 bot/gui.py:46 bot/gui.py:47 bot/gui.py:385
-msgid "Kick the user"
-msgstr "เตะผู้ใช้"
 
 #: bot/modules/admin.py:552
 msgid "Kicked {nick} from channel."
@@ -1415,7 +1239,7 @@ msgstr "เตะ {nick} ออกจากห้องแล้ว"
 msgid "Kicked {nick} from server."
 msgstr "เตะ {nick} ออกจากเซิร์ฟเวอร์แล้ว"
 
-#: bot/config_handler.py:39
+#: bot/config_handler.py:38
 msgid "Language Selection"
 msgstr "เลือกภาษา"
 
@@ -1443,21 +1267,13 @@ msgstr "บันทึกภาษาเป็น {language} แล้ว ใ�
 msgid "Let the fun begin! Welcome, {nickname} from the land of {country}!"
 msgstr "เริ่มความสนุกกันเลย! ยินดีต้อนรับ {nickname} จาก {country} ครับ"
 
-#: bot/config_handler.py:111
+#: bot/config_handler.py:110
 msgid "License Key"
 msgstr "License Key"
 
-#: bot/config_handler.py:110
+#: bot/config_handler.py:109
 msgid "License Name"
 msgstr "License Name"
-
-#: bot/gui.py:96
-msgid "License key"
-msgstr "คีย์ใบอนุญาต"
-
-#: bot/gui.py:95
-msgid "License name"
-msgstr "ชื่อใบอนุญาต"
 
 #: bot/help.py:105
 msgid "List currently connected users with account type, location, and status."
@@ -1466,10 +1282,6 @@ msgstr "แสดงผู้ใช้ที่เชื่อมต่ออย
 #: bot/help.py:73
 msgid "List items in current queue."
 msgstr "แสดงรายการในคิวปัจจุบัน"
-
-#: bot/gui.py:86
-msgid "List of allowed IPs to execute ssh commands: "
-msgstr "รายชื่อ IP ที่อนุญาตให้รันคำสั่ง SSH: "
 
 #: bot/help.py:138
 msgid "List saved favorite tracks, one track per message."
@@ -1511,19 +1323,11 @@ msgstr "ดูสิว่าใครมา! {nickname} จาก {country} เ
 msgid "Make the bot speak the given text. Usage: /say text"
 msgstr "ให้บอทพูดข้อความที่กำหนด วิธีใช้: /say <ข้อความ>"
 
-#: bot/gui.py:31 bot/gui.py:31 bot/gui.py:387
-msgid "Male"
-msgstr "ชาย"
-
-#: bot/gui.py:56
-msgid "Max volume"
-msgstr "ความดังสูงสุด"
-
-#: bot/config_handler.py:65
+#: bot/config_handler.py:64
 msgid "Maximum Playback Volume"
 msgstr "ระดับเสียงเล่นสูงสุด"
 
-#: bot/config_handler.py:76
+#: bot/config_handler.py:75
 msgid "Maximum allowed characters in a user's nickname. Set to 0 to disable."
 msgstr "จำนวนตัวอักษรสูงสุดของชื่อเล่นผู้ใช้ ตั้งเป็น 0 เพื่อปิดข้อจำกัด"
 
@@ -1531,7 +1335,7 @@ msgstr "จำนวนตัวอักษรสูงสุดของชื
 msgid "Maximum allowed volume is {max_volume}"
 msgstr "ความดังสูงสุดที่อนุญาตคือ {max_volume}"
 
-#: bot/config_handler.py:74
+#: bot/config_handler.py:73
 msgid "Message for 'NoName' users"
 msgstr "ข้อความสำหรับผู้ใช้ NoName"
 
@@ -1542,10 +1346,6 @@ msgstr "ข้อความจากผู้ดูแลระบบ: {messag
 #: bot/sntalkbot.py:411
 msgid "Message received: {message} from {username}"
 msgstr "ได้รับข้อความ: {message} จาก {username}"
-
-#: bot/config_handler.py:253
-msgid "Missing Configuration"
-msgstr "การตั้งค่าที่ยังขาด"
 
 #: bot/modules/player.py:1102
 msgid "Mode set to: M1 (Single)"
@@ -1559,7 +1359,7 @@ msgstr "ตั้งโหมดเป็น M2 (อัตโนมัติ/เ
 msgid "Mode set to: M3 (Repeat)"
 msgstr "ตั้งโหมดเป็น M3 (เล่นซ้ำ)"
 
-#: bot/config_handler.py:71
+#: bot/config_handler.py:70
 msgid "Moderation and Security"
 msgstr "การดูแลระบบและความปลอดภัย"
 
@@ -1583,17 +1383,9 @@ msgstr "ชื่อ: {voice_name}"
 msgid "Name: {voice_name}, ShortName: {short_name}, Locale: {locale}"
 msgstr "ชื่อ: {voice_name}, ชื่อย่อ: {short_name}, ภาษา: {locale}"
 
-#: bot/gui.py:31 bot/gui.py:391
-msgid "Neutral"
-msgstr "เพศกลาง"
-
 #: bot/modules/account_requests.py:410
 msgid "New account created via bot.\nUsername: {username}\nEmail: {email}\nIP: {ip}\nLocation: {location}\nNickname: {nickname}"
 msgstr "มีการสร้างบัญชีใหม่ผ่านบอท\nชื่อผู้ใช้: {username}\nอีเมล: {email}\nIP: {ip}\nตำแหน่ง: {location}\nชื่อเล่น: {nickname}"
-
-#: bot/gui.py:136
-msgid "Next"
-msgstr "ถัดไป"
 
 #: bot/user_manager.py:96
 msgid "Nice to have you here, {nickname} from {country}!"
@@ -1611,7 +1403,7 @@ msgstr "ยินดีที่ได้รู้จัก {nickname} จาก
 msgid "Nice to see you, {nickname} from {country}. Say hello when ready."
 msgstr "ดีใจที่ได้เจอคุณ {nickname} จาก {country} พร้อมเมื่อไรก็ทักทายได้เลยครับ"
 
-#: bot/config_handler.py:76
+#: bot/config_handler.py:75
 msgid "Nickname Character Limit"
 msgstr "จำกัดจำนวนตัวอักษรชื่อเล่น"
 
@@ -1699,7 +1491,7 @@ msgstr "ขณะนี้ไม่มีอะไรกำลังเล่น
 msgid "Now playing: {title}"
 msgstr "กำลังเล่น: {title}"
 
-#: bot/config_handler.py:87
+#: bot/config_handler.py:86
 msgid "Number of join attempts within the timer window that will trigger a ban."
 msgstr "จำนวนครั้งที่พยายามเข้าห้องภายในช่วงเวลาที่กำหนดก่อนถูกแบน"
 
@@ -1711,15 +1503,15 @@ msgstr "ผู้ดูแลออนไลน์: {admins}"
 msgid "Only one account is allowed per person. Our records show an account for your IP."
 msgstr "อนุญาตหนึ่งบัญชีต่อหนึ่งคน ระบบพบว่ามีบัญชีที่ใช้ IP ของคุณอยู่แล้ว"
 
-#: bot/config_handler.py:100
+#: bot/config_handler.py:99
 msgid "Optional Integrations"
 msgstr "การเชื่อมต่อเสริม"
 
-#: bot/config_handler.py:69
+#: bot/config_handler.py:68
 msgid "Optional path to a cookies file (e.g., cookies.txt) for yt-dlp to access private or restricted videos."
 msgstr "พาธไฟล์คุกกี้ (เช่น cookies.txt) สำหรับ yt-dlp ใช้เข้าถึงวิดีโอส่วนตัวหรือมีข้อจำกัด (ไม่บังคับ)"
 
-#: bot/config_handler.py:62 bot/gui.py:53
+#: bot/config_handler.py:61
 msgid "Output Device"
 msgstr "อุปกรณ์เอาต์พุต"
 
@@ -1819,11 +1611,7 @@ msgstr "ล้างคิวแล้ว"
 msgid "Queue system is {state}."
 msgstr "ระบบคิว: {state}"
 
-#: bot/gui.py:44
-msgid "Random Message Interval"
-msgstr "ช่วงเวลาส่งข้อความสุ่ม"
-
-#: bot/config_handler.py:58
+#: bot/config_handler.py:57
 msgid "Random Message Interval (minutes)"
 msgstr "ช่วงเวลาข้อความสุ่ม (นาที)"
 
@@ -1859,41 +1647,29 @@ msgstr "นำออกจากคิวแล้ว: {title}"
 msgid "Restarting..."
 msgstr "กำลังเริ่มต้นใหม่..."
 
-#: bot/gui.py:141
-msgid "Review your configuration settings. Press finish to confirm"
-msgstr "ตรวจสอบการตั้งค่าของคุณ กด เสร็จสิ้น เพื่อยืนยัน"
-
-#: bot/config_handler.py:241
-msgid "SN TalkBot Configuration"
-msgstr "การตั้งค่า SN TalkBot"
-
-#: bot/config_handler.py:107
+#: bot/config_handler.py:106
 msgid "SSH Allowed IPs"
 msgstr "IP ที่อนุญาตให้ใช้ SSH"
 
-#: bot/config_handler.py:103 bot/gui.py:82
+#: bot/config_handler.py:102
 msgid "SSH Hostname"
 msgstr "ชื่อโฮสต์ SSH"
 
-#: bot/config_handler.py:106 bot/gui.py:85
+#: bot/config_handler.py:105
 msgid "SSH Password"
 msgstr "รหัสผ่าน SSH"
 
-#: bot/config_handler.py:104 bot/gui.py:83
+#: bot/config_handler.py:103
 msgid "SSH Port"
 msgstr "พอร์ต SSH"
 
-#: bot/config_handler.py:105 bot/gui.py:84
+#: bot/config_handler.py:104
 msgid "SSH Username"
 msgstr "ชื่อผู้ใช้ SSH"
 
 #: bot/modules/admin.py:271
 msgid "SSH connection error: {e}"
 msgstr "ข้อผิดพลาดการเชื่อมต่อ SSH: {e}"
-
-#: bot/gui.py:138
-msgid "Save"
-msgstr "บันทึก"
 
 #: bot/help.py:77
 msgid "Save current track to favorites."
@@ -1935,13 +1711,9 @@ msgstr "ย้อนกลับ 10 วินาที"
 msgid "Seek 10 seconds forward."
 msgstr "เดินหน้า 10 วินาที"
 
-#: bot/config_handler.py:63
+#: bot/config_handler.py:62
 msgid "Seek Step (seconds)"
 msgstr "ระยะการเลื่อนตำแหน่ง (วินาที)"
-
-#: bot/gui.py:54
-msgid "Seek step, in seconds: "
-msgstr "ขั้นตอนการกรอ, เป็นวินาที: "
 
 #: bot/help.py:71
 msgid "Seek to absolute time (e.g. 1:30)."
@@ -1959,7 +1731,7 @@ msgstr "เลือกผลการค้นหาถัดไปสำหร
 msgid "Select the previous search result for the newest queued search item."
 msgstr "เลือกผลการค้นหาก่อนหน้าสำหรับรายการค้นหาล่าสุดที่เพิ่มเข้าคิว"
 
-#: bot/config_handler.py:419
+#: bot/config_handler.py:382
 msgid "Select {type} Device"
 msgstr "เลือกอุปกรณ์ {type}"
 
@@ -1967,11 +1739,11 @@ msgstr "เลือกอุปกรณ์ {type}"
 msgid "Selection changed to: {title}"
 msgstr "เปลี่ยนรายการที่เลือกเป็น: {title}"
 
-#: bot/config_handler.py:66
+#: bot/config_handler.py:65
 msgid "Send Playback Messages to Channel?"
 msgstr "ส่งข้อความสถานะเครื่องเล่นไปยังห้องหรือไม่"
 
-#: bot/config_handler.py:57
+#: bot/config_handler.py:56
 msgid "Send Welcome Broadcast?"
 msgstr "ส่งข้อความต้อนรับในห้องหรือไม่"
 
@@ -1991,23 +1763,19 @@ msgstr "ส่งคำขอความช่วยเหลือหรือ
 msgid "Send a private message to a user."
 msgstr "ส่งข้อความส่วนตัวถึงผู้ใช้"
 
-#: bot/config_handler.py:57
+#: bot/config_handler.py:56
 msgid "Send a public welcome message when a user logs in."
 msgstr "ส่งข้อความต้อนรับสาธารณะเมื่อผู้ใช้เข้าสู่ระบบ"
 
-#: bot/config_handler.py:43 bot/gui.py:22
+#: bot/config_handler.py:42
 msgid "Server Address"
 msgstr "ที่อยู่เซิร์ฟเวอร์"
 
-#: bot/gui.py:23
-msgid "Server Port"
-msgstr "พอร์ตเซิร์ฟเวอร์"
-
-#: bot/config_handler.py:44
+#: bot/config_handler.py:43
 msgid "Server TCP Port"
 msgstr "พอร์ต TCP ของเซิร์ฟเวอร์"
 
-#: bot/config_handler.py:45
+#: bot/config_handler.py:44
 msgid "Server UDP Port"
 msgstr "พอร์ต UDP ของเซิร์ฟเวอร์"
 
@@ -2051,15 +1819,15 @@ msgstr "ตั้งความเร็วเสียง (เฉพาะโ�
 msgid "Set the voice volume (Microsoft mode only), value from 0.1 to 1.0."
 msgstr "ตั้งระดับเสียงพูด (เฉพาะโหมด Microsoft) ค่า 0.1 ถึง 1.0"
 
-#: bot/config_handler.py:46
+#: bot/config_handler.py:45
 msgid "Set to 'yes' if the server requires an encrypted connection."
 msgstr "ตั้งเป็น 'yes' หากเซิร์ฟเวอร์ต้องใช้การเชื่อมต่อแบบเข้ารหัส"
 
-#: bot/config_handler.py:40
+#: bot/config_handler.py:39
 msgid "Setup Language"
 msgstr "ภาษาสำหรับการตั้งค่า"
 
-#: bot/config_handler.py:96
+#: bot/config_handler.py:95
 msgid "Should users with the 'Administrator' user type on the server automatically get bot admin privileges?"
 msgstr "ผู้ใช้ประเภท Administrator บนเซิร์ฟเวอร์ควรได้รับสิทธิ์ผู้ดูแลบอทอัตโนมัติหรือไม่"
 
@@ -2131,14 +1899,6 @@ msgstr "ขออภัย, คุณไม่ได้อยู่ในช่�
 msgid "Sorry, your country information is not available."
 msgstr "ขออภัย, ไม่มีข้อมูลประเทศของคุณ"
 
-#: bot/gui.py:49
-msgid "Specify the list of banned or disallowed countries from entering the server. Separated with comma."
-msgstr "ระบุรายชื่อประเทศที่ถูกแบนหรือไม่อนุญาตให้เข้าเซิร์ฟเวอร์ คั่นด้วยจุลภาค"
-
-#: bot/gui.py:48
-msgid "Specify the timer for automatic video deletion after upload. Set it to 0 to disable automatic deleting of uploaded videos."
-msgstr "ระบุตัวจับเวลาสำหรับการลบวิดีโออัตโนมัติหลังอัปโหลด ตั้งค่าเป็น 0 เพื่อปิดการลบวิดีโอที่อัปโหลดโดยอัตโนมัติ"
-
 #: bot/modules/tts.py:423
 msgid "Speed is only available in Google TTS mode. For Microsoft, use /rate."
 msgstr "Speed ใช้ได้เฉพาะโหมด Google TTS สำหรับ Microsoft ให้ใช้ /rate"
@@ -2151,7 +1911,7 @@ msgstr "ตั้งความเร็วเป็น {value} แล้ว"
 msgid "Start the account request flow in private messages."
 msgstr "เริ่มขั้นตอนขอสร้างบัญชีผ่านข้อความส่วนตัว"
 
-#: bot/config_handler.py:56
+#: bot/config_handler.py:55
 msgid "Status Message"
 msgstr "ข้อความสถานะ"
 
@@ -2211,10 +1971,6 @@ msgstr "ผู้ดูแลปิด TTS ไว้ในขณะนี้"
 msgid "TTS is currently {state}."
 msgstr "TTS ขณะนี้ {state}"
 
-#: bot/gui.py:75
-msgid "TTS mode (microsoft/google)"
-msgstr "โหมด TTS (microsoft/google)"
-
 #: bot/modules/tts.py:543
 msgid "TTS mode set to {mode}."
 msgstr "ตั้งโหมด TTS เป็น {mode} แล้ว"
@@ -2231,15 +1987,15 @@ msgstr "ไม่พบ '{target}' ในรายการแบนหรือ
 msgid "Target channel not found."
 msgstr "ไม่พบห้องเป้าหมาย"
 
-#: bot/config_handler.py:109
+#: bot/config_handler.py:108
 msgid "TeamTalk License (Optional)"
 msgstr "ไลเซนส์ TeamTalk (ไม่บังคับ)"
 
-#: bot/config_handler.py:42
+#: bot/config_handler.py:41
 msgid "TeamTalk Server Connection"
 msgstr "การเชื่อมต่อเซิร์ฟเวอร์ TeamTalk"
 
-#: bot/config_handler.py:101
+#: bot/config_handler.py:100
 msgid "Telegram Bot Token"
 msgstr "Telegram Bot Token"
 
@@ -2247,27 +2003,27 @@ msgstr "Telegram Bot Token"
 msgid "Thanks. Now send your email address."
 msgstr "ขอบคุณ ตอนนี้ส่งที่อยู่อีเมลของคุณมา"
 
-#: bot/config_handler.py:43
+#: bot/config_handler.py:42
 msgid "The IP address or hostname of the TeamTalk server (e.g., myserver.com)."
 msgstr "IP หรือ hostname ของเซิร์ฟเวอร์ TeamTalk เช่น myserver.com"
 
-#: bot/config_handler.py:44
+#: bot/config_handler.py:43
 msgid "The TeamTalk TCP port."
 msgstr "พอร์ต TCP ของเซิร์ฟเวอร์ TeamTalk"
 
-#: bot/config_handler.py:45
+#: bot/config_handler.py:44
 msgid "The TeamTalk UDP port. Usually the same as TCP."
 msgstr "พอร์ต UDP ของเซิร์ฟเวอร์ TeamTalk โดยปกติจะใช้ค่าเดียวกับ TCP"
 
-#: bot/config_handler.py:62
+#: bot/config_handler.py:61
 msgid "The audio device for media playback."
 msgstr "อุปกรณ์เสียงสำหรับเล่นสื่อ"
 
-#: bot/config_handler.py:61
+#: bot/config_handler.py:60
 msgid "The audio device for voice transmission."
 msgstr "อุปกรณ์เสียงสำหรับส่งเสียงพูด"
 
-#: bot/config_handler.py:52
+#: bot/config_handler.py:51
 msgid "The client name shown in the user info (e.g., 'SN TalkBot v2.3')."
 msgstr "ชื่อไคลเอนต์ที่แสดงในข้อมูลผู้ใช้ เช่น 'SN TalkBot v2.3'"
 
@@ -2283,19 +2039,19 @@ msgstr "สภาพอากาศปัจจุบันที่ {city}, {co
 msgid "The detected language ({detected_lang}) is not available in Microsoft Speech, using Google voices."
 msgstr "ภาษาที่ตรวจพบ ({detected_lang}) ไม่มีใน Microsoft Speech กำลังใช้เสียง Google แทน"
 
-#: bot/config_handler.py:54
+#: bot/config_handler.py:53
 msgid "The full path of the channel the bot should join after login (e.g., '/chatting'). The default is the root channel (/)."
 msgstr "พาธเต็มของห้องที่บอทจะเข้าเมื่อเข้าสู่ระบบ เช่น '/chatting' ค่าเริ่มต้นคือห้องราก (/) "
 
-#: bot/config_handler.py:85
+#: bot/config_handler.py:84
 msgid "The full path to the channel where jailed users will be moved."
 msgstr "พาธเต็มของห้องกักกันที่จะย้ายผู้ใช้เข้าไป"
 
-#: bot/config_handler.py:65
+#: bot/config_handler.py:64
 msgid "The highest volume users can set (e.g., 100)."
 msgstr "ระดับเสียงสูงสุดที่ผู้ใช้ตั้งได้ เช่น 100"
 
-#: bot/config_handler.py:64
+#: bot/config_handler.py:63
 msgid "The initial volume for media playback (0-100)."
 msgstr "ระดับเสียงเริ่มต้นสำหรับการเล่นสื่อ (0-100)"
 
@@ -2303,19 +2059,19 @@ msgstr "ระดับเสียงเริ่มต้นสำหรับ
 msgid "The list is empty"
 msgstr "รายการว่าง"
 
-#: bot/config_handler.py:51
+#: bot/config_handler.py:50
 msgid "The name the bot will display in the channel."
 msgstr "ชื่อที่บอทจะแสดงในห้อง"
 
-#: bot/config_handler.py:48
+#: bot/config_handler.py:47
 msgid "The password for the bot's account."
 msgstr "รหัสผ่านบัญชีของบอท"
 
-#: bot/config_handler.py:55
+#: bot/config_handler.py:54
 msgid "The password for the default channel, if required."
 msgstr "รหัสผ่านของห้องเริ่มต้น หากมี"
 
-#: bot/config_handler.py:74
+#: bot/config_handler.py:73
 msgid "The private message sent to a user before they are kicked for having no name."
 msgstr "ข้อความส่วนตัวที่จะส่งก่อนเตะผู้ใช้ที่ไม่มีชื่อ"
 
@@ -2323,7 +2079,7 @@ msgstr "ข้อความส่วนตัวที่จะส่งก่
 msgid "The queue is empty."
 msgstr "คิวว่าง"
 
-#: bot/config_handler.py:86
+#: bot/config_handler.py:85
 msgid "The time window in seconds to monitor a jailed user for spamming join attempts."
 msgstr "ช่วงเวลาเป็นวินาทีสำหรับตรวจการพยายามเข้าห้องซ้ำของผู้ใช้ในห้องกักกัน"
 
@@ -2331,7 +2087,7 @@ msgstr "ช่วงเวลาเป็นวินาทีสำหรับ
 msgid "The unplayed queue has been shuffled."
 msgstr "สุ่มลำดับเพลงที่ยังไม่ได้เล่นในคิวแล้ว"
 
-#: bot/config_handler.py:47
+#: bot/config_handler.py:46
 msgid "The username for the bot's account on the server."
 msgstr "ชื่อผู้ใช้บัญชีบอทบนเซิร์ฟเวอร์"
 
@@ -2351,7 +2107,7 @@ msgstr "มีผู้ใช้จาก {country} จำนวน {count} ค�
 msgid "There are {count} users from {country}."
 msgstr "มีผู้ใช้ {count} คนจาก {country}"
 
-#: bot/config_handler.py:53
+#: bot/config_handler.py:52
 msgid "This affects the bot's default icon."
 msgstr "ค่านี้มีผลต่อไอคอนเริ่มต้นของบอท"
 
@@ -2363,11 +2119,7 @@ msgstr "คำสั่งนี้ถูกผู้ดูแลบล็อก
 msgid "This email address is already registered."
 msgstr "อีเมลนี้ถูกลงทะเบียนแล้ว"
 
-#: bot/gui.py:90
-msgid "This field is only required if 'Custom Username Account' is selected above."
-msgstr "ฟิลด์นี้จำเป็นเฉพาะเมื่อเลือก 'บัญชีชื่อผู้ใช้ที่กำหนดเอง' ข้างต้น"
-
-#: bot/config_handler.py:278
+#: bot/config_handler.py:241
 msgid "This field is required. Please enter a value."
 msgstr "จำเป็นต้องกรอกช่องนี้ กรุณาใส่ค่า"
 
@@ -2375,7 +2127,7 @@ msgstr "จำเป็นต้องกรอกช่องนี้ กร�
 msgid "This username is already registered."
 msgstr "ชื่อผู้ใช้นี้ถูกลงทะเบียนแล้ว"
 
-#: bot/config_handler.py:80
+#: bot/config_handler.py:79
 msgid "Time in minutes before a downloaded/uploaded video is automatically deleted from the server channel. Set to 0 to disable."
 msgstr "เวลาหน่วยนาทีก่อนลบวิดีโอที่ดาวน์โหลด/อัปโหลดออกจากห้องเซิร์ฟเวอร์อัตโนมัติ ตั้งเป็น 0 เพื่อปิด"
 
@@ -2407,7 +2159,7 @@ msgstr "เปิดหรือปิดเอฟเฟกต์เฟดขอ
 msgid "Toggle the second stereo/echo audio filter."
 msgstr "เปิดหรือปิดฟิลเตอร์สเตอริโอ/เอคโคชุดที่ 2"
 
-#: bot/config_handler.py:101
+#: bot/config_handler.py:100
 msgid "Token for your Telegram bot to enable notifications. Leave blank to disable."
 msgstr "Token ของ Telegram bot สำหรับเปิดการแจ้งเตือน เว้นว่างเพื่อปิด"
 
@@ -2447,7 +2199,7 @@ msgstr "ไม่รู้จักคำสั่งนี้"
 msgid "Unknown command. Use /help to see all commands."
 msgstr "ไม่รู้จักคำสั่งนี้ ใช้ /help เพื่อดูคำสั่งทั้งหมด"
 
-#: bot/config_handler.py:80
+#: bot/config_handler.py:79
 msgid "Uploaded Video Deletion Timer (minutes)"
 msgstr "เวลาลบวิดีโอที่อัปโหลด (นาที)"
 
@@ -2583,10 +2335,6 @@ msgstr "ตรวจจับ VPN: {state}"
 msgid "Verification code expired. Please start again."
 msgstr "รหัสยืนยันหมดอายุแล้ว กรุณาเริ่มใหม่"
 
-#: bot/gui.py:238
-msgid "Visit the website to Get a weather API key"
-msgstr "ไปที่เว็บไซต์เพื่อรับคีย์ API สภาพอากาศ"
-
 #: bot/modules/tts.py:418
 msgid "Voice set to {voice_name}."
 msgstr "ตั้งค่าเสียงพูดเป็น {voice_name}"
@@ -2595,7 +2343,7 @@ msgstr "ตั้งค่าเสียงพูดเป็น {voice_name}"
 msgid "Voice transmission: {state}"
 msgstr "การส่งเสียง TeamTalk: {state}"
 
-#: bot/config_handler.py:68
+#: bot/config_handler.py:67
 msgid "Volume Fading (seconds)"
 msgstr "ระยะเวลาเฟดระดับเสียง (วินาที)"
 
@@ -2615,13 +2363,9 @@ msgstr "ยินดีต้อนรับอย่างอบอุ่น {n
 msgid "Warning: You are trying to get out of jail. If you continue to spam, you will be banned."
 msgstr "คำเตือน: คุณกำลังพยายามออกจากห้องกักกัน หากยังสแปมต่อจะถูกแบน"
 
-#: bot/config_handler.py:186
+#: bot/config_handler.py:178
 msgid "Warning: Your config.ini is missing some settings."
 msgstr "คำเตือน: config.ini ของคุณยังขาดการตั้งค่าบางรายการ"
-
-#: bot/gui.py:67
-msgid "Weather API Key"
-msgstr "คีย์ API สภาพอากาศ"
 
 #: bot/modules/admin.py:627
 msgid "Welcome Broadcast: {state}"
@@ -2651,7 +2395,7 @@ msgstr "ยินดีต้อนรับ {nickname}! วันนี้ท�
 msgid "Welcome in, {nickname}! {country} brings good energy."
 msgstr "ยินดีต้อนรับ {nickname}! วันนี้เพื่อนจาก {country} พาพลังดี ๆ มาด้วยครับ"
 
-#: bot/config_handler.py:379
+#: bot/config_handler.py:342
 msgid "Welcome to the SN TalkBot setup wizard!"
 msgstr "ยินดีต้อนรับสู่ตัวช่วยตั้งค่า SN TalkBot!"
 
@@ -2743,11 +2487,11 @@ msgstr "ยินดีต้อนรับ {nickname}! เพื่อนจ�
 msgid "Welcome, {nickname}! {country} is representing today."
 msgstr "ยินดีต้อนรับ {nickname}! วันนี้ {country} ส่งตัวแทนมาแล้วครับ"
 
-#: bot/config_handler.py:78
+#: bot/config_handler.py:77
 msgid "What to do when a user uses a word from blacklist.txt in their name or messages."
 msgstr "กำหนดว่าจะทำอะไรเมื่อผู้ใช้ใช้คำจาก blacklist.txt ในชื่อหรือข้อความ"
 
-#: bot/config_handler.py:77
+#: bot/config_handler.py:76
 msgid "What to do when a user's nickname exceeds the character limit."
 msgstr "กำหนดว่าจะทำอะไรเมื่อชื่อเล่นยาวเกินจำนวนตัวอักษรที่กำหนด"
 
@@ -2755,7 +2499,7 @@ msgstr "กำหนดว่าจะทำอะไรเมื่อชื่
 msgid "When a video is playing, load the current video's channel and play its first video."
 msgstr "ขณะเล่นวิดีโอ ให้โหลดช่องของวิดีโอปัจจุบันและเล่นวิดีโอแรกของช่อง"
 
-#: bot/config_handler.py:97
+#: bot/config_handler.py:96
 msgid "Which type of accounts should trigger the bot's actions, such as VPN detection, welcome messages, and other actions?"
 msgstr "บัญชีประเภทใดควรถูกนำไปใช้กับการทำงานของบอท เช่น ตรวจ VPN ข้อความต้อนรับ และระบบอื่น ๆ"
 
@@ -2803,19 +2547,15 @@ msgstr "คุณถูกเตะเนื่องจากชื่อผู
 msgid "You have no pending messages."
 msgstr "คุณไม่มีข้อความที่รอส่ง"
 
-#: bot/gui.py:482
-msgid "You're all done."
-msgstr "คุณทำเสร็จทั้งหมดแล้ว"
-
 #: bot/modules/player.py:679
 msgid "You've reached the end of the list."
 msgstr "คุณมาถึงท้ายรายการแล้ว"
 
-#: bot/config_handler.py:111
+#: bot/config_handler.py:110
 msgid "Your TeamTalk SDK license key."
 msgstr "License Key ของ TeamTalk SDK"
 
-#: bot/config_handler.py:110
+#: bot/config_handler.py:109
 msgid "Your TeamTalk SDK license name, if you have one."
 msgstr "ชื่อ License ของ TeamTalk SDK หากมี"
 
@@ -2851,7 +2591,7 @@ msgstr "กำลังดักจับข้อความในช่อง
 msgid "subscribed to user messages"
 msgstr "สมัครรับข้อความจากผู้ใช้แล้ว"
 
-#: bot/config_handler.py:102
+#: bot/config_handler.py:101
 msgid "weatherapi.com API Key"
 msgstr "API Key ของ weatherapi.com"
 

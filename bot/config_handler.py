@@ -2,7 +2,6 @@ import gettext
 import configparser
 import os
 import ast
-import sys
 import TeamTalk5 as teamtalk
 import mpv
 import getpass
@@ -11,7 +10,7 @@ class ConfigHandler:
     """
     Manages reading and writing the bot's configuration file (config.ini).
     If the file doesn't exist, it guides the user through an interactive
-    setup process via the terminal or a graphical interface on Windows.
+    terminal setup process. This project is Linux/Docker only and has no GUI path.
     """
 
     def __init__(self, config_file="config.ini"):
@@ -114,7 +113,7 @@ class ConfigHandler:
     def _select_language_and_translate_structure(self, ask_in_terminal=True):
         """
         Sets the language and translates the prompts in CONFIG_STRUCTURE.
-        The `ask_in_terminal` flag prevents the terminal prompt on Windows.
+        The `ask_in_terminal` flag controls whether language selection is prompted in the terminal.
         """
         if ask_in_terminal:
             self.select_language()
@@ -166,32 +165,21 @@ class ConfigHandler:
             self._ = gettext.gettext
 
     def read_config_file(self):
-        """
-        Reads the configuration file. If it doesn't exist, launches the
-        appropriate setup wizard (GUI for Windows, Terminal for others).
-        """
+        """Read config.ini and use the terminal wizard for missing configuration."""
         if not os.path.isfile(self.config_file):
-            if sys.platform == "win32":
-                self._run_gui_wizard()
-            else:
-                self.select_language()
-                self.create_config_file_terminal(self.CONFIG_STRUCTURE)
-                
+            self.select_language()
+            self.create_config_file_terminal(self.CONFIG_STRUCTURE)
+
         self.config.read(self.config_file, encoding="utf-8")
         self._migrate_legacy_server_port()
 
         missing_items = self._validate_config()
-        
         if missing_items:
             print(self._("Warning: Your config.ini is missing some settings."))
             if self.config.has_option('bot', 'language'):
                 self.language = self.config.get('bot', 'language')
-            if sys.platform == "win32":
-                self._select_language_and_translate_structure(ask_in_terminal=False)
-                self._prompt_for_missing(missing_items)
-            else:
-                self._select_language_and_translate_structure(ask_in_terminal=True)
-                self._prompt_for_missing(missing_items)
+            self._select_language_and_translate_structure(ask_in_terminal=True)
+            self._prompt_for_missing(missing_items)
             self.config.read(self.config_file, encoding="utf-8")
 
     def _migrate_legacy_server_port(self):
@@ -225,34 +213,9 @@ class ConfigHandler:
         return missing
 
     def _prompt_for_missing(self, missing_items):
-        """Launches the appropriate UI to ask the user for missing values."""
-        if sys.platform == "win32":
-            self._run_gui_missing_dialog(missing_items)
-        else:
-            print(self._("I'll ask you for the required values now."))
-            self.create_config_file_terminal(missing_items)
-
-    def _run_gui_wizard(self):
-        """Runs the full GUI setup wizard."""
-        import wx
-        import wx.lib.scrolledpanel as scrolled
-        from bot.gui import ConfigWizard
-        app = wx.App(False)
-        wizard = ConfigWizard(None, self._("SN TalkBot Configuration"), self.CONFIG_STRUCTURE, self._)
-        app.MainLoop()
-        if not os.path.isfile(self.config_file):
-            print(self._("Configuration was not saved. Exiting."))
-            sys.exit(1)
-
-    def _run_gui_missing_dialog(self, missing_items):
-        """Runs the GUI dialog to fix a broken config."""
-        import wx
-        import wx.lib.scrolledpanel as scrolled
-        from bot.gui import MissingConfigDialog
-        app = wx.App(False)
-        dialog = MissingConfigDialog(None, self._("Missing Configuration"), missing_items, self.config_file)
-        app.MainLoop()
-
+        """Ask for missing values in the terminal."""
+        print(self._("I'll ask you for the required values now."))
+        self.create_config_file_terminal(missing_items)
 
     def _print_header(self, text):
         """Prints a formatted section header."""

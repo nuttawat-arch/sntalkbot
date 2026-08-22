@@ -84,3 +84,10 @@ Docker target หลักเป็น Linux amd64/x86_64 ตาม TeamTalk SDK
 - `docker-compose.yml` parse เป็น YAML ได้
 
 ข้อจำกัดของสภาพแวดล้อมที่ใช้สร้าง release นี้: ไม่มี Docker daemon/CLI จึงยังไม่ได้ทำ live `docker build` และไม่มี TeamTalk native SDK ที่โหลดใช้งานได้ใน sandbox เพื่อทำการเชื่อมต่อ TeamTalk จริง การตรวจใน release จึงเป็น static/config/script validation และมี `tools/check_environment.py` สำหรับตรวจบนเครื่อง Linux ปลายทางอีกครั้ง
+
+
+## Linux/Docker-only cleanup
+
+- ตัด `bot/gui.py`, `requirements-gui.txt`, `setup.bat`, `run_bot.bat` ออก
+- ลบเส้นทาง wxPython/GUI wizard จาก `bot/config_handler.py`
+- setup/config ใช้ terminal และ `config.ini` เท่านั้น

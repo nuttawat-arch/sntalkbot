@@ -6,19 +6,19 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: bot/config_handler.py:439
+#: bot/config_handler.py:402
 msgid "\nConfiguration saved to config.ini! You can now start the bot normally."
 msgstr ""
 
-#: bot/config_handler.py:79
+#: bot/config_handler.py:78
 msgid "A comma-separated list of country names to ban from the server (e.g., North Korea,Israel)."
 msgstr ""
 
-#: bot/config_handler.py:84
+#: bot/config_handler.py:83
 msgid "A comma-separated list of nicknames to confine to the jail channel."
 msgstr ""
 
-#: bot/config_handler.py:83
+#: bot/config_handler.py:82
 msgid "A comma-separated list of usernames to automatically confine to the jail channel upon login."
 msgstr ""
 
@@ -30,7 +30,7 @@ msgstr ""
 msgid "A warm welcome to {nickname} from {country}!"
 msgstr ""
 
-#: bot/config_handler.py:102
+#: bot/config_handler.py:101
 msgid "API key for the weather command. See the README for instructions on how to get one."
 msgstr ""
 
@@ -38,7 +38,7 @@ msgstr ""
 msgid "Account '{username}' created successfully."
 msgstr ""
 
-#: bot/config_handler.py:97
+#: bot/config_handler.py:96
 msgid "Account Detection Mode"
 msgstr ""
 
@@ -62,15 +62,11 @@ msgstr ""
 msgid "Account requests have been {state}."
 msgstr ""
 
-#: bot/gui.py:47
-msgid "Action for Blacklisted Nicknames or words"
-msgstr ""
-
-#: bot/config_handler.py:78
+#: bot/config_handler.py:77
 msgid "Action for Blacklisted Words"
 msgstr ""
 
-#: bot/config_handler.py:77 bot/gui.py:46
+#: bot/config_handler.py:76
 msgid "Action for Long Nicknames"
 msgstr ""
 
@@ -90,7 +86,7 @@ msgstr ""
 msgid "Adding URL to queue..."
 msgstr ""
 
-#: bot/config_handler.py:94
+#: bot/config_handler.py:93
 msgid "Administrator and Account Settings"
 msgstr ""
 
@@ -266,15 +262,11 @@ msgstr ""
 msgid "Alias for /shutdown."
 msgstr ""
 
-#: bot/gui.py:89 bot/gui.py:396
-msgid "All Accounts"
-msgstr ""
-
 #: bot/sntalkbot.py:231
 msgid "All command modules have been registered."
 msgstr ""
 
-#: bot/config_handler.py:75
+#: bot/config_handler.py:74
 msgid "Allows the bot to 'see' messages in all channels for features like word blacklisting and general bot commands, such as weather and other commands, even if it's not in that channel. Highly recommended."
 msgstr ""
 
@@ -294,11 +286,11 @@ msgstr ""
 msgid "An error occurred: {e}"
 msgstr ""
 
-#: bot/config_handler.py:56
+#: bot/config_handler.py:55
 msgid "An optional status message for the bot."
 msgstr ""
 
-#: bot/config_handler.py:66
+#: bot/config_handler.py:65
 msgid "Announce playback actions (play/pause/stop/volume) in the channel."
 msgstr ""
 
@@ -310,7 +302,7 @@ msgstr ""
 msgid "Attention, The server is rebooting..."
 msgstr ""
 
-#: bot/config_handler.py:60
+#: bot/config_handler.py:59
 msgid "Audio and Playback Settings"
 msgstr ""
 
@@ -318,15 +310,11 @@ msgstr ""
 msgid "Audio devices Initialized."
 msgstr ""
 
-#: bot/gui.py:91
-msgid "Authorized Usernames (comma-separated)"
-msgstr ""
-
-#: bot/config_handler.py:95
+#: bot/config_handler.py:94
 msgid "Authorized Users"
 msgstr ""
 
-#: bot/config_handler.py:96
+#: bot/config_handler.py:95
 msgid "Auto-authorize Server Admins?"
 msgstr ""
 
@@ -338,12 +326,8 @@ msgstr ""
 msgid "Auto-translation enabled from {source} to {target}."
 msgstr ""
 
-#: bot/config_handler.py:73
+#: bot/config_handler.py:72
 msgid "Automatically kick users who log in with the default 'NoName' nickname."
-msgstr ""
-
-#: bot/gui.py:36
-msgid "Automatically kick users with no name"
 msgstr ""
 
 #: bot/modules/player.py:634
@@ -362,15 +346,7 @@ msgstr ""
 msgid "Available modes are: m for male, f for female, n for neutral."
 msgstr ""
 
-#: bot/gui.py:134
-msgid "Back"
-msgstr ""
-
-#: bot/gui.py:46 bot/gui.py:47
-msgid "Ban the user"
-msgstr ""
-
-#: bot/config_handler.py:79
+#: bot/config_handler.py:78
 msgid "Banned Countries"
 msgstr ""
 
@@ -382,32 +358,8 @@ msgstr ""
 msgid "Big welcome to {nickname} from {country}!"
 msgstr ""
 
-#: bot/gui.py:30
-msgid "Bot Client Name"
-msgstr ""
-
-#: bot/gui.py:31
-msgid "Bot Gender"
-msgstr ""
-
-#: bot/config_handler.py:50
+#: bot/config_handler.py:49
 msgid "Bot Identity and Behavior"
-msgstr ""
-
-#: bot/gui.py:29
-msgid "Bot Nickname"
-msgstr ""
-
-#: bot/gui.py:26
-msgid "Bot Password"
-msgstr ""
-
-#: bot/gui.py:34
-msgid "Bot Status Message"
-msgstr ""
-
-#: bot/gui.py:25
-msgid "Bot Username"
 msgstr ""
 
 #: bot/modules/admin.py:404
@@ -418,23 +370,23 @@ msgstr ""
 msgid "Bot name changed to '{new_name}'."
 msgstr ""
 
-#: bot/config_handler.py:52
+#: bot/config_handler.py:51
 msgid "Bot's Client Name"
 msgstr ""
 
-#: bot/config_handler.py:53
+#: bot/config_handler.py:52
 msgid "Bot's Gender"
 msgstr ""
 
-#: bot/config_handler.py:51
+#: bot/config_handler.py:50
 msgid "Bot's Nickname"
 msgstr ""
 
-#: bot/config_handler.py:48
+#: bot/config_handler.py:47
 msgid "Bot's Password"
 msgstr ""
 
-#: bot/config_handler.py:47
+#: bot/config_handler.py:46
 msgid "Bot's Username"
 msgstr ""
 
@@ -450,7 +402,7 @@ msgstr ""
 msgid "Channel ID for {path}: {channel_id}"
 msgstr ""
 
-#: bot/config_handler.py:55
+#: bot/config_handler.py:54
 msgid "Channel Password"
 msgstr ""
 
@@ -458,23 +410,15 @@ msgstr ""
 msgid "Channel not found."
 msgstr ""
 
-#: bot/gui.py:33
-msgid "Channel password"
-msgstr ""
-
 #: bot/modules/player.py:261
 msgid "Channel selection expired. Use /channel again."
-msgstr ""
-
-#: bot/gui.py:45
-msgid "Character Limit for Nicknames"
 msgstr ""
 
 #: bot/help.py:74
 msgid "Check current queue position."
 msgstr ""
 
-#: bot/config_handler.py:72
+#: bot/config_handler.py:71
 msgid "Check if users are connecting via a known VPN or proxy service."
 msgstr ""
 
@@ -490,11 +434,11 @@ msgstr ""
 msgid "Choose a tab by number:"
 msgstr ""
 
-#: bot/config_handler.py:40
+#: bot/config_handler.py:39
 msgid "Choose the language for the bot and setup process."
 msgstr ""
 
-#: bot/config_handler.py:67
+#: bot/config_handler.py:66
 msgid "Choose whether to send playback messages privately or stay silent when channel announcements are disabled."
 msgstr ""
 
@@ -522,23 +466,23 @@ msgstr ""
 msgid "Cleared pending kick for {target}."
 msgstr ""
 
-#: bot/config_handler.py:90
+#: bot/config_handler.py:89
 msgid "Comma-separated list of IP addresses immune to moderation rules. The stats IP is excluded by default."
 msgstr ""
 
-#: bot/config_handler.py:92
+#: bot/config_handler.py:91
 msgid "Comma-separated list of nicknames immune to moderation rules."
 msgstr ""
 
-#: bot/config_handler.py:107
+#: bot/config_handler.py:106
 msgid "Comma-separated list of user IP addresses allowed to use SSH commands via the bot."
 msgstr ""
 
-#: bot/config_handler.py:91
+#: bot/config_handler.py:90
 msgid "Comma-separated list of usernames immune to moderation rules."
 msgstr ""
 
-#: bot/config_handler.py:95
+#: bot/config_handler.py:94
 msgid "Comma-separated list of usernames who can use the bot's admin commands."
 msgstr ""
 
@@ -562,14 +506,6 @@ msgstr ""
 msgid "Commands unlocked. Commands available to everyone."
 msgstr ""
 
-#: bot/config_handler.py:244
-msgid "Configuration was not saved. Exiting."
-msgstr ""
-
-#: bot/gui.py:482
-msgid "Congratulations. The config file  has been created successfully. Please run the bot again!."
-msgstr ""
-
 #: bot/sntalkbot.py:234
 msgid "Connected successfully!"
 msgstr ""
@@ -586,7 +522,7 @@ msgstr ""
 msgid "Connection lost. Trying to reconnect..."
 msgstr ""
 
-#: bot/config_handler.py:69
+#: bot/config_handler.py:68
 msgid "Cookies File Path"
 msgstr ""
 
@@ -594,7 +530,7 @@ msgstr ""
 msgid "Could not connect to server {server_address} port={port}"
 msgstr ""
 
-#: bot/config_handler.py:411
+#: bot/config_handler.py:374
 msgid "Could not find any {type} devices. You may need to set this manually in config.ini."
 msgstr ""
 
@@ -630,15 +566,7 @@ msgstr ""
 msgid "Currently: "
 msgstr ""
 
-#: bot/gui.py:90
-msgid "Custom Username"
-msgstr ""
-
-#: bot/gui.py:89 bot/gui.py:398
-msgid "Custom Username Account"
-msgstr ""
-
-#: bot/config_handler.py:98
+#: bot/config_handler.py:97
 msgid "Custom Username for Detection"
 msgstr ""
 
@@ -646,40 +574,20 @@ msgstr ""
 msgid "Dear {username},\n\nThank you for your request to create a Blindmasters account. Your verification code is:\n\n{code}\n\nThis code expires in {minutes} minute(s). If you did not request this, you can safely ignore this email.\n\nBest regards,\nBlindmasters"
 msgstr ""
 
-#: bot/config_handler.py:54
+#: bot/config_handler.py:53
 msgid "Default Channel"
 msgstr ""
 
-#: bot/config_handler.py:64
+#: bot/config_handler.py:63
 msgid "Default Playback Volume"
 msgstr ""
 
-#: bot/gui.py:32
-msgid "Default channel to join after login: "
-msgstr ""
-
-#: bot/gui.py:37
-msgid "Default message that will be sent to users with no name when they login"
-msgstr ""
-
-#: bot/config_handler.py:63
+#: bot/config_handler.py:62
 msgid "Default number of seconds to seek forward/backward in media playback."
-msgstr ""
-
-#: bot/gui.py:55
-msgid "Default volume"
 msgstr ""
 
 #: bot/help.py:75
 msgid "Delete item from queue at index."
-msgstr ""
-
-#: bot/gui.py:92
-msgid "Detect server administrators as bot's authorized users"
-msgstr ""
-
-#: bot/gui.py:89
-msgid "Detection Mode"
 msgstr ""
 
 #: bot/modules/player.py:779
@@ -702,20 +610,8 @@ msgstr ""
 msgid "Email service is not configured."
 msgstr ""
 
-#: bot/gui.py:79
-msgid "Enable Google TTS random broadcast messages"
-msgstr ""
-
-#: bot/gui.py:35
-msgid "Enable VPN detection"
-msgstr ""
-
-#: bot/config_handler.py:72
+#: bot/config_handler.py:71
 msgid "Enable VPN/Proxy Detection?"
-msgstr ""
-
-#: bot/gui.py:38
-msgid "Enable intercepting channel messages for all users: Useful for detecting bad words in all channels as well as allowing some commands to work regardless of the bot's channel"
 msgstr ""
 
 #: bot/help.py:29
@@ -732,14 +628,6 @@ msgstr ""
 
 #: bot/help.py:84
 msgid "Enable whisper translation: translate channel/broadcast messages and send the translated text to you privately."
-msgstr ""
-
-#: bot/gui.py:24
-msgid "Encrypted server"
-msgstr ""
-
-#: bot/gui.py:59
-msgid "Enter a telegram bot token, Optional: "
 msgstr ""
 
 #: bot/modules/player.py:181
@@ -802,31 +690,19 @@ msgstr ""
 msgid "Error: {e}. Disabling private translate mode."
 msgstr ""
 
-#: bot/config_handler.py:90
+#: bot/config_handler.py:89
 msgid "Excluded IP Addresses"
 msgstr ""
 
-#: bot/config_handler.py:92
+#: bot/config_handler.py:91
 msgid "Excluded Nicknames"
 msgstr ""
 
-#: bot/config_handler.py:91
+#: bot/config_handler.py:90
 msgid "Excluded Usernames"
 msgstr ""
 
-#: bot/gui.py:62
-msgid "Exclusion IPs (comma-separated)"
-msgstr ""
-
-#: bot/gui.py:64
-msgid "Exclusion Nicknames (comma-separated)"
-msgstr ""
-
-#: bot/gui.py:63
-msgid "Exclusion Usernames (comma-separated)"
-msgstr ""
-
-#: bot/config_handler.py:89
+#: bot/config_handler.py:88
 msgid "Exclusions (Immunity)"
 msgstr ""
 
@@ -834,7 +710,7 @@ msgstr ""
 msgid "Executes a command on the server via SSH (requires authorization). Usage: /exec [command]"
 msgstr ""
 
-#: bot/config_handler.py:68
+#: bot/config_handler.py:67
 msgid "Fade audio when seeking or changing volume. Set to 0 to disable."
 msgstr ""
 
@@ -854,16 +730,8 @@ msgstr ""
 msgid "Favorites list cleared."
 msgstr ""
 
-#: bot/gui.py:31 bot/gui.py:389
-msgid "Female"
-msgstr ""
-
 #: bot/modules/player.py:812
 msgid "File {filename} downloaded. Uploading..."
-msgstr ""
-
-#: bot/gui.py:146
-msgid "Finish"
 msgstr ""
 
 #: bot/help.py:49
@@ -930,20 +798,8 @@ msgstr ""
 msgid "Good vibes only for {nickname} from {country}! Welcome, my friend!"
 msgstr ""
 
-#: bot/gui.py:76
-msgid "Google Cloud TTS API key"
-msgstr ""
-
 #: bot/modules/tts.py:593
 msgid "Google Cloud TTS API key is not configured."
-msgstr ""
-
-#: bot/gui.py:78
-msgid "Google TTS base URL"
-msgstr ""
-
-#: bot/gui.py:77
-msgid "Google voice name"
 msgstr ""
 
 #: bot/modules/tts.py:604
@@ -980,22 +836,6 @@ msgstr ""
 
 #: bot/user_manager.py:67
 msgid "Greetings, {nickname} of {country}! We're glad to have you here."
-msgstr ""
-
-#: bot/gui.py:70
-msgid "Groq API key (translation)"
-msgstr ""
-
-#: bot/gui.py:72
-msgid "Groq base URL"
-msgstr ""
-
-#: bot/gui.py:71
-msgid "Groq model"
-msgstr ""
-
-#: bot/gui.py:89 bot/gui.py:89 bot/gui.py:394
-msgid "Guest Accounts"
 msgstr ""
 
 #: bot/user_manager.py:136
@@ -1142,7 +982,7 @@ msgstr ""
 msgid "Hi {nickname}! Nice to see someone from {country} here."
 msgstr ""
 
-#: bot/config_handler.py:103
+#: bot/config_handler.py:102
 msgid "Hostname or IP for the SSH server for the /exec and /reboot commands. Leave blank to disable."
 msgstr ""
 
@@ -1150,11 +990,11 @@ msgstr ""
 msgid "Howdy, {nickname}! Welcome from {country}."
 msgstr ""
 
-#: bot/config_handler.py:380
+#: bot/config_handler.py:343
 msgid "I'll ask a few questions to create your configuration file."
 msgstr ""
 
-#: bot/config_handler.py:232
+#: bot/config_handler.py:217
 msgid "I'll ask you for the required values now."
 msgstr ""
 
@@ -1162,11 +1002,11 @@ msgstr ""
 msgid "I've been kicked from the channel. Scheduling reconnect..."
 msgstr ""
 
-#: bot/config_handler.py:67
+#: bot/config_handler.py:66
 msgid "If Disabled, Send Playback Messages By"
 msgstr ""
 
-#: bot/config_handler.py:98
+#: bot/config_handler.py:97
 msgid "If you chose option 3 above, enter the specific username to watch for here."
 msgstr ""
 
@@ -1178,23 +1018,23 @@ msgstr ""
 msgid "Initializing audio devices..."
 msgstr ""
 
-#: bot/config_handler.py:61 bot/gui.py:52
+#: bot/config_handler.py:60
 msgid "Input Device"
 msgstr ""
 
-#: bot/config_handler.py:75
+#: bot/config_handler.py:74
 msgid "Intercept All Channel Messages?"
 msgstr ""
 
-#: bot/config_handler.py:58
+#: bot/config_handler.py:57
 msgid "Interval in minutes for sending random broadcast messages from messages.txt. Set to 0 to disable."
 msgstr ""
 
-#: bot/config_handler.py:350
+#: bot/config_handler.py:313
 msgid "Invalid choice number."
 msgstr ""
 
-#: bot/config_handler.py:322
+#: bot/config_handler.py:285
 msgid "Invalid choice. Please enter 'y' or 'n'."
 msgstr ""
 
@@ -1290,11 +1130,11 @@ msgstr ""
 msgid "Invalid format. Usage: /udk <username> <duration>"
 msgstr ""
 
-#: bot/config_handler.py:303 bot/config_handler.py:352
+#: bot/config_handler.py:266 bot/config_handler.py:315
 msgid "Invalid input. Please enter a number."
 msgstr ""
 
-#: bot/config_handler.py:294
+#: bot/config_handler.py:257
 msgid "Invalid input. Please enter a whole number."
 msgstr ""
 
@@ -1350,43 +1190,31 @@ msgstr ""
 msgid "Invalid volume value. Volume should be between 0.1 and 1.0."
 msgstr ""
 
-#: bot/config_handler.py:46
+#: bot/config_handler.py:45
 msgid "Is the server encrypted?"
 msgstr ""
 
-#: bot/config_handler.py:85 bot/gui.py:41
+#: bot/config_handler.py:84
 msgid "Jail Channel Path"
 msgstr ""
 
-#: bot/config_handler.py:87 bot/gui.py:43
+#: bot/config_handler.py:86
 msgid "Jail Flood Count"
 msgstr ""
 
-#: bot/config_handler.py:86
+#: bot/config_handler.py:85
 msgid "Jail Flood Timer (seconds)"
 msgstr ""
 
-#: bot/gui.py:40
-msgid "Jail Nicknames (comma-separated)"
-msgstr ""
-
-#: bot/config_handler.py:82
+#: bot/config_handler.py:81
 msgid "Jail System"
 msgstr ""
 
-#: bot/gui.py:42
-msgid "Jail Timeout (seconds)"
-msgstr ""
-
-#: bot/gui.py:39
-msgid "Jail Users (comma-separated)"
-msgstr ""
-
-#: bot/config_handler.py:84
+#: bot/config_handler.py:83
 msgid "Jailed Nicknames"
 msgstr ""
 
-#: bot/config_handler.py:83
+#: bot/config_handler.py:82
 msgid "Jailed Usernames"
 msgstr ""
 
@@ -1402,12 +1230,8 @@ msgstr ""
 msgid "Joining private channel. Password: {password}"
 msgstr ""
 
-#: bot/config_handler.py:73
+#: bot/config_handler.py:72
 msgid "Kick 'NoName' users?"
-msgstr ""
-
-#: bot/gui.py:46 bot/gui.py:47 bot/gui.py:383 bot/gui.py:46 bot/gui.py:47 bot/gui.py:385
-msgid "Kick the user"
 msgstr ""
 
 #: bot/modules/admin.py:552
@@ -1418,7 +1242,7 @@ msgstr ""
 msgid "Kicked {nick} from server."
 msgstr ""
 
-#: bot/config_handler.py:39
+#: bot/config_handler.py:38
 msgid "Language Selection"
 msgstr ""
 
@@ -1446,20 +1270,12 @@ msgstr ""
 msgid "Let the fun begin! Welcome, {nickname} from the land of {country}!"
 msgstr ""
 
-#: bot/config_handler.py:111
+#: bot/config_handler.py:110
 msgid "License Key"
 msgstr ""
 
-#: bot/config_handler.py:110
+#: bot/config_handler.py:109
 msgid "License Name"
-msgstr ""
-
-#: bot/gui.py:96
-msgid "License key"
-msgstr ""
-
-#: bot/gui.py:95
-msgid "License name"
 msgstr ""
 
 #: bot/help.py:105
@@ -1468,10 +1284,6 @@ msgstr ""
 
 #: bot/help.py:73
 msgid "List items in current queue."
-msgstr ""
-
-#: bot/gui.py:86
-msgid "List of allowed IPs to execute ssh commands: "
 msgstr ""
 
 #: bot/help.py:138
@@ -1514,19 +1326,11 @@ msgstr ""
 msgid "Make the bot speak the given text. Usage: /say text"
 msgstr ""
 
-#: bot/gui.py:31 bot/gui.py:31 bot/gui.py:387
-msgid "Male"
-msgstr ""
-
-#: bot/gui.py:56
-msgid "Max volume"
-msgstr ""
-
-#: bot/config_handler.py:65
+#: bot/config_handler.py:64
 msgid "Maximum Playback Volume"
 msgstr ""
 
-#: bot/config_handler.py:76
+#: bot/config_handler.py:75
 msgid "Maximum allowed characters in a user's nickname. Set to 0 to disable."
 msgstr ""
 
@@ -1534,7 +1338,7 @@ msgstr ""
 msgid "Maximum allowed volume is {max_volume}"
 msgstr ""
 
-#: bot/config_handler.py:74
+#: bot/config_handler.py:73
 msgid "Message for 'NoName' users"
 msgstr ""
 
@@ -1544,10 +1348,6 @@ msgstr ""
 
 #: bot/sntalkbot.py:411
 msgid "Message received: {message} from {username}"
-msgstr ""
-
-#: bot/config_handler.py:253
-msgid "Missing Configuration"
 msgstr ""
 
 #: bot/modules/player.py:1102
@@ -1562,7 +1362,7 @@ msgstr ""
 msgid "Mode set to: M3 (Repeat)"
 msgstr ""
 
-#: bot/config_handler.py:71
+#: bot/config_handler.py:70
 msgid "Moderation and Security"
 msgstr ""
 
@@ -1586,16 +1386,8 @@ msgstr ""
 msgid "Name: {voice_name}, ShortName: {short_name}, Locale: {locale}"
 msgstr ""
 
-#: bot/gui.py:31 bot/gui.py:391
-msgid "Neutral"
-msgstr ""
-
 #: bot/modules/account_requests.py:410
 msgid "New account created via bot.\nUsername: {username}\nEmail: {email}\nIP: {ip}\nLocation: {location}\nNickname: {nickname}"
-msgstr ""
-
-#: bot/gui.py:136
-msgid "Next"
 msgstr ""
 
 #: bot/user_manager.py:96
@@ -1614,7 +1406,7 @@ msgstr ""
 msgid "Nice to see you, {nickname} from {country}. Say hello when ready."
 msgstr ""
 
-#: bot/config_handler.py:76
+#: bot/config_handler.py:75
 msgid "Nickname Character Limit"
 msgstr ""
 
@@ -1702,7 +1494,7 @@ msgstr ""
 msgid "Now playing: {title}"
 msgstr ""
 
-#: bot/config_handler.py:87
+#: bot/config_handler.py:86
 msgid "Number of join attempts within the timer window that will trigger a ban."
 msgstr ""
 
@@ -1714,15 +1506,15 @@ msgstr ""
 msgid "Only one account is allowed per person. Our records show an account for your IP."
 msgstr ""
 
-#: bot/config_handler.py:100
+#: bot/config_handler.py:99
 msgid "Optional Integrations"
 msgstr ""
 
-#: bot/config_handler.py:69
+#: bot/config_handler.py:68
 msgid "Optional path to a cookies file (e.g., cookies.txt) for yt-dlp to access private or restricted videos."
 msgstr ""
 
-#: bot/config_handler.py:62 bot/gui.py:53
+#: bot/config_handler.py:61
 msgid "Output Device"
 msgstr ""
 
@@ -1822,11 +1614,7 @@ msgstr ""
 msgid "Queue system is {state}."
 msgstr ""
 
-#: bot/gui.py:44
-msgid "Random Message Interval"
-msgstr ""
-
-#: bot/config_handler.py:58
+#: bot/config_handler.py:57
 msgid "Random Message Interval (minutes)"
 msgstr ""
 
@@ -1862,40 +1650,28 @@ msgstr ""
 msgid "Restarting..."
 msgstr ""
 
-#: bot/gui.py:141
-msgid "Review your configuration settings. Press finish to confirm"
-msgstr ""
-
-#: bot/config_handler.py:241
-msgid "SN TalkBot Configuration"
-msgstr ""
-
-#: bot/config_handler.py:107
+#: bot/config_handler.py:106
 msgid "SSH Allowed IPs"
 msgstr ""
 
-#: bot/config_handler.py:103 bot/gui.py:82
+#: bot/config_handler.py:102
 msgid "SSH Hostname"
 msgstr ""
 
-#: bot/config_handler.py:106 bot/gui.py:85
+#: bot/config_handler.py:105
 msgid "SSH Password"
 msgstr ""
 
-#: bot/config_handler.py:104 bot/gui.py:83
+#: bot/config_handler.py:103
 msgid "SSH Port"
 msgstr ""
 
-#: bot/config_handler.py:105 bot/gui.py:84
+#: bot/config_handler.py:104
 msgid "SSH Username"
 msgstr ""
 
 #: bot/modules/admin.py:271
 msgid "SSH connection error: {e}"
-msgstr ""
-
-#: bot/gui.py:138
-msgid "Save"
 msgstr ""
 
 #: bot/help.py:77
@@ -1938,12 +1714,8 @@ msgstr ""
 msgid "Seek 10 seconds forward."
 msgstr ""
 
-#: bot/config_handler.py:63
+#: bot/config_handler.py:62
 msgid "Seek Step (seconds)"
-msgstr ""
-
-#: bot/gui.py:54
-msgid "Seek step, in seconds: "
 msgstr ""
 
 #: bot/help.py:71
@@ -1962,7 +1734,7 @@ msgstr ""
 msgid "Select the previous search result for the newest queued search item."
 msgstr ""
 
-#: bot/config_handler.py:419
+#: bot/config_handler.py:382
 msgid "Select {type} Device"
 msgstr ""
 
@@ -1970,11 +1742,11 @@ msgstr ""
 msgid "Selection changed to: {title}"
 msgstr ""
 
-#: bot/config_handler.py:66
+#: bot/config_handler.py:65
 msgid "Send Playback Messages to Channel?"
 msgstr ""
 
-#: bot/config_handler.py:57
+#: bot/config_handler.py:56
 msgid "Send Welcome Broadcast?"
 msgstr ""
 
@@ -1994,23 +1766,19 @@ msgstr ""
 msgid "Send a private message to a user."
 msgstr ""
 
-#: bot/config_handler.py:57
+#: bot/config_handler.py:56
 msgid "Send a public welcome message when a user logs in."
 msgstr ""
 
-#: bot/config_handler.py:43 bot/gui.py:22
+#: bot/config_handler.py:42
 msgid "Server Address"
 msgstr ""
 
-#: bot/gui.py:23
-msgid "Server Port"
-msgstr ""
-
-#: bot/config_handler.py:44
+#: bot/config_handler.py:43
 msgid "Server TCP Port"
 msgstr ""
 
-#: bot/config_handler.py:45
+#: bot/config_handler.py:44
 msgid "Server UDP Port"
 msgstr ""
 
@@ -2054,15 +1822,15 @@ msgstr ""
 msgid "Set the voice volume (Microsoft mode only), value from 0.1 to 1.0."
 msgstr ""
 
-#: bot/config_handler.py:46
+#: bot/config_handler.py:45
 msgid "Set to 'yes' if the server requires an encrypted connection."
 msgstr ""
 
-#: bot/config_handler.py:40
+#: bot/config_handler.py:39
 msgid "Setup Language"
 msgstr ""
 
-#: bot/config_handler.py:96
+#: bot/config_handler.py:95
 msgid "Should users with the 'Administrator' user type on the server automatically get bot admin privileges?"
 msgstr ""
 
@@ -2134,14 +1902,6 @@ msgstr ""
 msgid "Sorry, your country information is not available."
 msgstr ""
 
-#: bot/gui.py:49
-msgid "Specify the list of banned or disallowed countries from entering the server. Separated with comma."
-msgstr ""
-
-#: bot/gui.py:48
-msgid "Specify the timer for automatic video deletion after upload. Set it to 0 to disable automatic deleting of uploaded videos."
-msgstr ""
-
 #: bot/modules/tts.py:423
 msgid "Speed is only available in Google TTS mode. For Microsoft, use /rate."
 msgstr ""
@@ -2154,7 +1914,7 @@ msgstr ""
 msgid "Start the account request flow in private messages."
 msgstr ""
 
-#: bot/config_handler.py:56
+#: bot/config_handler.py:55
 msgid "Status Message"
 msgstr ""
 
@@ -2214,10 +1974,6 @@ msgstr ""
 msgid "TTS is currently {state}."
 msgstr ""
 
-#: bot/gui.py:75
-msgid "TTS mode (microsoft/google)"
-msgstr ""
-
 #: bot/modules/tts.py:543
 msgid "TTS mode set to {mode}."
 msgstr ""
@@ -2234,15 +1990,15 @@ msgstr ""
 msgid "Target channel not found."
 msgstr ""
 
-#: bot/config_handler.py:109
+#: bot/config_handler.py:108
 msgid "TeamTalk License (Optional)"
 msgstr ""
 
-#: bot/config_handler.py:42
+#: bot/config_handler.py:41
 msgid "TeamTalk Server Connection"
 msgstr ""
 
-#: bot/config_handler.py:101
+#: bot/config_handler.py:100
 msgid "Telegram Bot Token"
 msgstr ""
 
@@ -2250,27 +2006,27 @@ msgstr ""
 msgid "Thanks. Now send your email address."
 msgstr ""
 
-#: bot/config_handler.py:43
+#: bot/config_handler.py:42
 msgid "The IP address or hostname of the TeamTalk server (e.g., myserver.com)."
 msgstr ""
 
-#: bot/config_handler.py:44
+#: bot/config_handler.py:43
 msgid "The TeamTalk TCP port."
 msgstr ""
 
-#: bot/config_handler.py:45
+#: bot/config_handler.py:44
 msgid "The TeamTalk UDP port. Usually the same as TCP."
 msgstr ""
 
-#: bot/config_handler.py:62
+#: bot/config_handler.py:61
 msgid "The audio device for media playback."
 msgstr ""
 
-#: bot/config_handler.py:61
+#: bot/config_handler.py:60
 msgid "The audio device for voice transmission."
 msgstr ""
 
-#: bot/config_handler.py:52
+#: bot/config_handler.py:51
 msgid "The client name shown in the user info (e.g., 'SN TalkBot v2.3')."
 msgstr ""
 
@@ -2286,19 +2042,19 @@ msgstr ""
 msgid "The detected language ({detected_lang}) is not available in Microsoft Speech, using Google voices."
 msgstr ""
 
-#: bot/config_handler.py:54
+#: bot/config_handler.py:53
 msgid "The full path of the channel the bot should join after login (e.g., '/chatting'). The default is the root channel (/)."
 msgstr ""
 
-#: bot/config_handler.py:85
+#: bot/config_handler.py:84
 msgid "The full path to the channel where jailed users will be moved."
 msgstr ""
 
-#: bot/config_handler.py:65
+#: bot/config_handler.py:64
 msgid "The highest volume users can set (e.g., 100)."
 msgstr ""
 
-#: bot/config_handler.py:64
+#: bot/config_handler.py:63
 msgid "The initial volume for media playback (0-100)."
 msgstr ""
 
@@ -2306,19 +2062,19 @@ msgstr ""
 msgid "The list is empty"
 msgstr ""
 
-#: bot/config_handler.py:51
+#: bot/config_handler.py:50
 msgid "The name the bot will display in the channel."
 msgstr ""
 
-#: bot/config_handler.py:48
+#: bot/config_handler.py:47
 msgid "The password for the bot's account."
 msgstr ""
 
-#: bot/config_handler.py:55
+#: bot/config_handler.py:54
 msgid "The password for the default channel, if required."
 msgstr ""
 
-#: bot/config_handler.py:74
+#: bot/config_handler.py:73
 msgid "The private message sent to a user before they are kicked for having no name."
 msgstr ""
 
@@ -2326,7 +2082,7 @@ msgstr ""
 msgid "The queue is empty."
 msgstr ""
 
-#: bot/config_handler.py:86
+#: bot/config_handler.py:85
 msgid "The time window in seconds to monitor a jailed user for spamming join attempts."
 msgstr ""
 
@@ -2334,7 +2090,7 @@ msgstr ""
 msgid "The unplayed queue has been shuffled."
 msgstr ""
 
-#: bot/config_handler.py:47
+#: bot/config_handler.py:46
 msgid "The username for the bot's account on the server."
 msgstr ""
 
@@ -2354,7 +2110,7 @@ msgstr ""
 msgid "There are {count} users from {country}."
 msgstr ""
 
-#: bot/config_handler.py:53
+#: bot/config_handler.py:52
 msgid "This affects the bot's default icon."
 msgstr ""
 
@@ -2366,11 +2122,7 @@ msgstr ""
 msgid "This email address is already registered."
 msgstr ""
 
-#: bot/gui.py:90
-msgid "This field is only required if 'Custom Username Account' is selected above."
-msgstr ""
-
-#: bot/config_handler.py:278
+#: bot/config_handler.py:241
 msgid "This field is required. Please enter a value."
 msgstr ""
 
@@ -2378,7 +2130,7 @@ msgstr ""
 msgid "This username is already registered."
 msgstr ""
 
-#: bot/config_handler.py:80
+#: bot/config_handler.py:79
 msgid "Time in minutes before a downloaded/uploaded video is automatically deleted from the server channel. Set to 0 to disable."
 msgstr ""
 
@@ -2410,7 +2162,7 @@ msgstr ""
 msgid "Toggle the second stereo/echo audio filter."
 msgstr ""
 
-#: bot/config_handler.py:101
+#: bot/config_handler.py:100
 msgid "Token for your Telegram bot to enable notifications. Leave blank to disable."
 msgstr ""
 
@@ -2450,7 +2202,7 @@ msgstr ""
 msgid "Unknown command. Use /help to see all commands."
 msgstr ""
 
-#: bot/config_handler.py:80
+#: bot/config_handler.py:79
 msgid "Uploaded Video Deletion Timer (minutes)"
 msgstr ""
 
@@ -2586,10 +2338,6 @@ msgstr ""
 msgid "Verification code expired. Please start again."
 msgstr ""
 
-#: bot/gui.py:238
-msgid "Visit the website to Get a weather API key"
-msgstr ""
-
 #: bot/modules/tts.py:418
 msgid "Voice set to {voice_name}."
 msgstr ""
@@ -2598,7 +2346,7 @@ msgstr ""
 msgid "Voice transmission: {state}"
 msgstr ""
 
-#: bot/config_handler.py:68
+#: bot/config_handler.py:67
 msgid "Volume Fading (seconds)"
 msgstr ""
 
@@ -2618,12 +2366,8 @@ msgstr ""
 msgid "Warning: You are trying to get out of jail. If you continue to spam, you will be banned."
 msgstr ""
 
-#: bot/config_handler.py:186
+#: bot/config_handler.py:178
 msgid "Warning: Your config.ini is missing some settings."
-msgstr ""
-
-#: bot/gui.py:67
-msgid "Weather API Key"
 msgstr ""
 
 #: bot/modules/admin.py:627
@@ -2654,7 +2398,7 @@ msgstr ""
 msgid "Welcome in, {nickname}! {country} brings good energy."
 msgstr ""
 
-#: bot/config_handler.py:379
+#: bot/config_handler.py:342
 msgid "Welcome to the SN TalkBot setup wizard!"
 msgstr ""
 
@@ -2746,11 +2490,11 @@ msgstr ""
 msgid "Welcome, {nickname}! {country} is representing today."
 msgstr ""
 
-#: bot/config_handler.py:78
+#: bot/config_handler.py:77
 msgid "What to do when a user uses a word from blacklist.txt in their name or messages."
 msgstr ""
 
-#: bot/config_handler.py:77
+#: bot/config_handler.py:76
 msgid "What to do when a user's nickname exceeds the character limit."
 msgstr ""
 
@@ -2758,7 +2502,7 @@ msgstr ""
 msgid "When a video is playing, load the current video's channel and play its first video."
 msgstr ""
 
-#: bot/config_handler.py:97
+#: bot/config_handler.py:96
 msgid "Which type of accounts should trigger the bot's actions, such as VPN detection, welcome messages, and other actions?"
 msgstr ""
 
@@ -2806,19 +2550,15 @@ msgstr ""
 msgid "You have no pending messages."
 msgstr ""
 
-#: bot/gui.py:482
-msgid "You're all done."
-msgstr ""
-
 #: bot/modules/player.py:679
 msgid "You've reached the end of the list."
 msgstr ""
 
-#: bot/config_handler.py:111
+#: bot/config_handler.py:110
 msgid "Your TeamTalk SDK license key."
 msgstr ""
 
-#: bot/config_handler.py:110
+#: bot/config_handler.py:109
 msgid "Your TeamTalk SDK license name, if you have one."
 msgstr ""
 
@@ -2854,7 +2594,7 @@ msgstr ""
 msgid "subscribed to user messages"
 msgstr ""
 
-#: bot/config_handler.py:102
+#: bot/config_handler.py:101
 msgid "weatherapi.com API Key"
 msgstr ""
 

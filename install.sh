@@ -9,7 +9,7 @@ say() { printf '\n==> %s\n' "$*"; }
 fail() { echo "ERROR: $*" >&2; exit 1; }
 
 if [[ "$(uname -s)" != "Linux" ]]; then
-  fail "install.sh is intended for Linux. Use setup.bat on Windows."
+  fail "SNTalkBot is Linux/Docker only. Run install.sh on Ubuntu/Debian Linux."
 fi
 
 if [[ -r /etc/os-release ]]; then

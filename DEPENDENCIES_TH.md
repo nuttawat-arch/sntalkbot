@@ -125,3 +125,8 @@ python tools/validate_project.py
 ```
 
 `check_environment.py` ตรวจ runtime จริง เช่น Deno, FFmpeg, TeamTalk SDK และโมดูล Python ส่วน `validate_project.py` ตรวจโครง source โดยไม่ต้อง import TeamTalk SDK เช่น syntax, คำสั่งซ้ำ, help, ภาษาไทย และการหลงเหลือระบบหลายโปรไฟล์
+
+
+## GUI / Windows
+
+ไม่มี dependency GUI และไม่ใช้ wxPython โปรเจกต์นี้เป็น Linux/Docker only
