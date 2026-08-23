@@ -521,3 +521,7 @@ sudo ttuhelper update
 ```
 
 คำสั่งนี้ pull image ใหม่และ recreate **เฉพาะ instance ที่กำลังรันอยู่** โดยเก็บ `/opt/sntalkbot-bots/<name>/config.ini`, cookies, favorites, cache และข้อมูล persistent เดิมไว้
+
+## Player TTS และเพลง
+
+Player announcement ใช้ audio stream แยกจากเพลงและ mix กันที่ PulseAudio โดย **ไม่ลด volume, ไม่ pause และไม่ duck เพลง** ขณะพูด TTS ส่วน FIFO queue ทำให้ข้อความ TTS พูดทีละข้อความไม่ซ้อนกันเอง

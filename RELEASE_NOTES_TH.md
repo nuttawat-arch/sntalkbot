@@ -1,3 +1,11 @@
+# Release notes — 2026.08.23-r4
+
+- แก้ Player TTS announcement ไม่ให้ลด/duck/พักเพลงอีกต่อไป
+- TTS announcement ใช้ libmpv แยก stream แล้ว mix กับเพลงผ่าน PulseAudio sink เดียวกัน
+- เพลงรักษา volume เดิมตลอดระหว่างข้อความ “เพิ่มเพลงเข้าคิว”, “กำลังเล่น” และประกาศ Player อื่น ๆ
+- คง FIFO announcement queue จาก r3 เพื่อให้ TTS หลายข้อความไม่พูดซ้อนกันเอง
+- คง Google standard gTTS เป็นค่าเริ่มต้นทั้ง Player และ Manager
+
 # SN TalkBot 2026.08.23-r3 — Google Standard TTS
 
 ## เปลี่ยน TTS หลัก

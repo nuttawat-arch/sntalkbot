@@ -211,17 +211,28 @@ class TTSCog:
                     pass
 
     def _play_local_announcement(self, filepath):
+        """Mix a TTS announcement with music without ducking or pausing playback.
+
+        The announcer uses its own libmpv instance and the same PulseAudio sink as
+        the music player.  TeamTalk captures the sink monitor, so both streams are
+        mixed by PulseAudio.  Never modify ``player.volume`` here: announcements
+        must not make the song quieter, pause it, or restore/fade its volume later.
+        """
         player = getattr(self.bot, "player", None)
-        original_volume = None
         announcer = None
         try:
-            if player is not None and getattr(player, "is_playing", False):
-                original_volume = float(player.volume)
-                player.volume = max(5.0, original_volume * 0.20)
-            announcer = mpv.MPV(vo="null", video=False, keep_open=False)
+            mpv_kwargs = {"vo": "null", "video": False, "keep_open": False}
+            mpv_ao = os.getenv("TTUTIL_MPV_AO", "").strip()
+            if mpv_ao:
+                mpv_kwargs["ao"] = mpv_ao
+            announcer = mpv.MPV(**mpv_kwargs)
+
+            # Reuse an explicitly selected output device when the Player has one.
+            # This changes only the announcer stream; the music stream is untouched.
             output_device = getattr(player, "audio_device", None) if player is not None else None
             if output_device and output_device != "auto":
                 announcer.audio_device = output_device
+
             announcer.play(filepath)
             try:
                 announcer.wait_until_playing()
@@ -238,17 +249,10 @@ class TTSCog:
                     time.sleep(0.05)
         finally:
             if announcer is not None:
-                try: announcer.terminate()
-                except Exception: pass
-            if original_volume is not None and player is not None:
                 try:
-                    start = float(player.volume)
-                    for step in range(1, 11):
-                        player.volume = start + (original_volume - start) * (step / 10.0)
-                        time.sleep(0.04)
+                    announcer.terminate()
                 except Exception:
-                    try: player.volume = original_volume
-                    except Exception: pass
+                    pass
 
     def register(self, command_handler):
         """Registers all the TTS commands with the command handler."""
