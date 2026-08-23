@@ -2858,3 +2858,11 @@ msgstr "{nickname} พูดว่า: {translated}"
 #: bot/modules/player.py:714
 msgid "{nickname} stopped the playback and cleared queue"
 msgstr "{nickname} หยุดเล่นและล้างคิวแล้ว"
+
+#: bot/modules/admin.py
+msgid "Word Filter (all languages): {state}"
+msgstr "ตัวกรองคำทุกภาษา: {state}"
+
+#: bot/help.py
+msgid "Admins only: Enable, disable, or show the master multilingual word filter. OFF disables blacklist/badword checks together; ON enables them together, including channel moderation before channel-input gating."
+msgstr "เฉพาะผู้ดูแล: เปิด ปิด หรือดูสถานะตัวกรองคำทุกภาษาแบบรวม เมื่อ OFF จะปิด blacklist/badword พร้อมกัน เมื่อ ON จะเปิดพร้อมกัน และยังกรอง Channel ก่อน Channel Input"

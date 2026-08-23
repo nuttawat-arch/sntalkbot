@@ -1,3 +1,13 @@
+# SNTalkBot 2026.08.23-r7.4.2
+
+- แก้ regression ของ r7.4.1: คืนคำสั่ง prefix-free ให้ใช้ได้ทั้ง Private และ Channel/Broadcast เช่น `h`, `p เพลง`, `ap on`, `ci off`, `filter on`; `/` เป็นเพียง compatibility และไม่บังคับ
+- ย้ายรายการคำหยาบภาษาไทยเข้า `blacklist.txt` เดียวกับภาษาอังกฤษ/อาหรับและรายการเดิมทั้งหมด โดยคง `badword.txt` ไว้เป็น supplemental compatibility เพื่อไม่รื้อของเก่า
+- ทำ `filter on|off|status` เป็น master switch ของ word moderation: ปิด/เปิด blacklist และ badword พร้อมกัน รวมข้อความ ชื่อผู้ใช้ และชื่อ/หัวข้อ Channel
+- แก้ blacklist matcher ให้รองรับภาษาไทย/Unicode และรูปแบบเว้นวรรค เช่น `ค ว ย` พร้อมป้องกัน false positive คำสั้นอย่าง `หี` ไม่จับ `หีบ`
+- แก้กรณี `files/blacklist.wav` ไม่มีในแพ็กเกจ: เสียงเตือนเป็น optional และไม่สามารถทำให้การเตะ/แบนหยุดด้วย exception ได้อีก
+- คงลำดับ moderation ก่อน `ci` ดังนั้น `ci off` ปิดการตอบสนองปกติใน Channel แต่ไม่ปิดตัวกรองที่เปิดอยู่; ใช้ `filter off` เมื่อต้องการปิดการกรองทั้งหมด
+- สถานะอัตโนมัติกลับเป็นแบบสั้น `พิมพ์ h เพื่อดูคำสั่ง` โดยยังรู้จักสถานะ r7.4.1 เพื่อ migration
+
 # Release 2026.08.23-r7.4.1
 
 - แก้ regression จากชุด r7.4 pre-release: คำสั่งแบบไม่ใส่ `/` ใช้เฉพาะ Private; Channel/Broadcast บังคับ `/` ทุกคำสั่ง เช่น Private `h`, `p เพลง`, `ci off` แต่ในห้องใช้ `/h`, `/p เพลง`, `/ci off`

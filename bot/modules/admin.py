@@ -160,15 +160,17 @@ class AdminCog:
             else:
                 del self.duration_bans[username]
             
-        # 5. Check against blacklist.txt (using the utility loader)
-        blacklist = utils.load_blacklist("blacklist.txt")
-        if any(word in blacklist for word in nickname.lower().split()):
-            if self.bot.bot_config["blacklist_mode"] == 1:
-                self.bot.kick_user(user_id)
-            elif self.bot.bot_config["blacklist_mode"] == 2:
-                self.bot.ban_user(user_id, BanType.BANTYPE_IPADDR)
-                self.bot.kick_user(user_id)
-            return
+        # 5. Check the canonical multilingual blacklist only while the master
+        # word filter is enabled. Thai/English/other languages share this path.
+        if self.bot.profanity_filter_enabled:
+            blacklist = utils.load_blacklist("blacklist.txt")
+            if utils.contains_profanity(nickname, blacklist):
+                if self.bot.bot_config["blacklist_mode"] == 1:
+                    self.bot.kick_user(user_id)
+                elif self.bot.bot_config["blacklist_mode"] == 2:
+                    self.ban_user(user_id, BanType.BANTYPE_IPADDR)
+                    self.bot.kick_user(user_id)
+                return
 
         # 6. Check for "NoName"
         if self.bot.bot_config['prevent_noname']:
@@ -189,20 +191,29 @@ class AdminCog:
             return
 
     def check_message_for_blacklist(self, textmessage: TextMessage):
-        """Checks a text message for blacklisted words and takes action."""
+        """Check the canonical multilingual blacklist and apply its legacy action.
+
+        `filter` is the master switch. Missing blacklist.wav is deliberately
+        non-fatal because release packages have historically not shipped it.
+        """
+        if not self.bot.profanity_filter_enabled:
+            return False
         message_text = ttstr(textmessage.szMessage)
         blacklist = utils.load_blacklist("blacklist.txt")
-        pattern = r"\b(" + "|".join(re.escape(word) for word in blacklist) + r")\b"
-
-        if blacklist and re.search(pattern, message_text, re.IGNORECASE):
-            streamer = teamtalk.VideoCodec()
-            streamer.nCodec = 1
-            self.bot.startStreamingMediaFileToChannel(ttstr(os.path.join("files", "blacklist.wav")), streamer)
+        if blacklist and utils.contains_profanity(message_text, blacklist):
+            audio_path = os.path.join("files", "blacklist.wav")
+            if os.path.exists(audio_path):
+                try:
+                    streamer = teamtalk.VideoCodec()
+                    streamer.nCodec = 1
+                    self.bot.startStreamingMediaFileToChannel(ttstr(audio_path), streamer)
+                except Exception as exc:
+                    print(f"Warning: unable to play blacklist alert audio: {exc}")
 
             if self.bot.bot_config['blacklist_mode'] == 1:
                 self.bot.kick_user(textmessage.nFromUserID)
             elif self.bot.bot_config['blacklist_mode'] == 2:
-                self.bot.ban_user(textmessage.nFromUserID)
+                self.ban_user(textmessage.nFromUserID)
                 self.bot.kick_user(textmessage.nFromUserID)
             return True
         return False
@@ -499,8 +510,33 @@ class AdminCog:
         self.bot.send_broadcast_message(self._("Message from administrators: {message}").format(message=message))
 
     def ban_user(self, user_id, ban_type=BanType.BANTYPE_USERNAME):
-        # (existing code ...)
-        pass
+        """Ban a currently connected user without relying on a placeholder stub.
+
+        Prefer TeamTalk's BannedUser API so username/IP bans apply at server login.
+        Fall back to doBanUserEx/doBanUser for older Python bindings.
+        """
+        user = self.bot.getUser(user_id)
+        if not user:
+            return False
+        try:
+            if hasattr(self.bot, "doBan"):
+                banned = BannedUser()
+                banned.uBanTypes = ban_type
+                if ban_type & BanType.BANTYPE_IPADDR:
+                    banned.szIPAddress = user.szIPAddress
+                if ban_type & BanType.BANTYPE_USERNAME:
+                    banned.szUsername = user.szUsername
+                result = self.bot.doBan(banned)
+                return result != -1
+            if hasattr(self.bot, "doBanUserEx"):
+                result = self.bot.doBanUserEx(user_id, ban_type)
+                return result != -1
+            if hasattr(self.bot, "doBanUser") and (ban_type & BanType.BANTYPE_IPADDR):
+                result = self.bot.doBanUser(user_id, 0)
+                return result != -1
+        except Exception as exc:
+            print(f"Error banning user {user_id}: {exc}")
+        return False
 
     def handle_join_command(self, textmessage, *args):
         if not args:
@@ -585,7 +621,7 @@ class AdminCog:
         if arg == "status":
             self.bot.privateMessage(
                 textmessage.nFromUserID,
-                self._("Profanity Filter: {state}").format(state="ON" if self.bot.profanity_filter_enabled else "OFF"),
+                self._("Word Filter (all languages): {state}").format(state="ON" if self.bot.profanity_filter_enabled else "OFF"),
             )
             return
         if arg == "on":
@@ -600,7 +636,7 @@ class AdminCog:
         self.bot.config_handler.update_bot_settings({"profanity_filter_enabled": self.bot.profanity_filter_enabled})
         self.bot.privateMessage(
             textmessage.nFromUserID,
-            self._("Profanity Filter: {state}").format(state="ON" if self.bot.profanity_filter_enabled else "OFF"),
+            self._("Word Filter (all languages): {state}").format(state="ON" if self.bot.profanity_filter_enabled else "OFF"),
         )
 
     def handle_welcome_toggle_command(self, textmessage, *args):

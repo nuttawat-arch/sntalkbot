@@ -171,7 +171,7 @@ else:
     ok("required usability aliases are present (h rs sd w ap ch pf)")
 
 # Command-dispatch regression test without importing the native TeamTalk SDK.
-def validate_private_slashless_channel_slash_dispatch():
+def validate_prefix_free_dispatch():
     fake = types.ModuleType("TeamTalk5")
     class _MsgType:
         MSGTYPE_USER = 1
@@ -219,7 +219,7 @@ def validate_private_slashless_channel_slash_dispatch():
                 nToUserID=to_user_id, nChannelID=channel_id, szFromUsername="user"
             )
 
-        # Private: fast prefix-free canonical commands and aliases remain supported.
+        # Private prefix-free commands and aliases.
         private = msg("h", _MsgType.MSGTYPE_USER)
         assert handler.channel_input_allowed(private, False) is True
         assert handler.handle_message(private) is True
@@ -230,82 +230,68 @@ def validate_private_slashless_channel_slash_dispatch():
         assert calls[-1] == ("PLAY", "รักเธอนะ")
         assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_USER)) is True
         assert calls[-1] == ("AP", "on")
-        # Invisible Unicode format/control characters around a private short command
-        # must not prevent matching when they come from a TeamTalk edit control.
         assert handler.handle_message(msg("\u200bh\ufeff", _MsgType.MSGTYPE_USER)) is True
         assert calls[-1] == ("HELP",)
-        # Slash-prefixed input also remains accepted privately for compatibility.
+        # Slash remains optional compatibility input.
         assert handler.handle_message(msg("/ap off", _MsgType.MSGTYPE_USER)) is True
         assert calls[-1] == ("AP", "off")
 
-        # Runtime TeamTalk wrapper regression: explicit USER/CUSTOM stays private
-        # even if a wrapper reports an unexpected non-zero nChannelID.
+        # Explicit USER/CUSTOM stays private even with an odd non-zero channel id.
         odd_private = msg("h", _MsgType.MSGTYPE_USER, to_user_id=0, channel_id=7)
         assert handler.is_channel_message(odd_private) is False
         assert handler.channel_input_allowed(odd_private, False) is True
         assert handler.handle_message(odd_private) is True
         assert calls[-1] == ("HELP",)
 
-        # Channel input ON does NOT make prefix-free chat a command. Every channel
-        # and broadcast command must start with '/'.
+        # Channel/Broadcast: exactly the same prefix-free command syntax works
+        # when Channel Input is ON. Slash form also remains accepted.
         channel = msg("h", _MsgType.MSGTYPE_CHANNEL)
         assert handler.is_channel_message(channel) is True
         assert handler.channel_input_allowed(channel, True) is True
-        before = list(calls)
-        assert handler.handle_message(channel) is False
-        assert handler.handle_message(msg("s", _MsgType.MSGTYPE_CHANNEL)) is False
-        assert handler.handle_message(msg("p รักเธอนะ", _MsgType.MSGTYPE_CHANNEL)) is False
-        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_CHANNEL)) is False
-        assert handler.handle_message(msg("h", _MsgType.MSGTYPE_BROADCAST)) is False
-        assert calls == before
+        assert handler.handle_message(channel) is True
+        assert calls[-1] == ("HELP",)
+        assert handler.handle_message(msg("s", _MsgType.MSGTYPE_CHANNEL)) is True
+        assert calls[-1] == ("STOP",)
+        assert handler.handle_message(msg("p รักเธอนะ", _MsgType.MSGTYPE_CHANNEL)) is True
+        assert calls[-1] == ("PLAY", "รักเธอนะ")
+        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_CHANNEL)) is True
+        assert calls[-1] == ("AP", "on")
+        assert handler.handle_message(msg("h", _MsgType.MSGTYPE_BROADCAST)) is True
+        assert calls[-1] == ("HELP",)
         assert handler.handle_message(msg("/h", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls[-1] == ("HELP",)
         assert handler.handle_message(msg("\u200b/\ufeffh", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls[-1] == ("HELP",)
-        assert handler.handle_message(msg("/s", _MsgType.MSGTYPE_CHANNEL)) is True
-        assert calls[-1] == ("STOP",)
-        assert handler.handle_message(msg("/p รักเธอนะ", _MsgType.MSGTYPE_CHANNEL)) is True
-        assert calls[-1] == ("PLAY", "รักเธอนะ")
-        assert handler.handle_message(msg("/ap on", _MsgType.MSGTYPE_CHANNEL)) is True
-        assert calls[-1] == ("AP", "on")
-        assert handler.handle_message(msg("/h", _MsgType.MSGTYPE_BROADCAST)) is True
-        assert calls[-1] == ("HELP",)
 
-        # Channel input OFF: callback gate rejects all channel text, including slash
-        # commands. Private control remains available so an admin can send `ci on`.
+        # Channel Input OFF gates all normal channel text; Private remains usable.
         assert handler.channel_input_allowed(channel, False) is False
         assert handler.channel_input_allowed(msg("/h", _MsgType.MSGTYPE_CHANNEL), False) is False
         assert handler.channel_input_allowed(private, False) is True
 
-        # Wrapper variants: unknown message type + non-zero nChannelID is channel.
         class _Scalar:
             def __init__(self, value): self.value = value
         opaque_channel = msg("h", _Scalar(999), to_user_id=0, channel_id=_Scalar(7))
         assert handler.is_channel_message(opaque_channel) is True
         assert handler.channel_input_allowed(opaque_channel, False) is False
-        before = list(calls)
-        assert handler.handle_message(opaque_channel) is False
-        assert calls == before
-        opaque_channel.szMessage = "/h"
         assert handler.handle_message(opaque_channel) is True
         assert calls[-1] == ("HELP",)
 
-        # Unknown plain chat is never consumed as a command in either context.
+        # Unknown ordinary chat is never consumed.
         before = list(calls)
         assert handler.handle_message(msg("hello there", _MsgType.MSGTYPE_USER)) is False
         assert handler.handle_message(msg("hello there", _MsgType.MSGTYPE_CHANNEL)) is False
         assert calls == before
 
-        # Blocking the canonical command blocks its alias in every valid context.
+        # Canonical blocking also blocks aliases in every context.
         bot.blocked_commands = {"autoplay"}
         before = list(calls)
         assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_USER)) is True
+        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_CHANNEL)) is True
         assert handler.handle_message(msg("/ap on", _MsgType.MSGTYPE_CHANNEL)) is True
-        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_CHANNEL)) is False
         assert calls == before
         return True
     except Exception as exc:
-        fail(f"private/channel command-dispatch regression: {exc}")
+        fail(f"prefix-free private/channel command-dispatch regression: {exc!r}")
         return False
     finally:
         if previous is None:
@@ -313,13 +299,12 @@ def validate_private_slashless_channel_slash_dispatch():
         else:
             sys.modules["TeamTalk5"] = previous
 
-if validate_private_slashless_channel_slash_dispatch():
-    ok("private commands are prefix-free; channel/broadcast commands require slash; channel-input OFF still rejects channel text")
+if validate_prefix_free_dispatch():
+    ok("prefix-free commands work in private + channel/broadcast; slash is optional compatibility; channel-input OFF still rejects channel text")
 
-# Moderation must stay alive even when Channel Input is disabled. The intended
-# order is: profanity/blacklist -> Channel Input gate -> command dispatch ->
-# account/TTS/player/translator helpers. This lets `ci off` silence bot reactions
-# without blinding moderation to channel text the bot receives.
+# Moderation must stay alive even when Channel Input is disabled, but `filter`
+# is the single master switch for all word-list checks. The intended order is:
+# master-filter moderation -> Channel Input gate -> command dispatch -> helpers.
 sntalkbot_source = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
 config_source = (ROOT / "bot" / "config_handler.py").read_text(encoding="utf-8")
 general_source = (ROOT / "bot" / "modules" / "general.py").read_text(encoding="utf-8")
@@ -328,15 +313,25 @@ admin_source = (ROOT / "bot" / "modules" / "admin.py").read_text(encoding="utf-8
 if "channel_input_enabled" not in config_source or "channel_input_allowed(" not in sntalkbot_source:
     fail("persistent channel-input gate is missing")
 else:
-    profanity_pos = sntalkbot_source.find("# Moderation is intentionally independent")
+    moderation_pos = sntalkbot_source.find("# Word moderation is intentionally independent")
     blacklist_pos = sntalkbot_source.find("check_message_for_blacklist(textmessage)")
     gate_pos = sntalkbot_source.find("channel_input_allowed(")
     dispatch_pos = sntalkbot_source.find("if self.command_handler.handle_message(textmessage):")
     account_pos = sntalkbot_source.find("self.account_request_cog.handle_message(textmessage)")
-    if min(profanity_pos, blacklist_pos, gate_pos, dispatch_pos, account_pos) < 0 or not (profanity_pos < blacklist_pos < gate_pos < dispatch_pos < account_pos):
-        fail("text callback order must be moderation -> channel gate -> command -> helper workflows")
+    if min(moderation_pos, blacklist_pos, gate_pos, dispatch_pos, account_pos) < 0 or not (moderation_pos < blacklist_pos < gate_pos < dispatch_pos < account_pos):
+        fail("text callback order must be master-filter moderation -> channel gate -> command -> helper workflows")
     else:
-        ok("moderation runs before channel-input gating; ci off cannot disable profanity/blacklist checks")
+        ok("word moderation runs before channel-input gating; ci off cannot blind an enabled filter")
+
+# `filter` must gate every word-list path, including legacy blacklist checks.
+if "if not self.bot.profanity_filter_enabled:" not in admin_source:
+    fail("message blacklist path is not gated by the filter master switch")
+elif "if self.bot.profanity_filter_enabled:" not in admin_source:
+    fail("nickname blacklist path is not gated by the filter master switch")
+elif "not self.profanity_filter_enabled" not in sntalkbot_source:
+    fail("channel-name blacklist path is not gated by the filter master switch")
+else:
+    ok("filter on/off is the master switch for message, nickname, and channel-name word filtering")
 
 alias_source = (ROOT / "bot" / "command_aliases.py").read_text(encoding="utf-8")
 if "register_command('channelinput'" not in general_source or '"ci": "channelinput"' not in alias_source:
@@ -354,18 +349,21 @@ if 'value not in ("on", "off")' not in player_source or '"send_channel_messages"
 else:
     ok("cm supports on/off/status while preserving playback channel-message persistence")
 
-# Thai profanity regression: required words, common joined/spaced forms and one
-# known false-positive guard for the short word หี inside the normal word หีบ.
-def validate_thai_profanity():
+# Canonical multilingual blacklist regression. Thai must live in the same file
+# as the preserved legacy English/Arabic entries, while badword.txt remains as a
+# backward-compatible supplemental file.
+def validate_multilingual_blacklist():
+    blacklist_path = ROOT / "blacklist.txt"
     badword_path = ROOT / "badword.txt"
-    if not badword_path.exists():
-        fail("badword.txt is missing")
+    if not blacklist_path.exists() or not badword_path.exists():
+        fail("blacklist.txt or compatibility badword.txt is missing")
         return False
-    bad_words = [line.strip().lower() for line in badword_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    required = {"ควย", "หี", "เย็ด", "ไอเหี้ย", "ไอสัส", "สัส", "เหี้ย"}
-    missing = sorted(required - set(bad_words))
+    words = [line.strip().lower() for line in blacklist_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    required_th = {"ควย", "หี", "เย็ด", "ไอเหี้ย", "ไอสัส", "สัส", "เหี้ย"}
+    required_legacy = {"fuck", "shit", "bitch", "dick", "fucker", "asshole", "متناك", "كس"}
+    missing = sorted((required_th | required_legacy) - set(words))
     if missing:
-        fail("Thai profanity list is missing required coverage: " + ", ".join(missing))
+        fail("canonical multilingual blacklist is missing required legacy/Thai coverage: " + ", ".join(missing))
         return False
     spec = importlib.util.spec_from_file_location("validate_bot_utils", ROOT / "bot" / "utils.py")
     module = importlib.util.module_from_spec(spec)
@@ -377,17 +375,146 @@ def validate_thai_profanity():
         "เย็ดแม่": True,
         "หี": True,
         "หีบใบนี้ใหญ่": False,
+        "fuck": True,
+        "what the fuck": True,
+        "class assignment": False,
+        "password reset": False,
         "สวัสดีครับ": False,
     }
     for text, expected in cases.items():
-        actual = module.BotUtils.contains_profanity(text, bad_words)
+        actual = module.BotUtils.contains_profanity(text, words)
         if actual is not expected:
-            fail(f"Thai profanity matcher failed for {text!r}: expected {expected}, got {actual}")
+            fail(f"multilingual blacklist matcher failed for {text!r}: expected {expected}, got {actual}")
             return False
     return True
 
-if validate_thai_profanity():
-    ok("Thai profanity list/matcher covers requested terms, spaced forms, and short-word false positives")
+if validate_multilingual_blacklist():
+    ok("canonical blacklist.txt preserves legacy languages and includes Thai with obfuscation/false-positive protection")
+
+# Missing optional blacklist.wav must never block the moderation action.
+if 'if os.path.exists(audio_path):' not in admin_source or 'unable to play blacklist alert audio' not in admin_source:
+    fail("missing blacklist.wav is not handled safely")
+else:
+    ok("missing optional blacklist.wav cannot abort blacklist enforcement")
+
+# Historical Manager regression: AdminCog.ban_user was a pass-only stub and some
+# blacklist paths incorrectly called self.bot.ban_user. Both make blacklist_mode=2 fail.
+if "# (existing code ...)" in admin_source or "self.bot.ban_user(" in admin_source:
+    fail("blacklist/Manager ban path still contains the legacy placeholder or wrong target")
+elif "self.bot.doBan(" not in admin_source or "BannedUser()" not in admin_source:
+    fail("AdminCog.ban_user does not implement a real TeamTalk ban operation")
+else:
+    ok("blacklist_mode=2 uses a real AdminCog ban path instead of the legacy pass-only stub")
+
+
+def validate_runtime_word_filter_paths():
+    """Exercise filter OFF/ON, Thai/English matching, and kick/ban without TeamTalk."""
+    fake = types.ModuleType("TeamTalk5")
+    class _BanType:
+        BANTYPE_NONE = 0
+        BANTYPE_CHANNEL = 1
+        BANTYPE_IPADDR = 2
+        BANTYPE_USERNAME = 4
+    class _BannedUser:
+        def __init__(self):
+            self.szIPAddress = ""
+            self.szUsername = ""
+            self.uBanTypes = 0
+    class _UserType:
+        USERTYPE_ADMIN = 2
+    class _TextMsgType:
+        MSGTYPE_USER = 1
+        MSGTYPE_CHANNEL = 2
+        MSGTYPE_BROADCAST = 3
+        MSGTYPE_CUSTOM = 4
+    fake.BanType = _BanType
+    fake.BannedUser = _BannedUser
+    fake.UserAccount = object
+    fake.UserType = _UserType
+    fake.TextMsgType = _TextMsgType
+    fake.TextMessage = object
+    fake.VideoCodec = type("VideoCodec", (), {"__init__": lambda self: setattr(self, "nCodec", 0)})
+    fake.ttstr = lambda value: str(value)
+    previous = sys.modules.get("TeamTalk5")
+    previous_paramiko = sys.modules.get("paramiko")
+    previous_admin = sys.modules.pop("_sntalkbot_admin_filter_test", None)
+    root_str = str(ROOT)
+    added_root = root_str not in sys.path
+    if added_root:
+        sys.path.insert(0, root_str)
+    sys.modules["TeamTalk5"] = fake
+    if previous_paramiko is None:
+        sys.modules["paramiko"] = types.ModuleType("paramiko")
+    try:
+        spec = importlib.util.spec_from_file_location("_sntalkbot_admin_filter_test", ROOT / "bot" / "modules" / "admin.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        class FakeUser:
+            szIPAddress = "203.0.113.9"
+            szUsername = "tester"
+        class _ConfigHandler:
+            def __init__(self): self.updates = []
+            def update_bot_settings(self, values): self.updates.append(dict(values))
+        class Bot:
+            profanity_filter_enabled = False
+            bot_config = {"blacklist_mode": 1}
+            def __init__(self):
+                self.kicked=[]; self.bans=[]; self.private=[]; self.config_handler=_ConfigHandler()
+            def _(self, text): return text
+            def getUser(self, uid): return FakeUser()
+            def kick_user(self, uid): self.kicked.append(uid)
+            def privateMessage(self, uid, text): self.private.append((uid, str(text)))
+            def doBan(self, banned): self.bans.append((banned.uBanTypes, str(banned.szIPAddress), str(banned.szUsername))); return 1
+        bot=Bot(); cog=module.AdminCog(bot)
+        def msg(text): return types.SimpleNamespace(szMessage=text, nFromUserID=7)
+
+        # Exercise the real filter command handler, including persistence.
+        cog.handle_filter_toggle_command(msg("filter on"), "on")
+        assert bot.profanity_filter_enabled is True, "filter on handler did not enable master filter"
+        assert bot.config_handler.updates[-1] == {"profanity_filter_enabled": True}, "filter on was not persisted"
+        cog.handle_filter_toggle_command(msg("filter off"), "off")
+        assert bot.profanity_filter_enabled is False, "filter off handler did not disable master filter"
+        assert bot.config_handler.updates[-1] == {"profanity_filter_enabled": False}, "filter off was not persisted"
+
+        # Master OFF means no blacklist action at all.
+        assert cog.check_message_for_blacklist(msg("fuck ไอเหี้ย")) is False, "filter OFF still enforced"
+        assert bot.kicked == [], f"filter OFF kicked {bot.kicked!r}"
+
+        # Master ON: Thai and English canonical entries enforce; false positives do not.
+        bot.profanity_filter_enabled=True
+        assert cog.check_message_for_blacklist(msg("class assignment password")) is False, "English false positive"
+        assert cog.check_message_for_blacklist(msg("หีบใบนี้ใหญ่")) is False, "Thai short-word false positive"
+        assert cog.check_message_for_blacklist(msg("fuck")) is True, "English blacklist not enforced"
+        assert bot.kicked == [7], f"expected kick [7], got {bot.kicked!r}"
+        bot.kicked.clear()
+        assert cog.check_message_for_blacklist(msg("ค ว ย")) is True, "spaced Thai blacklist not enforced"
+        assert bot.kicked == [7], f"expected kick [7], got {bot.kicked!r}"
+
+        # Ban mode calls the real AdminCog ban implementation then kicks.
+        bot.kicked.clear(); bot.bot_config["blacklist_mode"] = 2
+        assert cog.check_message_for_blacklist(msg("ไอเหี้ย")) is True, "Thai ban-mode blacklist not enforced"
+        assert bot.bans and bot.bans[-1][0] == _BanType.BANTYPE_USERNAME, f"expected username ban, got {bot.bans!r}"
+        assert bot.kicked == [7], f"expected kick [7], got {bot.kicked!r}"
+        return True
+    except Exception as exc:
+        fail(f"runtime word-filter regression: {exc!r}")
+        return False
+    finally:
+        if previous is None:
+            sys.modules.pop("TeamTalk5", None)
+        else:
+            sys.modules["TeamTalk5"] = previous
+        if previous_admin is not None:
+            sys.modules["_sntalkbot_admin_filter_test"] = previous_admin
+        if previous_paramiko is None:
+            sys.modules.pop("paramiko", None)
+        else:
+            sys.modules["paramiko"] = previous_paramiko
+        if added_root and root_str in sys.path:
+            sys.path.remove(root_str)
+
+if validate_runtime_word_filter_paths():
+    ok("runtime filter command ON/OFF persistence, Thai/English matching, false-positive guards, kick, and ban paths work")
 
 # About must expose the public developer contact requested for the project.
 required_about = ["nuttawat", "SN Family", "nutblind2545t@gmail.com", "0637457797"]
@@ -517,7 +644,7 @@ help_duplicates = sorted({x for x in help_names if help_names.count(x) > 1})
 if help_duplicates:
     fail("duplicate help commands: " + ", ".join(help_duplicates))
 else:
-    ok(f"all compact private-help syntaxes are prefix-free and unique ({len(help_names)})")
+    ok(f"all help syntaxes are prefix-free and unique ({len(help_names)})")
 
 missing_help = sorted(set(names) - set(help_names))
 extra_help = sorted(set(help_names) - set(names))
@@ -530,8 +657,8 @@ if extra_help:
 else:
     ok("help contains no stale command entries")
 
-# The shipped Thai command reference mirrors runtime help output. Keep every
-# command on one TeamTalk private-message line (the bot splits at 480 UTF-8 bytes).
+# The shipped Thai command reference mirrors runtime help output. Commands are
+# prefix-free in both Private and Channel; keep each line within TeamTalk limits.
 commands_th = ROOT / "COMMANDS_TH.md"
 th_lines = [
     line for line in commands_th.read_text(encoding="utf-8").splitlines()
@@ -541,7 +668,7 @@ th_names = [line.split(" : ", 1)[0].split()[0].lstrip("/").lower() for line in t
 if any(line.startswith("/") for line in th_lines):
     fail("COMMANDS_TH.md contains slash-prefixed command syntax")
 else:
-    ok("COMMANDS_TH.md presents compact private syntax; channel slash rule is documented separately")
+    ok("COMMANDS_TH.md presents prefix-free syntax for both private and channel use")
 if len(th_lines) != len(names) or set(th_names) != set(names):
     fail("COMMANDS_TH.md does not exactly match registered commands")
 else:
@@ -553,7 +680,7 @@ slash_help_tokens = re.findall(r"['\"]/[A-Za-z0-9+.,_-]", help_source)
 if slash_help_tokens:
     fail("help.py still advertises slash-prefixed command syntax")
 else:
-    ok("runtime help keeps compact private syntax; channel slash rule is enforced by dispatch")
+    ok("runtime help advertises prefix-free commands for both private and channel use")
 missing_alias_docs = sorted(alias for alias in aliases if not re.search(rf"(?:คำสั่งย่อ|Short aliases):[^\n]*\b{re.escape(alias)}\b", commands_th_text))
 if missing_alias_docs:
     fail("COMMANDS_TH.md is missing short-alias documentation: " + ", ".join(missing_alias_docs))
@@ -664,9 +791,9 @@ spec = importlib.util.spec_from_file_location("sntalkbot_bot_identity", identity
 identity = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(identity)
 status_cases = {
-    (True, False): "Player Bot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
-    (False, True): "Server Manager Bot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
-    (True, True): "Full Bot (Player + Server Manager) | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
+    (True, False): "Player Bot | พิมพ์ h เพื่อดูคำสั่ง",
+    (False, True): "Server Manager Bot | พิมพ์ h เพื่อดูคำสั่ง",
+    (True, True): "Full Bot (Player + Server Manager) | พิมพ์ h เพื่อดูคำสั่ง",
 }
 for flags, expected in status_cases.items():
     actual = identity.role_status_message(*flags)

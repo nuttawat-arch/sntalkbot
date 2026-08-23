@@ -529,10 +529,20 @@ class SNTalkBot(TeamTalk):
         sender_user = self.getUser(from_uid)
         from_nickname = ttstr(sender_user.szNickname) if sender_user else "Unknown"
 
-        # Moderation is intentionally independent from Channel Input. Turning
-        # `ci off` silences normal channel features but must never blind the
-        # profanity/blacklist protections to channel text the bot receives.
+        # Word moderation is intentionally independent from Channel Input. The
+        # `filter` switch is the single master ON/OFF control for every word-list
+        # check (canonical blacklist plus legacy supplemental badword warnings).
+        # Therefore `ci off` silences normal channel features without blinding an
+        # enabled filter, while `filter off` disables all word filtering at once.
         if self.server_management_enabled and self.profanity_filter_enabled and from_uid != self.getMyUserID():
+            # Canonical blacklist.txt contains English, Arabic, Thai, and any other
+            # configured languages. Preserve its historical kick/ban action first.
+            if self.admin_cog is not None and self.admin_cog.check_message_for_blacklist(textmessage):
+                return
+
+            # Keep badword.txt as a backward-compatible supplemental warning list.
+            # Shipped Thai entries are also in blacklist.txt now, so they follow the
+            # same canonical path as English/other-language entries.
             if utils.contains_profanity(message_text, self.bad_words):
                 self.user_warnings[from_uid] = self.user_warnings.get(from_uid, 0) + 1
                 count = self.user_warnings[from_uid]
@@ -544,9 +554,6 @@ class SNTalkBot(TeamTalk):
                     self.privateMessage(from_uid, f"กรุณาอย่าพิมพ์คำหยาบนะครับ เตือนครั้งที่ {count}/3")
                 return
 
-        if self.admin_cog is not None and self.admin_cog.check_message_for_blacklist(textmessage):
-            return
-
         # Channel Input controls normal reactions only. Moderation above has
         # already inspected the message. Private input is never blocked here.
         if not self.command_handler.channel_input_allowed(
@@ -554,8 +561,8 @@ class SNTalkBot(TeamTalk):
         ):
             return
 
-        # Private messages keep TTMediaBot-style prefix-free commands. Channel
-        # and broadcast commands require '/' so ordinary short chat stays untouched.
+        # TTMediaBot-style prefix-free commands work in both private and channel
+        # text. `ci off` is the explicit safety switch for normal channel reactions.
         if self.command_handler.handle_message(textmessage):
             return
 
@@ -593,14 +600,14 @@ class SNTalkBot(TeamTalk):
         pass
 
     def onCmdChannelNew(self, channel: Channel):
-        if not self.server_management_enabled:
+        if not self.server_management_enabled or not self.profanity_filter_enabled:
             return
         blacklist = utils.load_blacklist("blacklist.txt")
         if not blacklist:
             return
-        channel_name = ttstr(channel.szName).lower()
-        channel_topic = ttstr(channel.szTopic).lower()
-        if any(word for word in blacklist if word and (word in channel_name or word in channel_topic)):
+        channel_name = ttstr(channel.szName)
+        channel_topic = ttstr(channel.szTopic)
+        if utils.contains_profanity(f"{channel_name} {channel_topic}", blacklist):
             self.doRemoveChannel(channel.nChannelID)
             return
 

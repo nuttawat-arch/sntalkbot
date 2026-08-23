@@ -113,7 +113,7 @@ class HelpCommands:
             'bot <message>': self._('Admins only: Send a bot broadcast message according to the configured broadcast scope.'),
             'sbot <message>': self._('Admins only: Send a server broadcast message.'),
             'superbot <message>': self._('Admins only: Send a host/global broadcast message when supported.'),
-            'filter on|off|status': self._('Admins only: Enable, disable, or show the profanity warning filter. It continues moderating channel text even when channel input is off.'),
+            'filter on|off|status': self._('Admins only: Enable, disable, or show the master multilingual word filter. OFF disables blacklist/badword checks together; ON enables them together, including channel moderation before channel-input gating.'),
             'welcome': self._('Admins only: Toggle the static channel-join welcome message.'),
             'welcomebroadcast [on|off|status]': self._('Admins only: Enable, disable, or show the randomized public login welcome broadcast. The setting is saved to config.ini.'),
             'vpn': self._('Admins only: Toggle VPN/proxy detection.'),
@@ -158,8 +158,8 @@ class HelpCommands:
             description = self._("No help text is available for this command.")
         if admin_only and "admin" not in description.lower() and "ผู้ดูแล" not in description:
             description = self._("Admins only") + ". " + description
-        # Help shows the compact private-message syntax. The same command in a
-        # TeamTalk channel/broadcast must be prefixed with '/'.
+        # Help shows the canonical prefix-free syntax used in both Private and
+        # Channel/Broadcast. A leading '/' is accepted only for compatibility.
         for known_name in self._by_name:
             description = description.replace("/" + known_name, known_name)
         aliases = list(aliases or [])

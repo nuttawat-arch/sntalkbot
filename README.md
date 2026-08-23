@@ -3,7 +3,7 @@
 > **r7.3.1:** Existing Docker configs automatically receive new optional defaults; detached containers no longer fall into the interactive setup wizard during upgrades.
 
 
-Registered commands are prefix-free in private messages (for example `h`, `p song`, `ap on`). Channel and broadcast commands require a leading `/` (for example `/h`, `/p song`, `/ap on`) so ordinary chat is never captured as a short command. Admins can disable normal channel-text reactions with `ci off` privately or `/ci off` in a channel; moderation remains active, and `cm on|off|status` independently controls Player announcements sent to the channel.
+Registered commands are prefix-free in both private and channel/broadcast messages (for example `h`, `p song`, `ap on`). A leading `/` remains accepted only for backward compatibility. Admins can disable normal channel-text reactions with `ci off`; an enabled `filter` still moderates received text before the channel-input gate, and `cm on|off|status` independently controls Player announcements sent to the channel.
 
 
 > **Platform:** Linux/Docker only. Windows GUI support has been removed intentionally.

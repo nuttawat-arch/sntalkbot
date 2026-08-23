@@ -25,7 +25,7 @@ class BotUtils:
     """
     A class for standalone utility functions used by the bot.
     """
-    VERSION = "2026.08.23-r7.4"
+    VERSION = "2026.08.23-r7.4.2"
 
     @staticmethod
     def load_messages(filename="messages.txt"):
@@ -53,27 +53,42 @@ class BotUtils:
 
     @staticmethod
     def contains_profanity(message_text, bad_words):
-        """Match configured profanity, including spaced/obfuscated Thai forms.
+        """Match a multilingual moderation list without common false positives.
 
-        Very short Thai entries are token-only to reduce false positives such as
-        matching "หี" inside the innocent word "หีบ".
+        Thai entries support joined/spaced obfuscation (for example ``ค ว ย``)
+        because Thai normally has no spaces between words. Very short Thai terms
+        are token-only so ``หี`` does not match ``หีบ``. Non-Thai entries use
+        Unicode word boundaries, preventing short English entries such as ``ass``
+        from matching innocent words such as ``class`` or ``password``.
         """
         normalized = BotUtils.normalize_moderation_text(message_text)
         if not normalized:
             return False
-        compact = re.sub(r"[^\w\u0E00-\u0E7F]+", "", normalized, flags=re.UNICODE)
-        tokens = [token for token in re.split(r"[\s,.;:!?/\\|()\[\]{}<>\"'`~@#$%^&*+=_-]+", normalized) if token]
+        token_pattern = r"""[\s,.;:!?/\\|()\[\]{}<>"'`~@#$%^&*+=_-]+"""
+        thai_tokens = [token for token in re.split(token_pattern, normalized) if token]
+        compact_thai_text = re.sub(r"[^\w\u0E00-\u0E7F]+", "", normalized, flags=re.UNICODE)
         for word in bad_words or []:
             bad = BotUtils.normalize_moderation_text(word)
             if not bad:
                 continue
-            compact_bad = re.sub(r"[^\w\u0E00-\u0E7F]+", "", bad, flags=re.UNICODE)
-            if not compact_bad:
-                continue
-            if len(compact_bad) <= 2:
-                if bad in tokens:
+            has_thai = bool(re.search(r"[\u0E00-\u0E7F]", bad))
+            if has_thai:
+                compact_bad = re.sub(r"[^\w\u0E00-\u0E7F]+", "", bad, flags=re.UNICODE)
+                if not compact_bad:
+                    continue
+                if len(compact_bad) <= 2:
+                    if bad in thai_tokens:
+                        return True
+                elif compact_bad in compact_thai_text:
                     return True
-            elif compact_bad in compact:
+                continue
+
+            pieces = [re.escape(part) for part in bad.split() if part]
+            if not pieces:
+                continue
+            phrase = r"\s+".join(pieces)
+            pattern = rf"(?<!\w){phrase}(?!\w)"
+            if re.search(pattern, normalized, re.IGNORECASE | re.UNICODE):
                 return True
         return False
 

@@ -24,8 +24,8 @@ class CommandHandler:
         return "".join(ch for ch in text if unicodedata.category(ch) not in {"Cf", "Cc"})
 
     def _normalize(self, name):
-        # Canonical command names never include a prefix. Private messages may use
-        # prefix-free commands, while channel/broadcast messages require '/'.
+        # Canonical command names never include a prefix. Commands are prefix-free
+        # in both private and channel/broadcast text; '/' remains optional legacy input.
         value = self._strip_format_chars(name).strip()
         if value.startswith("/"):
             value = value[1:]
@@ -105,29 +105,20 @@ class CommandHandler:
         return bool(enabled) or not self.is_channel_message(textmessage)
 
     def _command_parts(self, message_text, textmessage=None):
-        """Parse a command while keeping channel chat safe.
+        """Parse registered commands prefix-free in both private and channel text.
 
-        Private USER/CUSTOM messages may use the fast prefix-free syntax used by
-        TTMediaBot (for example ``h`` or ``p song``). Channel and broadcast text
-        must start with ``/`` so short commands cannot hijack ordinary chat.
+        This intentionally follows the working r7.3/r7.4 TTMediaBot-style path:
+        every incoming message is tried directly against the canonical command/
+        alias table. Unknown ordinary chat falls through untouched. A single
+        leading slash is still accepted for backward compatibility, but it is
+        never required in either private or channel/broadcast messages.
         """
         text = unicodedata.normalize("NFKC", ttstr(message_text or "")).strip()
         while text and unicodedata.category(text[0]) in {"Cf", "Cc"}:
             text = text[1:].lstrip()
         if not text:
             return None, []
-
-        explicit_prefix = text.startswith("/")
-        if explicit_prefix:
-            command_text = text[1:].lstrip()
-        else:
-            if textmessage is not None and self.is_channel_message(textmessage):
-                return None, []
-            command_text = text
-
-        if not command_text:
-            return None, []
-        parts = self._split_message(command_text)
+        parts = self._split_message(text)
         if not parts:
             return None, []
         requested_name = self._normalize(parts[0])
