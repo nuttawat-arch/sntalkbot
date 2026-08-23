@@ -174,6 +174,7 @@ def validate_slashless_dispatch():
         MSGTYPE_USER = 1
         MSGTYPE_CHANNEL = 2
         MSGTYPE_BROADCAST = 3
+        MSGTYPE_CUSTOM = 4
     class _UserType:
         USERTYPE_ADMIN = 2
     fake.TextMessage = object
@@ -199,30 +200,38 @@ def validate_slashless_dispatch():
         handler = module.CommandHandler(bot)
         handler.register_command("help", lambda msg, *args: calls.append(("HELP",) + tuple(args)))
         handler.register_alias("h", "help")
-        handler.register_command("autoplay", lambda msg, *args: calls.append(tuple(args)))
+        handler.register_command("autoplay", lambda msg, *args: calls.append(("AP",) + tuple(args)))
         handler.register_alias("ap", "autoplay")
+        handler.register_command("s", lambda msg, *args: calls.append(("STOP",) + tuple(args)))
+        handler.register_command("p", lambda msg, *args: calls.append(("PLAY",) + tuple(args)))
 
         def msg(text, msg_type):
             return types.SimpleNamespace(szMessage=text, nMsgType=msg_type, nFromUserID=10, szFromUsername="user")
 
         assert handler.handle_message(msg("h", _MsgType.MSGTYPE_USER)) is True
         assert calls[-1] == ("HELP",)
+        assert handler.handle_message(msg("h", _MsgType.MSGTYPE_CUSTOM)) is True
+        assert calls[-1] == ("HELP",)
+        assert handler.handle_message(msg("s", _MsgType.MSGTYPE_CUSTOM)) is True
+        assert calls[-1] == ("STOP",)
+        assert handler.handle_message(msg("p รักเธอนะ", _MsgType.MSGTYPE_CUSTOM)) is True
+        assert calls[-1] == ("PLAY", "รักเธอนะ")
         before = list(calls)
         assert handler.handle_message(msg("h", _MsgType.MSGTYPE_CHANNEL)) is False
         assert calls == before
         assert handler.handle_message(msg("/h", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls[-1] == ("HELP",)
         assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_USER)) is True
-        assert calls[-1] == ("on",)
-        assert handler.handle_message(msg("ap off", _MsgType.MSGTYPE_USER)) is True
-        assert calls[-1] == ("off",)
+        assert calls[-1] == ("AP", "on")
+        assert handler.handle_message(msg("ap off", _MsgType.MSGTYPE_CUSTOM)) is True
+        assert calls[-1] == ("AP", "off")
         assert handler.handle_message(msg("/ap on", _MsgType.MSGTYPE_USER)) is True
-        assert calls[-1] == ("on",)
+        assert calls[-1] == ("AP", "on")
         before = list(calls)
         assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_CHANNEL)) is False
         assert calls == before
         assert handler.handle_message(msg("/ap off", _MsgType.MSGTYPE_CHANNEL)) is True
-        assert calls[-1] == ("off",)
+        assert calls[-1] == ("AP", "off")
         assert handler.handle_message(msg("hello there", _MsgType.MSGTYPE_USER)) is False
 
         bot.blocked_commands = {"autoplay"}
@@ -240,7 +249,7 @@ def validate_slashless_dispatch():
             sys.modules["TeamTalk5"] = previous
 
 if validate_slashless_dispatch():
-    ok("private h/slashless aliases work; channel commands require slash; alias arguments/on-off are preserved")
+    ok("private USER/CUSTOM slashless commands work (h/s/p/ap); channel commands require slash; arguments/on-off are preserved")
 
 required_player_tts = {"ptts", "pttsmode", "pvoice", "pvoices", "pttsrate", "pttsspeed"}
 if not required_player_tts.issubset(set(names)):

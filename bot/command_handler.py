@@ -59,18 +59,33 @@ class CommandHandler:
         except ValueError:
             return message_text.split()
 
+    def _is_private_message_type(self, msg_type):
+        """Return True for TeamTalk user-to-user text message types.
+
+        TeamTalk defines MSGTYPE_CUSTOM as a custom user-to-user message which
+        works the same way as MSGTYPE_USER. Some TeamTalk client message dialogs
+        can deliver private text using this type, so slashless private commands
+        must accept both while channel messages still require '/'.
+        """
+        private_types = {TextMsgType.MSGTYPE_USER}
+        custom_type = getattr(TextMsgType, "MSGTYPE_CUSTOM", None)
+        if custom_type is not None:
+            private_types.add(custom_type)
+        return msg_type in private_types
+
     def is_slashless_command_candidate(self, message_text, msg_type):
         """Return True only for a known slashless command in a private message.
 
-        Slashless commands are intentionally private-message only.  This prevents
+        Slashless commands are intentionally private-message only. This prevents
         short names such as ``m``, ``w``, ``h`` and ``l`` from hijacking ordinary
-        channel conversation.  Slash-prefixed commands remain valid everywhere
-        they were valid before.
+        channel conversation. Slash-prefixed commands remain valid everywhere
+        they were valid before. TeamTalk MSGTYPE_USER and MSGTYPE_CUSTOM are both
+        treated as private user-to-user messages.
         """
         text = ttstr(message_text).strip()
         if not text or text.startswith(self.prefix):
             return False
-        if msg_type != TextMsgType.MSGTYPE_USER:
+        if not self._is_private_message_type(msg_type):
             return False
         parts = self._split_message(text)
         if not parts:

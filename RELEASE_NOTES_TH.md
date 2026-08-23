@@ -1,3 +1,9 @@
+# 2026.08.23-r7.2.1
+
+- แก้คำสั่ง Private แบบไม่ใส่ `/` ให้รองรับทั้ง TeamTalk `MSGTYPE_USER` และ `MSGTYPE_CUSTOM` เช่น `h`, `s`, `p <คำค้นหา>`, `ap on|off`
+- ใน Channel ยังคงต้องใส่ `/` ทุกคำสั่ง เช่น `/h`, `/s`, `/p <คำค้นหา>`
+- เพิ่ม regression test ครอบคลุม private custom-message ของ TeamTalk เพื่อป้องกันอาการ validator ผ่านแต่ runtime ไม่รับ slashless
+
 # Release notes — 2026.08.23-r7.2
 
 - ปรับสถานะเริ่มต้นให้บอกวิธีดูคำสั่งตามบริบท: `ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h`
