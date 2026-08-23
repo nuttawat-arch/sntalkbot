@@ -197,12 +197,21 @@ def validate_slashless_dispatch():
             def getUser(self, user_id): return None
         bot = Bot()
         handler = module.CommandHandler(bot)
+        handler.register_command("help", lambda msg, *args: calls.append(("HELP",) + tuple(args)))
+        handler.register_alias("h", "help")
         handler.register_command("autoplay", lambda msg, *args: calls.append(tuple(args)))
         handler.register_alias("ap", "autoplay")
 
         def msg(text, msg_type):
             return types.SimpleNamespace(szMessage=text, nMsgType=msg_type, nFromUserID=10, szFromUsername="user")
 
+        assert handler.handle_message(msg("h", _MsgType.MSGTYPE_USER)) is True
+        assert calls[-1] == ("HELP",)
+        before = list(calls)
+        assert handler.handle_message(msg("h", _MsgType.MSGTYPE_CHANNEL)) is False
+        assert calls == before
+        assert handler.handle_message(msg("/h", _MsgType.MSGTYPE_CHANNEL)) is True
+        assert calls[-1] == ("HELP",)
         assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_USER)) is True
         assert calls[-1] == ("on",)
         assert handler.handle_message(msg("ap off", _MsgType.MSGTYPE_USER)) is True
@@ -231,7 +240,7 @@ def validate_slashless_dispatch():
             sys.modules["TeamTalk5"] = previous
 
 if validate_slashless_dispatch():
-    ok("slashless private commands preserve alias arguments/on-off; slash form remains compatible; plain channel chat stays safe")
+    ok("private h/slashless aliases work; channel commands require slash; alias arguments/on-off are preserved")
 
 required_player_tts = {"ptts", "pttsmode", "pvoice", "pvoices", "pttsrate", "pttsspeed"}
 if not required_player_tts.issubset(set(names)):
@@ -425,9 +434,9 @@ spec = importlib.util.spec_from_file_location("sntalkbot_bot_identity", identity
 identity = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(identity)
 status_cases = {
-    (True, False): "Player Bot | พิมพ์ help เพื่อดูคำสั่ง",
-    (False, True): "Server Manager Bot | พิมพ์ help เพื่อดูคำสั่ง",
-    (True, True): "Full Bot (Player + Server Manager) | พิมพ์ help เพื่อดูคำสั่ง",
+    (True, False): "Player Bot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
+    (False, True): "Server Manager Bot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
+    (True, True): "Full Bot (Player + Server Manager) | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
 }
 for flags, expected in status_cases.items():
     actual = identity.role_status_message(*flags)
@@ -437,6 +446,8 @@ if identity.effective_status_message("SN TalkBot", True, False) != status_cases[
     fail("legacy SN TalkBot status does not migrate to Player role status")
 elif identity.effective_status_message("auto", False, True) != status_cases[(False, True)]:
     fail("auto status does not resolve to Server Manager role status")
+elif identity.effective_status_message("Player Bot | พิมพ์ help เพื่อดูคำสั่ง", True, False) != status_cases[(True, False)]:
+    fail("r7.1 Player auto status does not migrate to the new h//h wording")
 elif identity.effective_status_message("สถานะของฉัน", True, True) != "สถานะของฉัน":
     fail("custom status is not preserved")
 else:
