@@ -1,6 +1,7 @@
 import shlex
 import unicodedata
 from TeamTalk5 import TextMessage, TextMsgType, UserType, ttstr
+from bot.utils import BotUtils as utils
 
 
 class Command:
@@ -18,9 +19,23 @@ class CommandHandler:
         self.aliases = {}
 
     @staticmethod
-    def _strip_format_chars(value):
+    def _incoming_text(value):
+        """Decode an incoming TeamTalk field on both Linux (bytes) and Windows (str)."""
+        # TeamTalkPy's ttstr() is bidirectional on Linux: applying it to an
+        # already-decoded Python str can encode it back to bytes. Avoid that
+        # second conversion; this was the r7.4.2 event-loop crash.
+        if isinstance(value, str):
+            return value
+        try:
+            value = ttstr(value)
+        except Exception:
+            pass
+        return utils.ensure_text(value)
+
+    @classmethod
+    def _strip_format_chars(cls, value):
         """Remove invisible Unicode format/control characters from command tokens."""
-        text = unicodedata.normalize("NFKC", str(value or ""))
+        text = unicodedata.normalize("NFKC", cls._incoming_text(value))
         return "".join(ch for ch in text if unicodedata.category(ch) not in {"Cf", "Cc"})
 
     def _normalize(self, name):
@@ -113,7 +128,7 @@ class CommandHandler:
         leading slash is still accepted for backward compatibility, but it is
         never required in either private or channel/broadcast messages.
         """
-        text = unicodedata.normalize("NFKC", ttstr(message_text or "")).strip()
+        text = unicodedata.normalize("NFKC", self._incoming_text(message_text)).strip()
         while text and unicodedata.category(text[0]) in {"Cf", "Cc"}:
             text = text[1:].lstrip()
         if not text:
@@ -131,7 +146,7 @@ class CommandHandler:
         return requested_name is not None
 
     def handle_message(self, textmessage: TextMessage):
-        message_text = ttstr(textmessage.szMessage)
+        message_text = self._incoming_text(textmessage.szMessage)
         requested_name, args = self._command_parts(message_text, textmessage)
         if requested_name is None:
             return False
@@ -141,7 +156,7 @@ class CommandHandler:
         if command is None:
             return False
 
-        sender_username = ttstr(textmessage.szFromUsername)
+        sender_username = self._incoming_text(textmessage.szFromUsername)
         is_authorized = self.bot.is_authorized_user(sender_username)
         user = self.bot.getUser(textmessage.nFromUserID)
         if user and user.uUserType == UserType.USERTYPE_ADMIN:

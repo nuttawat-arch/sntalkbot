@@ -1,4 +1,5 @@
 from TeamTalk5 import ttstr
+from bot.utils import BotUtils as utils
 import os
 import yt_dlp
 import threading
@@ -429,7 +430,7 @@ class PlayerCog:
         pending = self.pending_channel_tabs.get(user_id)
         if not pending:
             return False
-        message_text = ttstr(textmessage.szMessage).strip()
+        message_text = utils.ensure_text(ttstr(textmessage.szMessage)).strip()
         if time.time() > pending["expires_at"]:
             del self.pending_channel_tabs[user_id]
             if message_text.isdigit():
@@ -474,7 +475,7 @@ class PlayerCog:
         pending = self.pending_playlist_tabs.get(user_id)
         if not pending:
             return False
-        message_text = ttstr(textmessage.szMessage).strip()
+        message_text = utils.ensure_text(ttstr(textmessage.szMessage)).strip()
         if time.time() > pending["expires_at"]:
             del self.pending_playlist_tabs[user_id]
             if message_text.isdigit():

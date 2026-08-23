@@ -523,11 +523,11 @@ class SNTalkBot(TeamTalk):
         return chunks
 
     def onCmdUserTextMessage(self, textmessage: TextMessage):
-        message_text = ttstr(textmessage.szMessage)
+        message_text = utils.ensure_text(ttstr(textmessage.szMessage))
         from_uid = textmessage.nFromUserID
-        from_username = ttstr(textmessage.szFromUsername)
+        from_username = utils.ensure_text(ttstr(textmessage.szFromUsername))
         sender_user = self.getUser(from_uid)
-        from_nickname = ttstr(sender_user.szNickname) if sender_user else "Unknown"
+        from_nickname = utils.ensure_text(ttstr(sender_user.szNickname)) if sender_user else "Unknown"
 
         # Word moderation is intentionally independent from Channel Input. The
         # `filter` switch is the single master ON/OFF control for every word-list
@@ -605,8 +605,8 @@ class SNTalkBot(TeamTalk):
         blacklist = utils.load_blacklist("blacklist.txt")
         if not blacklist:
             return
-        channel_name = ttstr(channel.szName)
-        channel_topic = ttstr(channel.szTopic)
+        channel_name = utils.ensure_text(ttstr(channel.szName))
+        channel_topic = utils.ensure_text(ttstr(channel.szTopic))
         if utils.contains_profanity(f"{channel_name} {channel_topic}", blacklist):
             self.doRemoveChannel(channel.nChannelID)
             return
@@ -640,7 +640,7 @@ class SNTalkBot(TeamTalk):
         if not username:
             return False
         authorized_users = [u.strip().lower() for u in self.accounts_config["authorized_users"]]
-        return ttstr(username).lower() in authorized_users
+        return utils.ensure_text(ttstr(username)).strip().lower() in authorized_users
 
     def _split_private_message(self, message_text, max_bytes=480):
         if message_text is None:

@@ -25,7 +25,7 @@ class BotUtils:
     """
     A class for standalone utility functions used by the bot.
     """
-    VERSION = "2026.08.23-r7.4.2"
+    VERSION = "2026.08.23-r7.4.3"
 
     @staticmethod
     def load_messages(filename="messages.txt"):
@@ -47,8 +47,28 @@ class BotUtils:
             return []
 
     @staticmethod
+    def ensure_text(value):
+        """Return readable Unicode text from TeamTalk/Python values.
+
+        TeamTalkPy uses byte strings for TTCHAR on Linux while Windows commonly
+        exposes Python ``str``. Incoming fields must therefore be decoded before
+        Unicode parsing. This helper is intentionally one-way: outbound TeamTalk
+        calls should continue to use TeamTalk5.ttstr().
+        """
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (bytes, bytearray, memoryview)):
+            return bytes(value).decode("utf-8", errors="replace")
+        inner = getattr(value, "value", None)
+        if inner is not None and inner is not value and isinstance(inner, (str, bytes, bytearray, memoryview)):
+            return BotUtils.ensure_text(inner)
+        return str(value)
+
+    @staticmethod
     def normalize_moderation_text(value):
-        text = unicodedata.normalize("NFKC", str(value or "")).lower()
+        text = unicodedata.normalize("NFKC", BotUtils.ensure_text(value)).lower()
         return "".join(ch for ch in text if unicodedata.category(ch) not in {"Cf", "Cc"}).strip()
 
     @staticmethod

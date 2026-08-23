@@ -198,7 +198,7 @@ class AdminCog:
         """
         if not self.bot.profanity_filter_enabled:
             return False
-        message_text = ttstr(textmessage.szMessage)
+        message_text = utils.ensure_text(ttstr(textmessage.szMessage))
         blacklist = utils.load_blacklist("blacklist.txt")
         if blacklist and utils.contains_profanity(message_text, blacklist):
             audio_path = os.path.join("files", "blacklist.wav")
@@ -222,7 +222,7 @@ class AdminCog:
         authorized = [u.strip().lower() for u in self.bot.accounts_config["authorized_users"]]
         admins = []
         for user in self.bot.getServerUsers():
-            username = ttstr(user.szUsername).lower()
+            username = utils.ensure_text(ttstr(user.szUsername)).lower()
             if user.uUserType == UserType.USERTYPE_ADMIN or username in authorized:
                 admins.append(user.nUserID)
         return admins
@@ -230,7 +230,7 @@ class AdminCog:
     def handle_admin_login(self, user):
         if not self.pending_admin_alerts:
             return
-        username = ttstr(user.szUsername).lower()
+        username = utils.ensure_text(ttstr(user.szUsername)).lower()
         authorized = [u.strip().lower() for u in self.bot.accounts_config["authorized_users"]]
         if user.uUserType != UserType.USERTYPE_ADMIN and username not in authorized:
             return

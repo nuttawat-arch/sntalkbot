@@ -1,6 +1,7 @@
 import time
 from deep_translator import GoogleTranslator
 from TeamTalk5 import TextMessage, TextMsgType, ttstr
+from bot.utils import BotUtils as utils
 
 class TranslatorCog:
     """
@@ -37,8 +38,8 @@ class TranslatorCog:
     def handle_channel_translation(self, textmessage: TextMessage):
         """If auto-translation is on, submits the message for translation."""
         sender = self.bot.getUser(textmessage.nFromUserID)
-        is_bot_message = ttstr(textmessage.szFromUsername) == self.bot.server_config["username"] and \
-                         ttstr(sender.szNickname) == self.bot.bot_config["nickname"]
+        is_bot_message = utils.ensure_text(ttstr(textmessage.szFromUsername)) == self.bot.server_config["username"] and \
+                         utils.ensure_text(ttstr(sender.szNickname)) == self.bot.bot_config["nickname"]
 
         if not is_bot_message and self.auto_translate and \
            (textmessage.nMsgType in [TextMsgType.MSGTYPE_CHANNEL, TextMsgType.MSGTYPE_BROADCAST]):
@@ -74,13 +75,13 @@ class TranslatorCog:
             sender = self.bot.getUser(textmessage.nFromUserID)
             if not sender:
                 return
-            original = ttstr(textmessage.szMessage)
+            original = utils.ensure_text(ttstr(textmessage.szMessage))
             translated = self._translate_text(original, settings["source"], settings["target"])
             if translated and translated.strip().lower() != original.strip().lower():
                 self.bot.privateMessage(
                     recipient_id,
                     self._("{nickname} says: {translated}").format(
-                        nickname=ttstr(sender.szNickname), translated=translated
+                        nickname=utils.ensure_text(ttstr(sender.szNickname)), translated=translated
                     ),
                 )
         except Exception as exc:
@@ -89,7 +90,7 @@ class TranslatorCog:
 
     def _translate_and_send_channel(self, textmessage: TextMessage):
         """Worker thread for channel translation."""
-        message_text = ttstr(textmessage.szMessage)
+        message_text = utils.ensure_text(ttstr(textmessage.szMessage))
         if message_text == self.last_translated_message:
             return
         try:
@@ -116,12 +117,12 @@ class TranslatorCog:
 
         try:
             translated = self._translate_text(
-                ttstr(textmessage.szMessage),
+                utils.ensure_text(ttstr(textmessage.szMessage)),
                 translation_mode["source"],
                 translation_mode["target"],
             )
             if translated:
-                self.bot.send_message(self._("{nickname} says: {translated}").format(nickname=ttstr(user.szNickname), translated=translated))
+                self.bot.send_message(self._("{nickname} says: {translated}").format(nickname=utils.ensure_text(ttstr(user.szNickname)), translated=translated))
         except Exception as e:
             self.bot.privateMessage(user_id, self._("Error: {e}. Disabling private translate mode.").format(e=e))
             if user_id in self.user_translation_modes:

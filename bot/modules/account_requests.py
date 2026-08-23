@@ -41,7 +41,7 @@ class AccountRequestCog:
             return False
 
         user_id = textmessage.nFromUserID
-        message_text = ttstr(textmessage.szMessage).strip()
+        message_text = utils.ensure_text(ttstr(textmessage.szMessage)).strip()
         if not message_text:
             return False
         if user_id in self.active_requests:

@@ -183,8 +183,15 @@ def validate_prefix_free_dispatch():
     fake.TextMessage = object
     fake.TextMsgType = _MsgType
     fake.UserType = _UserType
-    fake.ttstr = lambda value: str(value)
+    # Reproduce TeamTalkPy on Linux: Python str is encoded for outbound calls while
+    # incoming UTF-8 bytes are decoded to Python str. This exact shape caused
+    # r7.4.2 to pass the old str-only validator but fail in the real event loop.
+    fake.ttstr = lambda value: value.encode("utf-8") if isinstance(value, str) else (bytes(value).decode("utf-8") if isinstance(value, (bytes, bytearray, memoryview)) else value)
     previous = sys.modules.get("TeamTalk5")
+    root_str = str(ROOT)
+    added_root = root_str not in sys.path
+    if added_root:
+        sys.path.insert(0, root_str)
     sys.modules["TeamTalk5"] = fake
     try:
         spec = importlib.util.spec_from_file_location("_sntalkbot_command_handler_test", ROOT / "bot" / "command_handler.py")
@@ -298,9 +305,18 @@ def validate_prefix_free_dispatch():
             sys.modules.pop("TeamTalk5", None)
         else:
             sys.modules["TeamTalk5"] = previous
+        if added_root and root_str in sys.path:
+            sys.path.remove(root_str)
 
 if validate_prefix_free_dispatch():
-    ok("prefix-free commands work in private + channel/broadcast; slash is optional compatibility; channel-input OFF still rejects channel text")
+    ok("prefix-free commands work in private + channel/broadcast with Linux bytes/Windows str; slash is optional compatibility; channel-input OFF still rejects channel text")
+
+command_handler_source = (ROOT / "bot" / "command_handler.py").read_text(encoding="utf-8")
+utils_source_for_text = (ROOT / "bot" / "utils.py").read_text(encoding="utf-8")
+if "ensure_text" not in command_handler_source or "decode(\"utf-8\"" not in utils_source_for_text:
+    fail("TeamTalk incoming-text byte decoding guard is missing")
+else:
+    ok("TeamTalk incoming bytes are decoded to Unicode before command/moderation parsing")
 
 # Moderation must stay alive even when Channel Input is disabled, but `filter`
 # is the single master switch for all word-list checks. The intended order is:
@@ -434,7 +450,7 @@ def validate_runtime_word_filter_paths():
     fake.TextMsgType = _TextMsgType
     fake.TextMessage = object
     fake.VideoCodec = type("VideoCodec", (), {"__init__": lambda self: setattr(self, "nCodec", 0)})
-    fake.ttstr = lambda value: str(value)
+    fake.ttstr = lambda value: value.encode("utf-8") if isinstance(value, str) else (bytes(value).decode("utf-8") if isinstance(value, (bytes, bytearray, memoryview)) else value)
     previous = sys.modules.get("TeamTalk5")
     previous_paramiko = sys.modules.get("paramiko")
     previous_admin = sys.modules.pop("_sntalkbot_admin_filter_test", None)

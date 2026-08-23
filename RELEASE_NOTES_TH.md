@@ -1,3 +1,10 @@
+# 2026.08.23-r7.4.3
+
+- แก้ Linux TeamTalk runtime: ข้อความขาเข้าจาก SDK อาจเป็น `bytes`; แปลง UTF-8 เป็น `str` ก่อน Unicode normalization/command parsing
+- แก้อาการส่งคำสั่งทั้งแบบมี `/` และไม่มี `/` แล้วบอตเงียบ พร้อมป้องกัน event-loop `TypeError: normalize() argument 2 must be str, not bytes`
+- ตัวกรองคำหยาบใช้ตัวถอดข้อความเดียวกัน จึงรองรับภาษาไทยจาก TeamTalk Linux จริง ไม่ใช่เฉพาะ test ที่จำลองเป็น `str`
+- เพิ่ม regression test ให้จำลอง Linux `ttstr()` ที่คืน bytes เพื่อไม่ให้บั๊กนี้ผ่าน validator อีก
+
 # SNTalkBot 2026.08.23-r7.4.2
 
 - แก้ regression ของ r7.4.1: คืนคำสั่ง prefix-free ให้ใช้ได้ทั้ง Private และ Channel/Broadcast เช่น `h`, `p เพลง`, `ap on`, `ci off`, `filter on`; `/` เป็นเพียง compatibility และไม่บังคับ
