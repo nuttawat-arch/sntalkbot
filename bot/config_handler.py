@@ -5,6 +5,7 @@ import ast
 import TeamTalk5 as teamtalk
 import mpv
 import getpass
+import sys
 
 class ConfigHandler:
     """
@@ -62,7 +63,7 @@ class ConfigHandler:
             {'section': 'playback', 'key': 'seek_step', 'type': 'int', 'prompt': self._("Seek Step (seconds)"), 'help_text': self._("Default number of seconds to seek forward/backward in media playback."), 'default': 5},
             {'section': 'playback', 'key': 'default_volume', 'type': 'int', 'prompt': self._("Default Playback Volume"), 'help_text': self._("The initial volume for media playback (0-100)."), 'default': 80},
             {'section': 'playback', 'key': 'max_volume', 'type': 'int', 'prompt': self._("Maximum Playback Volume"), 'help_text': self._("The highest volume users can set (e.g., 100)."), 'default': 100},
-            {'section': 'playback', 'key': 'send_channel_messages', 'type': 'bool', 'prompt': self._("Send Playback Messages to Channel?"), 'help_text': self._("Announce playback actions (play/pause/stop/volume) in the channel."), 'default': True},
+            {'section': 'playback', 'key': 'send_channel_messages', 'type': 'bool', 'prompt': self._("Send Playback Messages to Channel?"), 'help_text': self._("Announce playback actions (play/pause/stopvolume) in the channel."), 'default': True},
             {'section': 'playback', 'key': 'channel_messages_mode', 'type': 'choice', 'prompt': self._("If Disabled, Send Playback Messages By"), 'help_text': self._("Choose whether to send playback messages privately or stay silent when channel announcements are disabled."), 'options': {'Private messages': 'private', 'Silent': 'silent'}, 'default': 'Private messages'},
             {'section': 'playback', 'key': 'volume_fading', 'type': 'float', 'prompt': self._("Volume Fading (seconds)"), 'help_text': self._("Fade audio when seeking or changing volume. Set to 0 to disable."), 'default': 0.0},
             {'section': 'playback', 'key': 'cookiefile_path', 'type': 'text', 'prompt': self._("Cookies File Path"), 'help_text': self._("Optional path to a cookies file (e.g., cookies.txt) for yt-dlp to access private or restricted videos.")},
@@ -71,8 +72,8 @@ class ConfigHandler:
             {'section': 'bot', 'key': 'vpn_detection', 'type': 'bool', 'prompt': self._("Enable VPN/Proxy Detection?"), 'help_text': self._("Check if users are connecting via a known VPN or proxy service."), 'default': True},
             {'section': 'bot', 'key': 'prevent_noname', 'type': 'bool', 'prompt': self._("Kick 'NoName' users?"), 'help_text': self._("Automatically kick users who log in with the default 'NoName' nickname."), 'default': True},
             {'section': 'bot', 'key': 'noname_note', 'type': 'text', 'prompt': self._("Message for 'NoName' users"), 'help_text': self._("The private message sent to a user before they are kicked for having no name."), 'default': "Hello. Please set your nickname first by pressing F4 (On windows) or Options, > settings, > General, > Nickname  (On Android), then reconnect. Thank you."},
-            {'section': 'bot', 'key': 'channel_input_enabled', 'type': 'bool', 'prompt': self._("Accept Commands from Channel Messages?"), 'help_text': self._("When enabled, registered commands can be used in channels without a slash. When disabled, the bot ignores channel text while private-message commands remain available."), 'default': True},
-            {'section': 'bot', 'key': 'intercept_channel_messages', 'type': 'bool', 'prompt': self._("Intercept All Channel Messages?"), 'help_text': self._("Allows the bot to 'see' messages in all channels for features like word blacklisting and general bot commands, such as weather and other commands, even if it's not in that channel. Highly recommended."), 'default': True},
+            {'section': 'bot', 'key': 'channel_input_enabled', 'type': 'bool', 'prompt': self._("Accept Commands from Channel Messages?"), 'help_text': self._("When enabled, normal commands/TTS/player/translation features can react to channel text. When disabled, those features ignore channel text but moderation still runs for messages the bot receives. Private-message commands remain available."), 'default': True},
+            {'section': 'bot', 'key': 'intercept_channel_messages', 'type': 'bool', 'prompt': self._("Intercept All Channel Messages?"), 'help_text': self._("Manager/Full: subscribe to user channel messages across the whole server. This is required for profanity/blacklist moderation in rooms where the bot is not present. Normal command reactions are controlled separately by Channel Input."), 'default': True},
             {'section': 'bot', 'key': 'char_limit', 'type': 'int', 'prompt': self._("Nickname Character Limit"), 'help_text': self._("Maximum allowed characters in a user's nickname. Set to 0 to disable."), 'default': 0},
             {'section': 'bot', 'key': 'char_limit_mode', 'type': 'choice', 'prompt': self._("Action for Long Nicknames"), 'help_text': self._("What to do when a user's nickname exceeds the character limit."), 'options': {'Kick the user': '1', 'Ban the user': '2'}, 'default': 'Kick the user'},
             {'section': 'bot', 'key': 'blacklist_mode', 'type': 'choice', 'prompt': self._("Action for Blacklisted Words"), 'help_text': self._("What to do when a user uses a word from blacklist.txt in their name or messages."), 'options': {'Kick the user': '1', 'Ban the user': '2'}, 'default': 'Kick the user'},
@@ -82,7 +83,7 @@ class ConfigHandler:
             {'type': 'header', 'text': self._("Jail System")},
             {'section': 'bot', 'key': 'jail_users', 'type': 'text', 'prompt': self._("Jailed Usernames"), 'help_text': self._("A comma-separated list of usernames to automatically confine to the jail channel upon login.")},
             {'section': 'bot', 'key': 'jail_names', 'type': 'text', 'prompt': self._("Jailed Nicknames"), 'help_text': self._("A comma-separated list of nicknames to confine to the jail channel.")},
-            {'section': 'bot', 'key': 'jail_channel', 'type': 'text', 'prompt': self._("Jail Channel Path"), 'help_text': self._("The full path to the channel where jailed users will be moved."), 'default': "/jail"},
+            {'section': 'bot', 'key': 'jail_channel', 'type': 'text', 'prompt': self._("Jail Channel Path"), 'help_text': self._("The full path to the channel where jailed users will be moved."), 'default': "jail"},
             {'section': 'bot', 'key': 'jail_timer_seconds', 'type': 'int', 'prompt': self._("Jail Flood Timer (seconds)"), 'help_text': self._("The time window in seconds to monitor a jailed user for spamming join attempts."), 'default': 10},
             {'section': 'bot', 'key': 'jail_flood_count', 'type': 'int', 'prompt': self._("Jail Flood Count"), 'help_text': self._("Number of join attempts within the timer window that will trigger a ban."), 'default': 5},
 
@@ -100,7 +101,7 @@ class ConfigHandler:
             {'type': 'header', 'text': self._("Optional Integrations")},
             {'section': 'telegram', 'key': 'telegram_bot_token', 'type': 'password', 'prompt': self._("Telegram Bot Token"), 'help_text': self._("Token for your Telegram bot to enable notifications. Leave blank to disable.")},
             {'section': 'weather', 'key': 'api_key', 'type': 'text', 'prompt': self._("weatherapi.com API Key"), 'help_text': self._("API key for the weather command. See the README for instructions on how to get one.")},
-            {'section': 'ssh', 'key': 'hostname', 'type': 'text', 'prompt': self._("SSH Hostname"), 'help_text': self._("Hostname or IP for the SSH server for the /exec and /reboot commands. Leave blank to disable.")},
+            {'section': 'ssh', 'key': 'hostname', 'type': 'text', 'prompt': self._("SSH Hostname"), 'help_text': self._("Hostname or IP for the SSH server for the exec and reboot commands. Leave blank to disable.")},
             {'section': 'ssh', 'key': 'port', 'type': 'int', 'prompt': self._("SSH Port"), 'default': 22},
             {'section': 'ssh', 'key': 'username', 'type': 'text', 'prompt': self._("SSH Username")},
             {'section': 'ssh', 'key': 'password', 'type': 'password', 'prompt': self._("SSH Password")},
@@ -174,12 +175,30 @@ class ConfigHandler:
         self.config.read(self.config_file, encoding="utf-8")
         self._migrate_legacy_server_port()
         self._migrate_google_standard_tts()
+        self._migrate_missing_optional_settings()
 
         missing_items = self._validate_config()
         if missing_items:
             print(self._("Warning: Your config.ini is missing some settings."))
             if self.config.has_option('bot', 'language'):
                 self.language = self.config.get('bot', 'language')
+
+            # Existing Docker instances normally run without an interactive stdin.
+            # Never enter the setup wizard in that environment: it would raise EOF
+            # before the TeamTalk connection is created. Optional settings have
+            # already been migrated above, so anything left here requires explicit
+            # administrator input.
+            if not sys.stdin.isatty():
+                missing_names = ", ".join(
+                    f"[{item['section']}] {item['key']}"
+                    for item in missing_items
+                    if 'section' in item and 'key' in item
+                )
+                raise RuntimeError(
+                    "config.ini is missing required settings and no interactive "
+                    f"terminal is available: {missing_names}"
+                )
+
             self._select_language_and_translate_structure(ask_in_terminal=True)
             self._prompt_for_missing(missing_items)
             self.config.read(self.config_file, encoding="utf-8")
@@ -242,6 +261,59 @@ class ConfigHandler:
         if changed:
             with open(self.config_file, "w", encoding="utf-8") as configfile:
                 self.config.write(configfile)
+
+
+    @staticmethod
+    def _serialize_default(item):
+        """Return a config.ini-safe default for one CONFIG_STRUCTURE item."""
+        item_type = item.get("type")
+        if "default" in item:
+            value = item.get("default")
+        elif item_type in {"text", "password"}:
+            value = ""
+        elif item_type == "device":
+            value = "auto"
+        else:
+            return None
+
+        if item_type == "choice":
+            value = item.get("options", {}).get(value, value)
+        if isinstance(value, bool):
+            return "True" if value else "False"
+        return "" if value is None else str(value)
+
+    def _migrate_missing_optional_settings(self):
+        """Add newly introduced optional settings without invoking the setup wizard.
+
+        Releases may add optional config keys after users already have persistent
+        Docker data. Those additions must be backwards compatible: use the schema
+        default (or an empty/auto value for optional text/device fields), write the
+        merged file once, and reserve the interactive wizard for genuinely required
+        missing values.
+        """
+        changed = False
+        migrated = []
+        for item in self.CONFIG_STRUCTURE:
+            section = item.get("section")
+            key = item.get("key")
+            if not section or not key or item.get("required", False):
+                continue
+            if self.config.has_section(section) and self.config.has_option(section, key):
+                continue
+
+            value = self._serialize_default(item)
+            if value is None:
+                continue
+            if not self.config.has_section(section):
+                self.config.add_section(section)
+            self.config.set(section, key, value)
+            migrated.append(f"[{section}] {key}={value}")
+            changed = True
+
+        if changed:
+            with open(self.config_file, "w", encoding="utf-8") as configfile:
+                self.config.write(configfile)
+            print("Migrated missing optional config settings: " + "; ".join(migrated))
 
     def _validate_config(self):
         """
@@ -316,7 +388,7 @@ class ConfigHandler:
             if help_text:
                 print(f"  > {self._(help_text)}")
 
-            default_str = "(Y/n)" if default else "(y/N)"
+            default_str = "(Yn)" if default else "(y/N)"
             user_input = input(f"Enter choice {default_str}: ").strip().lower()
 
             if user_input == 'y':
@@ -513,7 +585,7 @@ class ConfigHandler:
             "intercept_channel_messages": sec.getboolean("intercept_channel_messages", True),
             "jail_users": self._csv(sec.get("jail_users", "")),
             "jail_names": self._csv(sec.get("jail_names", "")),
-            "jail_channel": sec.get("jail_channel", "/jail/"),
+            "jail_channel": sec.get("jail_channel", "jail/"),
             "jail_timer_seconds": sec.getint("jail_timer_seconds", 10),
             "jail_flood_count": sec.getint("jail_flood_count", 5),
             "random_message_interval": sec.getint("random_message_interval", 0),

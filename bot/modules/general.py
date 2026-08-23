@@ -8,6 +8,10 @@ from bot.utils import BotUtils as utils
 
 DEVELOPER_REPORT_BASE_URL = "https://report.nuttawat.ddnsfree.com"
 DEVELOPER_REPORT_ENDPOINT = DEVELOPER_REPORT_BASE_URL.rstrip("/") + "/api/report"
+DEVELOPER_NAME = "nuttawat"
+DEVELOPER_ORGANIZATION = "SN Family"
+DEVELOPER_EMAIL = "nutblind2545t@gmail.com"
+DEVELOPER_PHONE = "0637457797"
 
 def _project_version():
     try:
@@ -36,9 +40,10 @@ class GeneralCog:
         if self.bot.server_management_enabled:
             command_handler.register_command('weather', self.handle_weather_command)
             command_handler.register_command('report', self.handle_report_command)
+            command_handler.register_command('intercept', self.handle_intercept_command, admin_only=True)
 
     def handle_channel_input_command(self, textmessage, *args):
-        """Enable/disable all bot reactions to channel text while keeping PM control available."""
+        """Enable/disable normal channel features while moderation remains active."""
         current = bool(self.bot.bot_config.get("channel_input_enabled", True))
         if not args:
             enabled = not current
@@ -48,7 +53,7 @@ class GeneralCog:
                 state = self._("enabled") if current else self._("disabled")
                 self.bot.privateMessage(
                     textmessage.nFromUserID,
-                    self._("Channel input is currently {state}.").format(state=state),
+                    self._("Channel input is currently {state}. Moderation still runs for channel text the bot receives.").format(state=state),
                 )
                 return
             if value not in ("on", "off"):
@@ -61,7 +66,36 @@ class GeneralCog:
         state = self._("enabled") if enabled else self._("disabled")
         self.bot.privateMessage(
             textmessage.nFromUserID,
-            self._("Channel input is now {state}.").format(state=state),
+            self._("Channel input is now {state}. Moderation still runs for channel text the bot receives.").format(state=state),
+        )
+
+    def handle_intercept_command(self, textmessage, *args):
+        """Toggle server-wide channel interception for Manager/Full moderation."""
+        current = bool(self.bot.bot_config.get("intercept_channel_messages", True))
+        if not args:
+            enabled = not current
+        else:
+            value = str(args[0]).strip().lower()
+            if value == "status":
+                state = self._("enabled") if current else self._("disabled")
+                self.bot.privateMessage(
+                    textmessage.nFromUserID,
+                    self._("All-channel interception is currently {state}.").format(state=state),
+                )
+                return
+            if value not in ("on", "off"):
+                self.bot.privateMessage(
+                    textmessage.nFromUserID,
+                    self._("Usage: intercept on|off|status (short alias: ic)"),
+                )
+                return
+            enabled = value == "on"
+
+        self.bot.set_intercept_channel_messages(enabled)
+        state = self._("enabled") if enabled else self._("disabled")
+        self.bot.privateMessage(
+            textmessage.nFromUserID,
+            self._("All-channel interception is now {state}.").format(state=state),
         )
 
     def handle_weather_command(self, textmessage, *args):
@@ -131,7 +165,7 @@ class GeneralCog:
 
     def handle_search_command(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /search <query>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: search <query>"))
             return
         query = " ".join(args)
         self.bot.io_pool.submit(self._wikipedia_summary_task, query, textmessage.nFromUserID)
@@ -159,7 +193,7 @@ class GeneralCog:
             requested = str(command_name).lstrip("/").lower()
             name = self.bot.command_handler.resolve_name(requested)
             if name not in self.bot.command_handler.commands:
-                self.bot.privateMessage(sender_id, self._("Unknown command. Use /help to see all commands."))
+                self.bot.privateMessage(sender_id, self._("Unknown command. Use help to see all commands."))
                 return
             command = self.bot.command_handler.commands[name]
             self.bot.privateMessage(
@@ -181,7 +215,7 @@ class GeneralCog:
     def handle_report_command(self, textmessage, *args):
         sender_id = textmessage.nFromUserID
         if not args:
-            self.bot.privateMessage(sender_id, self._("Usage: /report <your message>"))
+            self.bot.privateMessage(sender_id, self._("Usage: report <your message>"))
             return
         report_msg = " ".join(args)
         sender_user = self.bot.getUser(sender_id)
@@ -198,7 +232,7 @@ class GeneralCog:
         """Send an explicit user-submitted bug report to the official developer relay."""
         sender_id = textmessage.nFromUserID
         if not args:
-            self.bot.privateMessage(sender_id, self._("Usage: /dr <your message>"))
+            self.bot.privateMessage(sender_id, self._("Usage: dr <your message>"))
             return
 
         report_message = " ".join(args).strip()
@@ -276,7 +310,12 @@ class GeneralCog:
 
     def handle_about_command(self, textmessage, *args):
         import platform
-        self.bot.privateMessage(textmessage.nFromUserID, f"SN TalkBot {_project_version()} | Python {platform.python_version()} | Linux/Docker ready | yt-dlp + MPV + TeamTalk | Developer reports: {DEVELOPER_REPORT_BASE_URL}")
+        sender_id = textmessage.nFromUserID
+        self.bot.privateMessage(sender_id, f"SN TalkBot {_project_version()} | Python {platform.python_version()} | Linux/Docker ready | yt-dlp + MPV + TeamTalk")
+        self.bot.privateMessage(sender_id, self._("Developer: {name} from {organization}").format(name=DEVELOPER_NAME, organization=DEVELOPER_ORGANIZATION))
+        self.bot.privateMessage(sender_id, self._("Contact email: {email}").format(email=DEVELOPER_EMAIL))
+        self.bot.privateMessage(sender_id, self._("Contact phone: {phone}").format(phone=DEVELOPER_PHONE))
+        self.bot.privateMessage(sender_id, self._("Developer reports: {url}").format(url=DEVELOPER_REPORT_BASE_URL))
 
     def handle_gcid_command(self, textmessage, *args):
         if args:

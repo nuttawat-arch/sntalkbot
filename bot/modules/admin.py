@@ -58,7 +58,7 @@ class AdminCog:
 
     def handle_block_command(self, textmessage, *args):
         if not args:
-            value = ", ".join("/" + x for x in sorted(self.bot.blocked_commands)) or self._("The list is empty")
+            value = ", ".join(x for x in sorted(self.bot.blocked_commands)) or self._("The list is empty")
             self.bot.privateMessage(textmessage.nFromUserID, value)
             return
         token = args[0].strip().lower()
@@ -70,12 +70,12 @@ class AdminCog:
             return
         if action == "+":
             self.bot.blocked_commands.add(name)
-            message = self._("Command blocked: /{command}").format(command=name)
+            message = self._("Command blocked: {command}").format(command=name)
         elif action == "-":
             self.bot.blocked_commands.discard(name)
-            message = self._("Command unblocked: /{command}").format(command=name)
+            message = self._("Command unblocked: {command}").format(command=name)
         else:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /blockcmd +command or /blockcmd -command"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: blockcmd +command or blockcmd -command"))
             return
         self.bot.bot_config["blocked_commands"] = sorted(self.bot.blocked_commands)
         self.bot.config_handler.update_bot_settings({"blocked_commands": sorted(self.bot.blocked_commands)})
@@ -92,11 +92,11 @@ class AdminCog:
             return
         self.bot.bot_config["language"] = language
         self.bot.config_handler.update_bot_settings({"language": language})
-        self.bot.privateMessage(textmessage.nFromUserID, self._("Language saved as {language}. Use /restart to reload all modules.").format(language=language))
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Language saved as {language}. Use restart to reload all modules.").format(language=language))
 
     def handle_voice_tx_command(self, textmessage, *args):
         if not args or args[0].lower() not in ("on", "off"):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /voicetx on|off"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: voicetx on|off"))
             return
         enabled = args[0].lower() == "on"
         ok = self.bot.enableVoiceTransmission(enabled)
@@ -233,7 +233,7 @@ class AdminCog:
 
     def handle_exec_command(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /exec <command>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: exec <command>"))
             return
         command = " ".join(args)
         self._execute_ssh_command(command, textmessage.nFromUserID)
@@ -294,7 +294,7 @@ class AdminCog:
             else:
                 self.bot.privateMessage(textmessage.nFromUserID, self._("User '{nickname}' not found.").format(nickname=nickname))
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid format. Usage: /db <nickname> <duration> (e.g., 1h:30m:10s)"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid format. Usage: db <nickname> <duration> (e.g., 1h:30m:10s)"))
 
     def handle_duration_kick_nickname(self, textmessage, *args):
         try:
@@ -314,7 +314,7 @@ class AdminCog:
                 self.pending_kicks[nickname.lower()] = ("nickname", duration_seconds, time.time() + duration_seconds)
                 self.bot.send_message(self._("User '{nickname}' not found. They will be kicked when they log in for {duration}.").format(nickname=nickname, duration=duration_str))
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid format. Usage: /dk <nickname> <duration>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid format. Usage: dk <nickname> <duration>"))
 
     def handle_duration_kick_by_username(self, textmessage, *args):
         try:
@@ -334,7 +334,7 @@ class AdminCog:
                 self.pending_kicks[username.lower()] = ("username", duration_seconds, time.time() + duration_seconds)
                 self.bot.send_message(self._("User with username '{username}' not found. They will be kicked when they log in for {duration}.").format(username=username, duration=duration_str))
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid format. Usage: /udk <username> <duration>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid format. Usage: udk <username> <duration>"))
 
     def parse_duration_string(self, duration_str):
         duration_seconds = 0
@@ -368,7 +368,7 @@ class AdminCog:
 
     def handle_change_name_command(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /cn <new_name>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: cn <new_name>"))
             return
         new_name = " ".join(args)
         self.bot.bot_config["nickname"] = new_name
@@ -377,7 +377,7 @@ class AdminCog:
 
     def handle_change_status(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /cs <new_status>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: cs <new_status>"))
             return
         status_message = " ".join(args)
         self.bot.bot_config["status_message"] = status_message
@@ -389,7 +389,7 @@ class AdminCog:
 
     def handle_change_gender(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /cg <m|f|n>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: cg <m|f|n>"))
             return
         gender_mode = args[0].lower()
         gender_map = {'m': 0, 'f': 256, 'n': 4096}
@@ -427,7 +427,7 @@ class AdminCog:
             self.bot.doNewUserAccount(account)
             self.bot.privateMessage(textmessage.nFromUserID, self._("Account '{username}' created successfully.").format(username=username))
         except ValueError:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command format. Usage: /new <username> <password> [rights separated by space]"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command format. Usage: new <username> <password> [rights separated by space]"))
 
     def handle_lock_command(self, textmessage, *args):
         self.bot.commands_locked = not self.bot.commands_locked
@@ -493,7 +493,7 @@ class AdminCog:
 
     def handle_admin_broadcast(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /bm <message>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: bm <message>"))
             return
         message = " ".join(args)
         self.bot.send_broadcast_message(self._("Message from administrators: {message}").format(message=message))
@@ -504,7 +504,7 @@ class AdminCog:
 
     def handle_join_command(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /join <channel_path>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: join <channel_path>"))
             return
         path = " ".join(args)
         chan_id = self.bot.getChannelIDFromPath(ttstr(path))
@@ -535,7 +535,7 @@ class AdminCog:
 
     def handle_kick_channel_command(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /k <nickname>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: k <nickname>"))
             return
         nick = " ".join(args)
         user = self.bot.getUserByName(nick)
@@ -547,7 +547,7 @@ class AdminCog:
 
     def handle_kick_server_command(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /ks <nickname>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: ks <nickname>"))
             return
         nick = " ".join(args)
         user = self.bot.getUserByName(nick)
@@ -581,12 +581,27 @@ class AdminCog:
         self.bot.send_message(self._("TTS: {state}").format(state="ON" if self.bot.tts_enabled else "OFF"))
 
     def handle_filter_toggle_command(self, textmessage, *args):
-        arg = args[0] if args else ""
-        if arg == "on": self.bot.profanity_filter_enabled = True
-        elif arg == "off": self.bot.profanity_filter_enabled = False
-        else: self.bot.profanity_filter_enabled = not self.bot.profanity_filter_enabled
+        arg = args[0].strip().lower() if args else ""
+        if arg == "status":
+            self.bot.privateMessage(
+                textmessage.nFromUserID,
+                self._("Profanity Filter: {state}").format(state="ON" if self.bot.profanity_filter_enabled else "OFF"),
+            )
+            return
+        if arg == "on":
+            self.bot.profanity_filter_enabled = True
+        elif arg == "off":
+            self.bot.profanity_filter_enabled = False
+        elif arg == "":
+            self.bot.profanity_filter_enabled = not self.bot.profanity_filter_enabled
+        else:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: filter on|off|status"))
+            return
         self.bot.config_handler.update_bot_settings({"profanity_filter_enabled": self.bot.profanity_filter_enabled})
-        self.bot.send_message(self._("Profanity Filter: {state}").format(state="ON" if self.bot.profanity_filter_enabled else "OFF"))
+        self.bot.privateMessage(
+            textmessage.nFromUserID,
+            self._("Profanity Filter: {state}").format(state="ON" if self.bot.profanity_filter_enabled else "OFF"),
+        )
 
     def handle_welcome_toggle_command(self, textmessage, *args):
         arg = args[0] if args else ""
@@ -606,7 +621,7 @@ class AdminCog:
         elif arg not in ("", "status"):
             self.bot.privateMessage(
                 textmessage.nFromUserID,
-                self._("Usage: /welcomebroadcast on|off|status"),
+                self._("Usage: welcomebroadcast on|off|status"),
             )
             return
         elif arg == "":

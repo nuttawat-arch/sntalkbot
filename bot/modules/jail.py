@@ -72,7 +72,7 @@ class JailCog:
 
     def handle_jail_command(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /jail <nickname>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: jail <nickname>"))
             return
         nickname = " ".join(args)
         user = self.bot.getUserByName(nickname)
@@ -93,7 +93,7 @@ class JailCog:
 
     def handle_unjail_command(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /unjail <nickname>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: unjail <nickname>"))
             return
         nickname = " ".join(args)
         user = self.bot.getUserByName(nickname)

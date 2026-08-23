@@ -277,7 +277,7 @@ class TTSCog:
             del self.user_speech_settings[settings_key]
 
     def handle_prefixed_message(self, textmessage):
-        """Legacy non-slash TTS shortcuts are disabled; use /say."""
+        """Legacy TTS text-prefix shortcuts are disabled; use the registered say command."""
         return False
 
     def handle_say_command(self, textmessage, *args):
@@ -462,10 +462,10 @@ class TTSCog:
     def handle_rate_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
         if self._get_tts_mode() == "google":
-            self.bot.privateMessage(user_id, self._("Rate is only available in Microsoft mode. For Google TTS, please use /speed"))
+            self.bot.privateMessage(user_id, self._("Rate is only available in Microsoft mode. For Google TTS, please use speed"))
             return
         if not args:
-            self.bot.privateMessage(user_id, self._("Invalid command. Usage: /rate <rate_value>."))
+            self.bot.privateMessage(user_id, self._("Invalid command. Usage: rate <rate_value>."))
             return
         try:
             rate_value = int(args[0])
@@ -475,7 +475,7 @@ class TTSCog:
             else:
                 self.bot.privateMessage(user_id, self._("Invalid rate value. Rate should be between -100 and 100."))
         except ValueError:
-            self.bot.privateMessage(user_id, self._("Invalid command. Usage: /rate <rate_value>."))
+            self.bot.privateMessage(user_id, self._("Invalid command. Usage: rate <rate_value>."))
 
     def handle_pitch_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
@@ -483,7 +483,7 @@ class TTSCog:
             self.bot.privateMessage(user_id, self._("Pitch is only available in Microsoft mode."))
             return
         if not args:
-            self.bot.privateMessage(user_id, self._("Invalid command. Usage: /pitch <pitch_value>"))
+            self.bot.privateMessage(user_id, self._("Invalid command. Usage: pitch <pitch_value>"))
             return
         try:
             pitch_value = int(args[0])
@@ -493,7 +493,7 @@ class TTSCog:
             else:
                 self.bot.privateMessage(user_id, self._("Invalid pitch value. Pitch should be between -100 and 100."))
         except ValueError:
-            self.bot.privateMessage(user_id, self._("Invalid command. Usage: /pitch <pitch_value>"))
+            self.bot.privateMessage(user_id, self._("Invalid command. Usage: pitch <pitch_value>"))
 
     def handle_volume_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
@@ -501,7 +501,7 @@ class TTSCog:
             self.bot.privateMessage(user_id, self._("Volume is only available in Microsoft mode."))
             return
         if not args:
-            self.bot.privateMessage(user_id, self._("Invalid command. Usage: /volume <volume_value>"))
+            self.bot.privateMessage(user_id, self._("Invalid command. Usage: volume <volume_value>"))
             return
         try:
             volume_value = float(args[0])
@@ -511,21 +511,21 @@ class TTSCog:
             else:
                 self.bot.privateMessage(user_id, self._("Invalid volume value. Volume should be between 0.1 and 1.0."))
         except ValueError:
-            self.bot.privateMessage(user_id, self._("Invalid command. Usage: /volume <volume_value>"))
+            self.bot.privateMessage(user_id, self._("Invalid command. Usage: volume <volume_value>"))
 
     def handle_voice_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
         if not args:
             if self._get_tts_mode() == "google":
-                self.bot.privateMessage(user_id, self._("Invalid command. Usage: /voice <language_code>, for example /voice th."))
+                self.bot.privateMessage(user_id, self._("Invalid command. Usage: voice <language_code>, for example voice th."))
             else:
-                self.bot.privateMessage(user_id, self._("Invalid command. Usage: /voice <voice_name>."))
+                self.bot.privateMessage(user_id, self._("Invalid command. Usage: voice <voice_name>."))
             return
         value = " ".join(args).strip()
         if self._get_tts_mode() == "google":
             lang = self._resolve_google_lang(value)
             if not lang:
-                self.bot.privateMessage(user_id, self._("Unknown Google standard TTS language: {lang}. Use /get_voices to list languages.").format(lang=value))
+                self.bot.privateMessage(user_id, self._("Unknown Google standard TTS language: {lang}. Use get_voices to list languages.").format(lang=value))
                 return
             self._get_user_settings(user_id, create=True)["google_lang"] = lang
             self.bot.privateMessage(user_id, self._("Google standard TTS language set to {lang}.").format(lang=lang))
@@ -536,10 +536,10 @@ class TTSCog:
     def handle_speed_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
         if self._get_tts_mode() != "google":
-            self.bot.privateMessage(user_id, self._("Speed is only available in Google TTS mode. For Microsoft, use /rate."))
+            self.bot.privateMessage(user_id, self._("Speed is only available in Google TTS mode. For Microsoft, use rate."))
             return
         if not args:
-            self.bot.privateMessage(user_id, self._("Invalid command. Usage: /speed <value>."))
+            self.bot.privateMessage(user_id, self._("Invalid command. Usage: speed <value>."))
             return
         try:
             speed_value = float(args[0])
@@ -549,7 +549,7 @@ class TTSCog:
             else:
                 self.bot.privateMessage(user_id, self._("Invalid speed value. Use a number between 0.25 and 4.0."))
         except ValueError:
-            self.bot.privateMessage(user_id, self._("Invalid command. Usage: /speed <value>."))
+            self.bot.privateMessage(user_id, self._("Invalid command. Usage: speed <value>."))
 
     def handle_stop_speech_command(self, textmessage, *args):
         user = self.bot.getUser(textmessage.nFromUserID)
@@ -566,7 +566,7 @@ class TTSCog:
             return
         value = args[0].strip().lower()
         if value not in ("on", "off"):
-            self.bot.privateMessage(user_id, self._("Invalid value. Use /tts on or /tts off."))
+            self.bot.privateMessage(user_id, self._("Invalid value. Use tts on or tts off."))
             return
         self.bot.tts_enabled = value == "on"
         self.bot.config_handler.update_bot_settings({"tts_enabled": self.bot.tts_enabled})
@@ -581,7 +581,7 @@ class TTSCog:
             return
         value = args[0].strip().lower()
         if value not in ("on", "off"):
-            self.bot.privateMessage(user_id, self._("Invalid value. Use /rb on or /rb off."))
+            self.bot.privateMessage(user_id, self._("Invalid value. Use rb on or rb off."))
             return
         enabled = value == "on"
         self.bot.tts_config["random_broadcast_enabled"] = enabled
@@ -652,7 +652,7 @@ class TTSCog:
     def handle_ttsmode_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
         if not args:
-            self.bot.privateMessage(user_id, self._("Usage: /ttsmode <microsoft|google>"))
+            self.bot.privateMessage(user_id, self._("Usage: ttsmode <microsoft|google>"))
             return
         mode = args[0].strip().lower()
         if mode not in ("microsoft", "google"):

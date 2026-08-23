@@ -146,7 +146,7 @@ class TranslatorCog:
             self.bot.privateMessage(user_id, self._("Private translate mode disabled."))
         else:
             if len(args) < 2:
-                self.bot.privateMessage(user_id, self._("Usage: /pt <source_lang> <target_lang>"))
+                self.bot.privateMessage(user_id, self._("Usage: pt <source_lang> <target_lang>"))
                 return
             self.user_translation_modes[user_id] = {"source": args[0], "target": args[1]}
             self.bot.privateMessage(user_id, self._("Private translate mode enabled from {source} to {target}.").format(source=args[0], target=args[1]))
@@ -158,7 +158,7 @@ class TranslatorCog:
             self.bot.privateMessage(user_id, self._("Whisper translate mode disabled."))
             return
         if len(args) < 2:
-            self.bot.privateMessage(user_id, self._("Usage: /wt <source_lang> <target_lang>"))
+            self.bot.privateMessage(user_id, self._("Usage: wt <source_lang> <target_lang>"))
             return
         self.whisper_translate_modes[user_id] = {"source": args[0], "target": args[1]}
         self.bot.privateMessage(

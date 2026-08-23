@@ -6,6 +6,10 @@ LEGACY_AUTO_STATUS_MESSAGES = {
     "player bot | พิมพ์ help เพื่อดูคำสั่ง",
     "server manager bot | พิมพ์ help เพื่อดูคำสั่ง",
     "full bot (player + server manager) | พิมพ์ help เพื่อดูคำสั่ง",
+    "player bot | พิมพ์ h เพื่อดูคำสั่ง",
+    "server manager bot | พิมพ์ h เพื่อดูคำสั่ง",
+    "full bot (player + server manager) | พิมพ์ h เพื่อดูคำสั่ง",
+    "sn talkbot | พิมพ์ h เพื่อดูคำสั่ง",
     "player bot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
     "server manager bot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
     "full bot (player + server manager) | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
@@ -16,12 +20,12 @@ LEGACY_AUTO_STATUS_MESSAGES = {
 def role_status_message(player_enabled: bool, server_management_enabled: bool) -> str:
     """Return the clear default idle status for the active feature profile."""
     if player_enabled and server_management_enabled:
-        return "Full Bot (Player + Server Manager) | พิมพ์ h เพื่อดูคำสั่ง"
+        return "Full Bot (Player + Server Manager) | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h"
     if player_enabled:
-        return "Player Bot | พิมพ์ h เพื่อดูคำสั่ง"
+        return "Player Bot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h"
     if server_management_enabled:
-        return "Server Manager Bot | พิมพ์ h เพื่อดูคำสั่ง"
-    return "SN TalkBot | พิมพ์ h เพื่อดูคำสั่ง"
+        return "Server Manager Bot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h"
+    return "SN TalkBot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h"
 
 
 def effective_status_message(configured_status, player_enabled: bool, server_management_enabled: bool) -> str:

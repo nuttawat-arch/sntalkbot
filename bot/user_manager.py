@@ -180,7 +180,7 @@ class UserManager:
 
     def handle_private_channel(self, textmessage, *args):
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /private <second_name>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: private <second_name>"))
             return
         
         second_name = " ".join(args)
@@ -236,7 +236,7 @@ class UserManager:
             }
             self.bot.privateMessage(textmessage.nFromUserID, self._("Alright. You will be notified when {name} logs in.").format(name=nickname))
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /notify <nickname> <telegram_chat_id>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: notify <nickname> <telegram_chat_id>"))
 
     def handle_unotify_command(self, textmessage, *args):
         try:
@@ -253,7 +253,7 @@ class UserManager:
             }
             self.bot.privateMessage(textmessage.nFromUserID, self._("Alright. You will be notified when {username} logs in.").format(username=username))
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /unotify <username> <telegram_chat_id>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: unotify <username> <telegram_chat_id>"))
 
     def handle_tell_command(self, textmessage, *args):
         try:
@@ -275,7 +275,7 @@ class UserManager:
             })
             self.bot.privateMessage(textmessage.nFromUserID, self._("Your message for {target_username} has been saved.").format(target_username=target_username))
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /msg <username> <message>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: msg <username> <message>"))
             
     def handle_messages_command(self, textmessage, *args):
         sender = self.bot.getUser(textmessage.nFromUserID)

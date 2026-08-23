@@ -73,7 +73,7 @@ class SNTalkBot(TeamTalk):
         self.io_pool = LoggingThreadPoolExecutor(max_workers=10, thread_name_prefix='TTBot_IO')
         self.quick_task_pool = LoggingThreadPoolExecutor(max_workers=5, thread_name_prefix='TTBot_Quick')
         self.player = Player(self.config_handler, cookiefile=self.cookiefile) if self.player_enabled else None
-        self.command_handler = CommandHandler(self, prefix='/')
+        self.command_handler = CommandHandler(self)
         self.commands_locked = self.bot_config.get("is_locked", False)
         self.tts_enabled = self.bot_config.get("tts_enabled", True)
         self.profanity_filter_enabled = self.bot_config.get("profanity_filter_enabled", False)
@@ -415,8 +415,27 @@ class SNTalkBot(TeamTalk):
             return
         self.doSubscribe(user.nUserID, Subscription.SUBSCRIBE_USER_MSG)
         if self.server_management_enabled and self.bot_config['intercept_channel_messages'] is True:
-            self.doSubscribe(user.nUserID, 131072)
+            self.doSubscribe(user.nUserID, self._intercept_channel_subscription())
             print(self._("intercepting channel messages for user {user}").format(user=ttstr(user.szNickname)))
+
+    @staticmethod
+    def _intercept_channel_subscription():
+        return getattr(Subscription, "SUBSCRIBE_INTERCEPT_CHANNEL_MSG", 131072)
+
+    def set_intercept_channel_messages(self, enabled):
+        """Apply all-channel interception immediately and persist the setting."""
+        enabled = bool(enabled)
+        self.bot_config["intercept_channel_messages"] = enabled
+        self.config_handler.update_bot_settings({"intercept_channel_messages": enabled})
+        subscription = self._intercept_channel_subscription()
+        for user in self.getServerUsers():
+            user_id = int(getattr(user, "nUserID", 0) or 0)
+            if not user_id or user_id == int(self.getMyUserID() or 0):
+                continue
+            if enabled:
+                self.doSubscribe(user_id, subscription)
+            else:
+                self.doUnsubscribe(user_id, subscription)
 
     def subscribe_user_messages(self):
         for user in self.getServerUsers():
@@ -506,28 +525,15 @@ class SNTalkBot(TeamTalk):
     def onCmdUserTextMessage(self, textmessage: TextMessage):
         message_text = ttstr(textmessage.szMessage)
         from_uid = textmessage.nFromUserID
-
-        # Channel input is independently controllable. When disabled, absolutely
-        # no command, TTS shortcut, translation, moderation reaction, autoplay
-        # link, or selection workflow is triggered by channel text. Private
-        # messages remain active so an admin can always send `ci on`.
-        if not self.command_handler.channel_input_allowed(
-            textmessage, self.bot_config.get("channel_input_enabled", True)
-        ):
-            return
         from_username = ttstr(textmessage.szFromUsername)
         sender_user = self.getUser(from_uid)
         from_nickname = ttstr(sender_user.szNickname) if sender_user else "Unknown"
 
-        # Profanity Filter
+        # Moderation is intentionally independent from Channel Input. Turning
+        # `ci off` silences normal channel features but must never blind the
+        # profanity/blacklist protections to channel text the bot receives.
         if self.server_management_enabled and self.profanity_filter_enabled and from_uid != self.getMyUserID():
-            text_lower = message_text.lower()
-            is_bad = False
-            for bw in self.bad_words:
-                if bw in text_lower:
-                    is_bad = True
-                    break
-            if is_bad:
+            if utils.contains_profanity(message_text, self.bad_words):
                 self.user_warnings[from_uid] = self.user_warnings.get(from_uid, 0) + 1
                 count = self.user_warnings[from_uid]
                 if count >= 3:
@@ -538,10 +544,22 @@ class SNTalkBot(TeamTalk):
                     self.privateMessage(from_uid, f"กรุณาอย่าพิมพ์คำหยาบนะครับ เตือนครั้งที่ {count}/3")
                 return
 
-        print(self._("Message received: {message} from {username}").format(message=message_text, username=from_username))
-        
         if self.admin_cog is not None and self.admin_cog.check_message_for_blacklist(textmessage):
             return
+
+        # Channel Input controls normal reactions only. Moderation above has
+        # already inspected the message. Private input is never blocked here.
+        if not self.command_handler.channel_input_allowed(
+            textmessage, self.bot_config.get("channel_input_enabled", True)
+        ):
+            return
+
+        # Private messages keep TTMediaBot-style prefix-free commands. Channel
+        # and broadcast commands require '/' so ordinary short chat stays untouched.
+        if self.command_handler.handle_message(textmessage):
+            return
+
+        print(self._("Message received: {message} from {username}").format(message=message_text, username=from_username))
 
         if self.account_request_cog is not None and self.account_request_cog.handle_message(textmessage):
             return
@@ -549,12 +567,6 @@ class SNTalkBot(TeamTalk):
         if self.tts_cog is not None and self.tts_cog.handle_prefixed_message(textmessage):
             return
         if self.player_cog is not None and self.player_cog.handle_prefixed_message(textmessage):
-            return
-
-        # Registered commands may be written with or without the leading slash
-        # in both private messages and channels. Channel-wide command intake can
-        # be disabled independently with `channelinput off` / `ci off`.
-        if self.command_handler.handle_message(textmessage):
             return
 
         # Auto-play links
@@ -567,13 +579,14 @@ class SNTalkBot(TeamTalk):
             return
         if self.player_cog is not None and self.player_cog.handle_channel_selection_message(textmessage):
             return
-            
+
         if self.translator_cog is not None:
             self.translator_cog.handle_whisper_translation(textmessage)
             if self.translator_cog.handle_channel_translation(textmessage):
                 return
             if self.translator_cog.handle_private_translation(textmessage):
-                return        
+                return
+
         super().onCmdUserTextMessage(textmessage)
 
     def onUserAudioBlock(self, nUserID: int, nStreamType: StreamType):

@@ -7,6 +7,8 @@ import random
 import string
 import logging
 import traceback
+import re
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -23,7 +25,7 @@ class BotUtils:
     """
     A class for standalone utility functions used by the bot.
     """
-    VERSION = "2026.08.22"
+    VERSION = "2026.08.23-r7.4"
 
     @staticmethod
     def load_messages(filename="messages.txt"):
@@ -43,6 +45,37 @@ class BotUtils:
                 return [line.strip().lower() for line in f]
         except FileNotFoundError:
             return []
+
+    @staticmethod
+    def normalize_moderation_text(value):
+        text = unicodedata.normalize("NFKC", str(value or "")).lower()
+        return "".join(ch for ch in text if unicodedata.category(ch) not in {"Cf", "Cc"}).strip()
+
+    @staticmethod
+    def contains_profanity(message_text, bad_words):
+        """Match configured profanity, including spaced/obfuscated Thai forms.
+
+        Very short Thai entries are token-only to reduce false positives such as
+        matching "หี" inside the innocent word "หีบ".
+        """
+        normalized = BotUtils.normalize_moderation_text(message_text)
+        if not normalized:
+            return False
+        compact = re.sub(r"[^\w\u0E00-\u0E7F]+", "", normalized, flags=re.UNICODE)
+        tokens = [token for token in re.split(r"[\s,.;:!?/\\|()\[\]{}<>\"'`~@#$%^&*+=_-]+", normalized) if token]
+        for word in bad_words or []:
+            bad = BotUtils.normalize_moderation_text(word)
+            if not bad:
+                continue
+            compact_bad = re.sub(r"[^\w\u0E00-\u0E7F]+", "", bad, flags=re.UNICODE)
+            if not compact_bad:
+                continue
+            if len(compact_bad) <= 2:
+                if bad in tokens:
+                    return True
+            elif compact_bad in compact:
+                return True
+        return False
 
     @staticmethod
     def check_for_updates(gettext_func):

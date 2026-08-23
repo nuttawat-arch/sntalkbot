@@ -44,9 +44,6 @@ class AccountRequestCog:
         message_text = ttstr(textmessage.szMessage).strip()
         if not message_text:
             return False
-        if message_text.startswith(self.bot.command_handler.prefix):
-            return False
-
         if user_id in self.active_requests:
             if not self._ensure_service_available(user_id):
                 self.active_requests.pop(user_id, None)
@@ -54,9 +51,9 @@ class AccountRequestCog:
             self._handle_flow_message(user_id, message_text)
             return True
 
-        # Do not interpret a known slashless command such as ``accounts on`` as
+        # Do not interpret a known command such as ``accounts on`` as
         # free-form account-request intent.  CommandHandler will process it next.
-        if self.bot.command_handler.is_slashless_command_candidate(message_text, textmessage):
+        if self.bot.command_handler.is_command_candidate(message_text, textmessage):
             return False
 
         if self._is_account_intent(message_text):
@@ -91,7 +88,7 @@ class AccountRequestCog:
             return
         value = args[0].strip().lower()
         if value not in ("on", "off"):
-            message = self._("Invalid value. Use /accounts on or /accounts off.")
+            message = self._("Invalid value. Use accounts on or accounts off.")
             self.bot.privateMessage(user_id, message)
             if user and user.nChannelID == self.bot.getMyChannelID():
                 self.bot.send_message(message)

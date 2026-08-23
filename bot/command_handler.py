@@ -1,4 +1,5 @@
 import shlex
+import unicodedata
 from TeamTalk5 import TextMessage, TextMsgType, UserType, ttstr
 
 
@@ -11,21 +12,31 @@ class Command:
 
 
 class CommandHandler:
-    def __init__(self, bot, prefix='/'):
+    def __init__(self, bot):
         self.bot = bot
-        self.prefix = prefix
         self.commands = {}
         self.aliases = {}
 
+    @staticmethod
+    def _strip_format_chars(value):
+        """Remove invisible Unicode format/control characters from command tokens."""
+        text = unicodedata.normalize("NFKC", str(value or ""))
+        return "".join(ch for ch in text if unicodedata.category(ch) not in {"Cf", "Cc"})
+
     def _normalize(self, name):
-        return str(name or "").strip().lstrip(self.prefix).lower()
+        # Canonical command names never include a prefix. Private messages may use
+        # prefix-free commands, while channel/broadcast messages require '/'.
+        value = self._strip_format_chars(name).strip()
+        if value.startswith("/"):
+            value = value[1:]
+        return value.strip().lower()
 
     def register_command(self, name, handler, admin_only=False, help_text=""):
         normalized = self._normalize(name)
         if not normalized:
             raise ValueError("Command name cannot be empty")
         if normalized in self.commands or normalized in self.aliases:
-            raise ValueError(f"Duplicate command or alias /{normalized}")
+            raise ValueError(f"Duplicate command or alias {normalized}")
         self.commands[normalized] = Command(normalized, handler, admin_only, help_text)
 
     def register_alias(self, alias, target):
@@ -34,11 +45,11 @@ class CommandHandler:
         if not alias_name or not target_name:
             raise ValueError("Alias and target cannot be empty")
         if alias_name == target_name:
-            raise ValueError(f"Alias /{alias_name} cannot target itself")
+            raise ValueError(f"Alias {alias_name} cannot target itself")
         if alias_name in self.commands or alias_name in self.aliases:
-            raise ValueError(f"Duplicate command or alias /{alias_name}")
+            raise ValueError(f"Duplicate command or alias {alias_name}")
         if target_name not in self.commands:
-            raise ValueError(f"Alias /{alias_name} targets unknown command /{target_name}")
+            raise ValueError(f"Alias {alias_name} targets unknown command {target_name}")
         self.aliases[alias_name] = target_name
 
     def resolve_name(self, name):
@@ -74,7 +85,7 @@ class CommandHandler:
 
         Prefer an explicit message type first. Some receive wrappers have exposed
         a non-zero ``nChannelID`` even on direct messages, which is why older
-        private slashless detection failed at runtime. Only use channel ID as a
+        private-message routing failed at runtime. Only use channel ID as a
         fallback when the message type is unavailable/unknown.
         """
         msg_type = self._numeric(getattr(textmessage, "nMsgType", None))
@@ -93,53 +104,50 @@ class CommandHandler:
         """Private input is always allowed; channel input follows the admin toggle."""
         return bool(enabled) or not self.is_channel_message(textmessage)
 
-    def is_slashless_command_candidate(self, message_text, textmessage):
-        """Return True for a known command written without the leading slash.
+    def _command_parts(self, message_text, textmessage=None):
+        """Parse a command while keeping channel chat safe.
 
-        Slashless commands are supported in both private messages and channel
-        messages.  Whether channel input is currently enabled is enforced by the
-        bot's message callback before dispatch reaches CommandHandler. Unknown
-        plain text is never treated as a command, so ordinary chat that does not
-        start with a registered command/alias passes through unchanged.
+        Private USER/CUSTOM messages may use the fast prefix-free syntax used by
+        TTMediaBot (for example ``h`` or ``p song``). Channel and broadcast text
+        must start with ``/`` so short commands cannot hijack ordinary chat.
         """
-        text = ttstr(message_text).strip()
-        if not text or text.startswith(self.prefix):
-            return False
-        parts = self._split_message(text)
-        if not parts:
-            return False
-        return self.has_name(parts[0])
+        text = unicodedata.normalize("NFKC", ttstr(message_text or "")).strip()
+        while text and unicodedata.category(text[0]) in {"Cf", "Cc"}:
+            text = text[1:].lstrip()
+        if not text:
+            return None, []
 
-    def handle_message(self, textmessage: TextMessage):
-        message_text = ttstr(textmessage.szMessage).strip()
-        if not message_text:
-            return False
-
-        explicit_prefix = message_text.startswith(self.prefix)
+        explicit_prefix = text.startswith("/")
         if explicit_prefix:
-            command_text = message_text[len(self.prefix):].lstrip()
+            command_text = text[1:].lstrip()
         else:
-            if not self.is_slashless_command_candidate(message_text, textmessage):
-                return False
-            command_text = message_text
+            if textmessage is not None and self.is_channel_message(textmessage):
+                return None, []
+            command_text = text
 
+        if not command_text:
+            return None, []
         parts = self._split_message(command_text)
         if not parts:
-            return False
+            return None, []
+        requested_name = self._normalize(parts[0])
+        if not requested_name or not self.has_name(requested_name):
+            return None, []
+        return requested_name, parts[1:]
 
-        requested_name = parts[0].lower()
-        args = parts[1:]
-        if not requested_name:
+    def is_command_candidate(self, message_text, textmessage=None):
+        requested_name, _args = self._command_parts(message_text, textmessage)
+        return requested_name is not None
+
+    def handle_message(self, textmessage: TextMessage):
+        message_text = ttstr(textmessage.szMessage)
+        requested_name, args = self._command_parts(message_text, textmessage)
+        if requested_name is None:
             return False
 
         command_name = self.resolve_name(requested_name)
         command = self.commands.get(command_name)
         if command is None:
-            # Unknown plain text is never treated as a command.  Only an explicit
-            # slash invocation gets an unknown-command response.
-            if explicit_prefix:
-                self.bot.privateMessage(textmessage.nFromUserID, self.bot._("Unknown command. Use /help to see all commands."))
-                return True
             return False
 
         sender_username = ttstr(textmessage.szFromUsername)

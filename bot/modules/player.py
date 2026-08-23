@@ -53,7 +53,7 @@ class PlayerCog:
         command_handler.register_command('v', self.handle_change_volume_command)
         command_handler.register_command('l', self.handle_get_current_link_command) # ขอลิ้งค์เพลงที่กำลังเล่น
         command_handler.register_command('pg', self.handle_playing_info_command) # ดูข้อมูลเพลงที่กำลังเล่นอยู่
-        command_handler.register_command('d', self.handle_get_duration_command) # Alias for /pg or specific duration info
+        command_handler.register_command('d', self.handle_get_duration_command) # Alias for pg or specific duration info
         command_handler.register_command('r', self.handle_history_command)
         command_handler.register_command('dl', self.handle_download_command)
         command_handler.register_command('s', self.handle_stop_command)
@@ -162,7 +162,7 @@ class PlayerCog:
             target = "tracks" if first in ("tracks", "track") else "queue"
             value_index = 1
         if len(args) <= value_index or args[value_index].lower() not in ("on", "off"):
-            self.bot.privateMessage(user_id, self._("Usage: /ptts on|off|status or /ptts tracks on|off or /ptts queue on|off"))
+            self.bot.privateMessage(user_id, self._("Usage: ptts on|off|status or ptts tracks on|off or ptts queue on|off"))
             return
         enabled = args[value_index].lower() == "on"
         updates = {}
@@ -179,7 +179,7 @@ class PlayerCog:
     def handle_player_tts_mode_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
         if not args or args[0].lower() not in ("microsoft", "google"):
-            self.bot.privateMessage(user_id, self._("Usage: /pttsmode microsoft|google"))
+            self.bot.privateMessage(user_id, self._("Usage: pttsmode microsoft|google"))
             return
         mode = args[0].lower()
         self.bot.playback_config["announcement_tts_mode"] = mode
@@ -191,15 +191,15 @@ class PlayerCog:
         mode = self.bot.tts_cog.get_player_tts_mode()
         if not args:
             if mode == "google":
-                self.bot.privateMessage(user_id, self._("Usage: /pvoice <language_code>, for example /pvoice th"))
+                self.bot.privateMessage(user_id, self._("Usage: pvoice <language_code>, for example pvoice th"))
             else:
-                self.bot.privateMessage(user_id, self._("Usage: /pvoice <voice_name>"))
+                self.bot.privateMessage(user_id, self._("Usage: pvoice <voice_name>"))
             return
         value = " ".join(args).strip()
         if mode == "google":
             lang = self.bot.tts_cog._resolve_google_lang(value)
             if not lang:
-                self.bot.privateMessage(user_id, self._("Unknown Google standard TTS language: {lang}. Use /pvoices to list languages.").format(lang=value))
+                self.bot.privateMessage(user_id, self._("Unknown Google standard TTS language: {lang}. Use pvoices to list languages.").format(lang=value))
                 return
             key = "announcement_google_lang"
             value = lang
@@ -218,10 +218,10 @@ class PlayerCog:
     def handle_player_tts_rate_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
         if self.bot.tts_cog.get_player_tts_mode() != "microsoft":
-            self.bot.privateMessage(user_id, self._("Player TTS rate is available in Microsoft mode. For Google use /pttsspeed."))
+            self.bot.privateMessage(user_id, self._("Player TTS rate is available in Microsoft mode. For Google use pttsspeed."))
             return
         if not args:
-            self.bot.privateMessage(user_id, self._("Usage: /pttsrate <-100..100>"))
+            self.bot.privateMessage(user_id, self._("Usage: pttsrate <-100..100>"))
             return
         try:
             value = int(args[0])
@@ -237,10 +237,10 @@ class PlayerCog:
     def handle_player_tts_speed_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
         if self.bot.tts_cog.get_player_tts_mode() != "google":
-            self.bot.privateMessage(user_id, self._("Player TTS speed is available in Google mode. For Microsoft use /pttsrate."))
+            self.bot.privateMessage(user_id, self._("Player TTS speed is available in Google mode. For Microsoft use pttsrate."))
             return
         if not args:
-            self.bot.privateMessage(user_id, self._("Usage: /pttsspeed <0.25..4.0>"))
+            self.bot.privateMessage(user_id, self._("Usage: pttsspeed <0.25..4.0>"))
             return
         try:
             value = float(args[0])
@@ -255,7 +255,7 @@ class PlayerCog:
 
     def handle_prefixed_message(self, textmessage):
         """
-        No longer handles prefixes without slashes as per user request.
+        Legacy Player text-prefix shortcuts are disabled; registered commands are handled centrally.
         """
         return False
 
@@ -309,7 +309,7 @@ class PlayerCog:
             return
             
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /u <link>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: u <link>"))
             return
 
         link = " ".join(args)
@@ -358,7 +358,7 @@ class PlayerCog:
     def _play_collection_task(self, link, user_id):
         collection_type, results = self.player.fetch_collection(link)
         if not results:
-            self.bot.privateMessage(user_id, self._("No videos found in the {collection_type}.").format(collection_type=collection_type or "playlist/channel"))
+            self.bot.privateMessage(user_id, self._("No videos found in the {collection_type}.").format(collection_type=collection_type or "playlistchannel"))
             return
         
         if self.player.queue_mode:
@@ -366,7 +366,7 @@ class PlayerCog:
             self._send_playback_message(self._("{nickname} added {count} items from {collection_type} to queue.").format(
                 nickname=self._nickname(user_id),
                 count=len(results),
-                collection_type=collection_type or "playlist/channel"
+                collection_type=collection_type or "playlistchannel"
             ))
             self._announce_queue(count=len(results))
             if not self.player.is_playing:
@@ -391,7 +391,7 @@ class PlayerCog:
         self._prefetch_next_for_current()
         user_nickname = self._nickname(user_id)
         self._send_playback_message(self._("{nickname} requested to play from a {collection_type}").format(
-            nickname=user_nickname, collection_type=collection_type or "playlist/channel"))
+            nickname=user_nickname, collection_type=collection_type or "playlistchannel"))
         self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
         self._announce_track(self.player.media_title)
 
@@ -433,7 +433,7 @@ class PlayerCog:
         if time.time() > pending["expires_at"]:
             del self.pending_channel_tabs[user_id]
             if message_text.isdigit():
-                self.bot.privateMessage(user_id, self._("Channel selection expired. Use /channel again."))
+                self.bot.privateMessage(user_id, self._("Channel selection expired. Use channel again."))
                 return True
             return False
         if not message_text.isdigit():
@@ -478,7 +478,7 @@ class PlayerCog:
         if time.time() > pending["expires_at"]:
             del self.pending_playlist_tabs[user_id]
             if message_text.isdigit():
-                self.bot.privateMessage(user_id, self._("Playlist selection expired. Use /channel again."))
+                self.bot.privateMessage(user_id, self._("Playlist selection expired. Use channel again."))
                 return True
             return False
         if not message_text.isdigit():
@@ -518,7 +518,7 @@ class PlayerCog:
             return
         
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /pm <name>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: pm <name>"))
             return
         
         query = " ".join(args)
@@ -659,7 +659,7 @@ class PlayerCog:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Nothing is currently playing"))
             return
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /t <time> (e.g., 1:30 or 90)"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: t <time> (e.g., 1:30 or 90)"))
             return
         
         time_str = args[0]
@@ -735,7 +735,7 @@ class PlayerCog:
                 user_nickname = self._nickname(textmessage.nFromUserID)
                 self._send_playback_message(self._("{name} has changed the volume to {volume}").format(name=user_nickname, volume=volume))
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /v [volume_level]"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: v [volume_level]"))
 
     def on_playback_end(self):
         """Callback function to be called when playback ends."""
@@ -790,7 +790,7 @@ class PlayerCog:
             elif arg in ("off", "0", "false", "no"):
                 self.autoplay_enabled = False
             else:
-                self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /autoplay [on|off]"))
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: autoplay [on|off]"))
                 return
         else:
             self.autoplay_enabled = not self.autoplay_enabled
@@ -944,7 +944,7 @@ class PlayerCog:
             else:
                 self.bot.privateMessage(textmessage.nFromUserID, result_message)
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /r <index>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: r <index>"))
 
     def handle_download_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -957,7 +957,7 @@ class PlayerCog:
         link = " ".join(args) if args else self.player.current_link
         
         if not link:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /dl <youtube_link> or play a track first."))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: dl <youtube_link> or play a track first."))
             return
 
         self.bot.io_pool.submit(self._download_and_upload_task, textmessage.nFromUserID, link)
@@ -1035,7 +1035,7 @@ class PlayerCog:
             elif arg in ("off", "0", "false", "no"):
                 self.player.queue_mode = False
             else:
-                self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /q [on|off]"))
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: q [on|off]"))
                 return
         else:
             self.player.queue_mode = not self.player.queue_mode
@@ -1075,7 +1075,7 @@ class PlayerCog:
             return
         
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /dq <index>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: dq <index>"))
             return
         
         try:
@@ -1091,7 +1091,7 @@ class PlayerCog:
             else:
                 self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid queue index."))
         except ValueError:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /dq <index>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: dq <index>"))
 
     def handle_clear_queue_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -1294,7 +1294,7 @@ class PlayerCog:
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: /select <index>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: select <index>"))
             return
         try:
             index = int(args[0]) - 1

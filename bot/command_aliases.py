@@ -15,6 +15,7 @@ COMMAND_ALIASES = {
     "ad": "admins",
     "sr": "search",
     "ci": "channelinput",
+    "ic": "intercept",
 
     # Server Manager / Full
     "w": "weather",

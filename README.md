@@ -1,6 +1,9 @@
 # SNTalkBot
 
-Registered commands can be used without a leading `/` in both private messages and channels (for example `h`, `p song`, `ap on`). Slash-prefixed commands remain backward compatible. Admins can disable all channel-text input with `ci off` and re-enable it privately with `ci on`; `cm on|off|status` independently controls Player announcements sent to the channel.
+> **r7.3.1:** Existing Docker configs automatically receive new optional defaults; detached containers no longer fall into the interactive setup wizard during upgrades.
+
+
+Registered commands are prefix-free in private messages (for example `h`, `p song`, `ap on`). Channel and broadcast commands require a leading `/` (for example `/h`, `/p song`, `/ap on`) so ordinary chat is never captured as a short command. Admins can disable normal channel-text reactions with `ci off` privately or `/ci off` in a channel; moderation remains active, and `cm on|off|status` independently controls Player announcements sent to the channel.
 
 
 > **Platform:** Linux/Docker only. Windows GUI support has been removed intentionally.
@@ -50,4 +53,4 @@ Player announcements use a separate audio stream mixed with music by PulseAudio.
 
 ## Official developer reports
 
-`dr <message>` submits an explicit user report to `https:/report.nuttawat.ddnsfree.com/apireport`. Telegram credentials are never embedded in the public image.
+`dr <message>` submits an explicit user report to `https://report.nuttawat.ddnsfree.com/api/report`. Telegram credentials are never embedded in the public image.

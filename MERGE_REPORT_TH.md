@@ -16,16 +16,16 @@
 - ชื่อคำสั่งไม่ซ้ำกัน: 116/116
 - ทุกคำสั่งต้องขึ้นต้นด้วย `/`
 - ข้อความธรรมดาที่ไม่ขึ้นต้น `/` จะไม่ถูกตีความเป็นคำสั่ง
-- `/help` ส่งหัวข้อก่อน 1 ข้อความ จากนั้นส่งหนึ่งคำสั่งพร้อมคำอธิบายต่อหนึ่ง TeamTalk private message
+- `help` ส่งหัวข้อก่อน 1 ข้อความ จากนั้นส่งหนึ่งคำสั่งพร้อมคำอธิบายต่อหนึ่ง TeamTalk private message
 - `COMMANDS_TH.md` ตรงกับคำสั่งที่ลงทะเบียนจริง 116/116
 - บรรทัดภาษาไทยที่ยาวที่สุด 429 UTF-8 bytes ต่ำกว่าขีดแบ่งข้อความภายใน 480 bytes
 
 ## Player และ YouTube
 
 - ใช้ yt-dlp Python API โดยตรง
-- YouTube: `/p`
-- YouTube Music: `/pm`
-- URL/playlist/channel/queue/favorites/autoplay
+- YouTube: `p`
+- YouTube Music: `pm`
+- URL/playlistchannel/queuefavoritesautoplay
 - M1 Single, M2 Auto/Next, M3 Repeat
 - TTS ประกาศเพลง/คิว พร้อม ducking เสียงเพลงขณะประกาศ
 - prefetch รายการถัดไปใน worker แยก เพื่อลดการบล็อก TeamTalk event thread
@@ -62,7 +62,7 @@ Docker target หลักเป็น Linux amd64/x86_64 ตาม TeamTalk SDK
 
 ## ภาษาไทย
 
-- ภาษาไทยอยู่ที่ `locales/th/LC_MESSAGES/messages.po`
+- ภาษาไทยอยู่ที่ `locales/th/LC_MESSAGESmessages.po`
 - ไม่มี `msgstr` ว่างใน catalog ภาษาไทย ณ release นี้
 - `locales/update_catalog.py` ใช้อัปเดตข้อความจาก source
 - `locales/compile_locales.py` คอมไพล์ `.po` เป็น `.mo` ด้วย Python ล้วน ไม่ต้องติดตั้ง gettext/msgfmt

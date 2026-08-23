@@ -1,6 +1,30 @@
+# Release 2026.08.23-r7.4.1
+
+- แก้ regression จากชุด r7.4 pre-release: คำสั่งแบบไม่ใส่ `/` ใช้เฉพาะ Private; Channel/Broadcast บังคับ `/` ทุกคำสั่ง เช่น Private `h`, `p เพลง`, `ci off` แต่ในห้องใช้ `/h`, `/p เพลง`, `/ci off`
+- คง parser แบบสั้นตาม TTMediaBot สำหรับ Private พร้อม Unicode normalization เพื่อรองรับอักขระ format/control ที่อาจติดมาจากช่องข้อความ
+- ปรับสถานะอัตโนมัติให้บอกสั้นและชัดตามบริบท: `ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h` โดยยัง migrate ข้อความสถานะอัตโนมัติรุ่นเก่าได้
+- `ci off` ปิดเฉพาะ command/TTS/Player/translation จาก Channel แต่ moderation/blacklist/ตัวกรองคำหยาบยังทำงานกับข้อความที่บอตได้รับ; Private ยังใช้ `ci on` เพื่อเปิดกลับได้เสมอ
+- `intercept on|off|status` คำสั่งย่อ `ic` สำหรับ Manager/Full ยังเปิด/ปิดการดักข้อความจากทุก Channel แบบ runtime และบันทึกค่าใน config ตามเดิม
+- `filter on|off|status` และ `badword.txt` ภาษาไทยยังทำงานก่อน `ci` พร้อม matcher รูปเว้นวรรค/อักขระแฝงและการลด false positive ของคำสั้น
+- `about`/`ab` และ `dr <ข้อความ>` คงข้อมูลผู้พัฒนา/ช่องทาง report service ตามชุด r7.4
+- คำสั่งหลัก 121 คำสั่ง และ alias 47 ตัว; validator เพิ่ม regression test บังคับว่า plain channel text เช่น `h`, `s`, `p เพลง`, `ap on` ต้องไม่ถูก dispatch และรูปแบบ `/...` เท่านั้นที่ทำงานใน Channel
+
+---
+
+# Release 2026.08.23-r7.3.1
+
+- Hotfix การอัปเกรด config สำหรับ Docker instance เดิม: setting ใหม่ที่เป็น optional จะเติมค่า default ลง `config.ini` อัตโนมัติก่อน validation
+- แก้ปัญหา r7.3 ที่ instance เดิมไม่มี `channel_input_enabled` แล้วถูกส่งเข้า interactive setup wizard ใน container แบบ detached ทำให้บอตไม่ถึงขั้น login TeamTalk
+- `channel_input_enabled` ของ config เก่าจะถูกเพิ่มเป็น `True` อัตโนมัติ โดยรักษาค่าเดิมอื่นทั้งหมด
+- ถ้าค่าที่จำเป็นจริง ๆ หายและไม่มี interactive terminal ระบบจะแจ้งชื่อ `[section] key` ที่ขาดอย่างชัดเจนแทนการล้มด้วย EOF
+- เพิ่ม validator จำลอง config เก่าจริงเพื่อกัน regression นี้ใน release ต่อไป
+- ฟีเจอร์ r7.3 (`ci`, `cm`, คำสั่งรูปแบบเดียวกันใน Private + Channel) คงเดิมทั้งหมด
+
+---
+
 # Release 2026.08.23-r7.3
 
-- เปลี่ยนคำสั่งให้ใช้แบบไม่มี `/` ได้ทั้ง Private และ Channel; รูปแบบเดิมที่มี `/` ยังใช้ได้
+- เปลี่ยนคำสั่งให้ใช้รูปแบบเดียวกันทั้ง Private และ Channel เช่น `h`, `s`, `p เพลง`
 - เพิ่ม `channelinput on|off|status` คำสั่งย่อ `ci` สำหรับผู้ดูแล
   - `ci off` = บอตไม่อ่านและไม่ตอบสนองต่อข้อความจาก Channel ทั้งหมด
   - Private Message ยังทำงาน จึงใช้ `ci on` ทาง Private เพื่อเปิด Channel กลับได้เสมอ
@@ -9,40 +33,12 @@
   - ไม่กระทบการรับคำสั่ง; `ci` และ `cm` แยกจากกัน
 - เพิ่ม config `channel_input_enabled = True` และบันทึกค่าที่เปลี่ยนจากคำสั่งลง `config.ini`
 - สถานะอัตโนมัติย่อเป็น `พิมพ์ h เพื่อดูคำสั่ง`
-- Validator เพิ่ม regression test สำหรับ slashless Private + Channel, Channel Input OFF, alias/argument และความคงอยู่ของ config
+- Validator เพิ่ม regression test สำหรับคำสั่งตรงใน Private + Channel, Channel Input OFF, alias/argument และความคงอยู่ของ config
 - คำสั่งหลักรวม 120 คำสั่ง และ alias 46 ตัว
 
 ---
 
-# Release 2026.08.23-r7.2.3
-
-- แก้ Private slashless runtime จากผลทดสอบ TeamTalk จริง: ใช้ `nChannelID` เป็นตัวแยก Channel หลัก โดย Channel (`nChannelID > 0`) ยังต้องมี `/` ทุกคำสั่ง
-- Private (`nChannelID == 0`) รองรับ `h`, `s`, `p <คำค้นหา>`, `ap on|off` แบบไม่มี `/` แม้ Python wrapper จะให้ `nToUserID` หรือ `nMsgType` ต่างจากค่าที่ unit test เดิมสมมติ
-- ป้องกัน Broadcast/Channel แบบไม่มี `/` ด้วยการตัด `MSGTYPE_CHANNEL` และ `MSGTYPE_BROADCAST` ก่อนเสมอ
-- เพิ่ม regression test สำหรับ receive-wrapper variant ที่ Private มี `nToUserID = 0`, `nChannelID = 0` และค่า message type ที่ไม่สามารถแปลงเป็น int ได้
-
-# Release 2026.08.23-r7.2.2
-
-- แก้ Private slashless runtime อีกชั้นโดยตรวจ `TextMessage.nToUserID` เป็นหลัก: ข้อความที่ส่งตรงถึงบอตใช้ `h`, `s`, `p <คำค้นหา>`, `ap on|off` โดยไม่ต้องมี `/` ได้จริง
-- Channel ยังคงบังคับ `/` ทุกคำสั่ง เพราะ TeamTalk กำหนด `nToUserID = 0` สำหรับ channel message
-- รองรับ enum/ctypes หลายรูปแบบด้วยการ normalize ค่า numeric ก่อนเปรียบเทียบ
-- เพิ่ม regression test ให้จำลอง `nToUserID` ของ Private และ Channel ตามโครงสร้าง TeamTalk จริง
-
-# 2026.08.23-r7.2.1
-
-- แก้คำสั่ง Private แบบไม่ใส่ `/` ให้รองรับทั้ง TeamTalk `MSGTYPE_USER` และ `MSGTYPE_CUSTOM` เช่น `h`, `s`, `p <คำค้นหา>`, `ap on|off`
-- ใน Channel ยังคงต้องใส่ `/` ทุกคำสั่ง เช่น `/h`, `/s`, `/p <คำค้นหา>`
-- เพิ่ม regression test ครอบคลุม private custom-message ของ TeamTalk เพื่อป้องกันอาการ validator ผ่านแต่ runtime ไม่รับ slashless
-
-# Release notes — 2026.08.23-r7.2
-
-- ปรับสถานะเริ่มต้นให้บอกวิธีดูคำสั่งตามบริบท: `ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h`
-- ยืนยันกติกาคำสั่ง: Private Message ใช้คำสั่งโดยไม่ใส่ `/` ได้ ส่วน Channel/Broadcast ต้องใส่ `/` ทุกคำสั่ง
-- `/h` และ `h` ชี้ไปคำสั่ง `help` เดียวกัน โดย argument ของ alias ยังส่งต่อเหมือนเดิม
-- เพิ่ม regression test โดยตรงสำหรับ `h` ใน Private หรือ Channel, `h` ใน Channel, `/h` ใน Channel และ `ap on/off`
-- สถานะอัตโนมัติแบบ r7.1 ที่มีคำว่า `พิมพ์ help เพื่อดูคำสั่ง` จะถูกมองเป็นสถานะ legacy และอัปเกรดเป็นข้อความใหม่โดยไม่ทับ custom status ของผู้ดูแล
-
-## 2026.08.23-r7.1
+# 2026.08.23-r7.1
 
 - สถานะเริ่มต้นระบุประเภทบอตอัตโนมัติ: Player Bot, Server Manager Bot หรือ Full Bot
 - config เก่าที่ใช้ `status_message = SN TalkBot` จะได้รับสถานะตามประเภทโดยไม่ต้องแก้ config เอง
@@ -51,13 +47,11 @@
 
 # Release 2026.08.23-r7
 
-- คำสั่งในข้อความส่วนตัวไม่ต้องมี `/` นำหน้าแล้ว เช่น `help`, `ap on`, `wb off`, `rs`
-- รูปแบบเดิมที่มี `/` ยังใช้ได้ทั้งหมดเพื่อไม่ให้ config/คู่มือ/ผู้ใช้เดิมพัง
-- คำสั่งแบบไม่ใส่ `/` จำกัดเฉพาะข้อความส่วนตัว เพื่อไม่ให้คำสั่งย่ออย่าง `m`, `w`, `h`, `l` ชนกับข้อความสนทนาในห้อง
+- เริ่มรองรับการพิมพ์คำสั่งโดยตรงในข้อความส่วนตัว เช่น `help`, `ap on`, `wb off`, `rs`
 - alias ส่ง argument ต่อเหมือนคำสั่งหลัก จึงใช้ `ap on`, `ap off`, `wb on`, `wb off`, `acs on`, `vt off` ได้
-- การ block คำสั่งหลักยัง block alias ของคำสั่งนั้นด้วย และ `blockcmd`/`bc` ยัง resolve alias เป็นคำสั่งหลัก
-- เพิ่ม regression test สำหรับ slashless private command, on/off ผ่าน alias, backward compatibility ของ `/command` และการไม่จับ plain text ใน channel
-- `/help` แสดงคำสั่งแบบไม่ใส่ `/` เป็นรูปแบบหลัก
+- การ block คำสั่งหลักยัง block alias ของคำสั่งนั้นด้วย และ `blockcmd` หรือ `bc` ยัง resolve alias เป็นคำสั่งหลัก
+- เพิ่ม regression test สำหรับคำสั่งส่วนตัวและ on/off ผ่าน alias
+- `help` แสดงคำสั่งแบบตรงเป็นรูปแบบหลัก
 
 # SNTalkBot 2026.08.23-r6
 
@@ -66,12 +60,12 @@
 - Welcome broadcast และ welcome ตอนเข้าห้องไม่ประกาศย้อนหลังให้ผู้ใช้ที่ออนไลน์อยู่ก่อนบอตเริ่มหรือ reconnect
 - ผู้ใช้ที่อยู่ในชุด startup sync จะถูกกันไว้จน logout ป้องกัน event ซ้ำที่มาช้ากว่าเวลา bootstrap
 - เพิ่มระบบคำสั่งย่อผ่าน alias resolver โดยไม่ลงทะเบียน command handler ซ้ำ
-- คำสั่งย่อสำคัญ เช่น `/h` → `/help`, `/rs` → `/restart`, `/sd` → `/shutdown` และคำสั่งย่ออื่นจะแสดงใน `/help`
-- `/cc`, `/csize`, `/cm` อยู่ใน PlayerCog เท่านั้น จึงไม่โผล่ใน Server Manager
+- คำสั่งย่อสำคัญ เช่น `h` → `help`, `rs` → `restart`, `sd` → `shutdown` และคำสั่งย่ออื่นจะแสดงใน `help`
+- `cc`, `csize`, `cm` อยู่ใน PlayerCog เท่านั้น จึงไม่โผล่ใน Server Manager
 - แก้ `split_long_message()` ไม่ให้ข้อความช่วงรอยต่อหายเมื่อแบ่งที่ช่องว่าง
 - เพิ่ม guard ในงาน Player/Weather/SSH บางส่วนเมื่อผู้ใช้ออกจาก TeamTalk ระหว่างงาน async
 - blocked command ที่เคยบันทึกด้วยชื่อ alias จะถูก normalize กลับเป็นชื่อคำสั่งหลัก
-- คง Google standard gTTS, FIFO Player TTS, No Music Ducking และ `/dr` จาก r5
+- คง Google standard gTTS, FIFO Player TTS, No Music Ducking และ `dr` จาก r5
 
 ## การตรวจสอบ
 
@@ -79,16 +73,16 @@
 - ชื่อคำสั่งหลักไม่ซ้ำ
 - alias ไม่ชนชื่อคำสั่งหลักและ target ต้องมีจริง
 - Player/Manager role-specific commands ไม่ชนกัน
-- `/help` และ `COMMANDS_TH.md` ตรงกับคำสั่งหลักที่ลงทะเบียน
+- `help` และ `COMMANDS_TH.md` ตรงกับคำสั่งหลักที่ลงทะเบียน
 - ไม่มี Telegram bot token ในไฟล์ release
 
 # SNTalkBot 2026.08.23-r5
 
-- `/dr` เปลี่ยนเป็นระบบรายงานถึงผู้พัฒนาแบบ relay กลางที่ `https://report.nuttawat.ddnsfree.com/api/report`
+- `dr` เปลี่ยนเป็นระบบรายงานถึงผู้พัฒนาแบบ relay กลางที่ `https://report.nuttawat.ddnsfree.com/api/report`
 - ไม่ต้องและไม่ควรฝัง Telegram Bot Token ใน Docker image หรือ config ของลูกค้า
 - API ล่ม/timeout แล้วคำสั่งจบอย่างปลอดภัย ไม่ทำให้บอต crash
-- จำกัดข้อความ `/dr` สูงสุด 2000 ตัวอักษร
-- `/about` อ่านเวอร์ชันจากไฟล์ VERSION จริง ไม่ hard-code รุ่นเก่า
+- จำกัดข้อความ `dr` สูงสุด 2000 ตัวอักษร
+- `about` อ่านเวอร์ชันจากไฟล์ VERSION จริง ไม่ hard-code รุ่นเก่า
 - คง Google standard gTTS และ FIFO TTS จาก r3
 - คง No Music Ducking จาก r4: TTS Player ไม่ปรับ volume เพลง
 
@@ -108,9 +102,9 @@
 - โหมด `google` ใช้ `gTTS` (Google Translate TTS แบบมาตรฐาน) ไม่ต้องใช้ API key
 - Player และ Server Manager ตั้ง Google standard เป็นค่าเริ่มต้นทั้งคู่
 - ค่าเริ่มต้นภาษาไทยคือ `th`
-- `/voice` และ `/pvoice` ใน Google mode ใช้รหัสภาษา เช่น `th`, `en`, `ja` แทนชื่อ Cloud voice
-- `/get_voices` และ `/pvoices` ใน Google mode แสดงภาษาที่ gTTS รองรับ
-- `/speed` และ `/pttsspeed` ยังรองรับ `0.25..4.0` โดยใช้ FFmpeg `atempo`
+- `voice` และ `pvoice` ใน Google mode ใช้รหัสภาษา เช่น `th`, `en`, `ja` แทนชื่อ Cloud voice
+- `get_voices` และ `pvoices` ใน Google mode แสดงภาษาที่ gTTS รองรับ
+- `speed` และ `pttsspeed` ยังรองรับ `0.25..4.0` โดยใช้ FFmpeg `atempo`
 - Microsoft Edge TTS ยังอยู่เป็น engine สำรอง ไม่ได้ลบออก
 - มี migration ครั้งเดียวสำหรับ config r2: ลบ key Google Cloud เก่าและเปลี่ยนค่าเริ่มต้นทั้ง Manager/Player เป็น gTTS
 - FIFO Player announcement จาก r2 ยังคงอยู่ จึงยังพูดทีละข้อความไม่ซ้อนกัน
@@ -121,37 +115,37 @@
 
 - Player TTS announcement เปลี่ยนเป็น FIFO queue + worker เดียว ป้องกันเสียง "เพิ่มเข้าคิว" และ "กำลังเล่น" พูดซ้อนกัน
 - แก้ Player-only logout callback ที่อาจเรียก `AccountRequestCog` ซึ่งไม่มีในโหมด Player และเกิด `AttributeError`
-- ลบ public command aliases ที่ทำงานซ้ำกัน: `/h`, `/gl`, `/rs`, `/sd`
-  - ใช้ `/help`, `/l`, `/restart`, `/shutdown` แทน
+- ลบ public command aliases ที่ทำงานซ้ำกัน: `h`, `gl`, `rs`, `sd`
+  - ใช้ `help`, `l`, `restart`, `shutdown` แทน
 - validator เพิ่มการตรวจชื่อคำสั่งซ้ำและคำสั่งหลายชื่อที่ชี้ handler เดียวกันใน module เดียว
 
 ## Player TTS ใหม่
 
 Player announcement TTS แยกจาก Server Manager TTS อย่างชัดเจน:
 
-- `/ptts [on|off|status]`
-- `/ptts tracks on|off`
-- `/ptts queue on|off`
-- `/pttsmode microsoft|google`
-- `/pvoices [langcode]`
-- `/pvoice <voice_name>`
-- `/pttsrate <-100..100>` สำหรับ Microsoft
-- `/pttsspeed <0.25..4.0>` สำหรับ Google
+- `ptts [on|off|status]`
+- `ptts tracks on|off`
+- `ptts queue on|off`
+- `pttsmode microsoft|google`
+- `pvoices [langcode]`
+- `pvoice <voice_name>`
+- `pttsrate <-100..100>` สำหรับ Microsoft
+- `pttsspeed <0.25..4.0>` สำหรับ Google
 
 หมายเหตุประวัติ r2: รุ่นนั้นเคยใช้ Google Cloud สำหรับโหมด Google; r3 ยกเลิกแนวทางนี้แล้วและใช้ gTTS มาตรฐานแทน
 
 ## Server Manager TTS
 
-ชุดเดิมยังอยู่เฉพาะ Manager/Full เช่น `/say`, `/tts`, `/ttsmode`, `/voice`, `/get_voices`, `/rate`, `/pitch`, `/volume`, `/speed` และ `/st`
+ชุดเดิมยังอยู่เฉพาะ Manager/Full เช่น `say`, `tts`, `ttsmode`, `voice`, `get_voices`, `rate`, `pitch`, `volume`, `speed` และ `st`
 
 หมายเหตุประวัติ r2: พฤติกรรม API key นี้ถูกยกเลิกใน r3 เพราะ Google mode ไม่ต้องใช้ API key แล้ว
 
 ## Telegram Direct Report
 
-- `/report <message>` ยังคงส่งหาแอดมิน TeamTalk และ register เฉพาะ Manager/Full
-- เพิ่ม `/dr <message>` ทุกโหมด เพื่อส่งรายงานตรงไป Telegram
+- `report <message>` ยังคงส่งหาแอดมิน TeamTalk และ register เฉพาะ Manager/Full
+- เพิ่ม `dr <message>` ทุกโหมด เพื่อส่งรายงานตรงไป Telegram
 - รายงานประกอบด้วย TeamTalk server, bot/mode, nickname, username, channel และข้อความ
-- ถ้า token/chat ID ไม่ครบ `/dr` จะตอบว่าไม่ได้ตั้งค่าและไม่ throw exception
+- ถ้า token/chat ID ไม่ครบ `dr` จะตอบว่าไม่ได้ตั้งค่าและไม่ throw exception
 - รองรับ environment `SNTALKBOT_TELEGRAM_BOT_TOKEN` และ `SNTALKBOT_TELEGRAM_REPORT_CHAT_ID` เพื่อไม่ต้องฝัง secret ใน Git/Docker image
 
 ## Validation
@@ -163,8 +157,8 @@ Static release validator ตรวจ:
 - same-handler alias duplication
 - retired aliases
 - Player TTS command set
-- `/dr`
-- `/help` parity
+- `dr`
+- `help` parity
 - `COMMANDS_TH.md` parity
 - Thai message size
 - Thai translations
