@@ -97,7 +97,28 @@ class PlayerCog:
         command_handler.register_command('cm', self.handle_channel_messages_command, admin_only=True)
 
     def handle_channel_messages_command(self, textmessage, *args):
-        enabled = not self.bot.playback_config.get("send_channel_messages", True)
+        """Control playback announcements sent to the TeamTalk channel.
+
+        No argument preserves the legacy toggle behavior. Explicit on/off/status
+        is easier for screen-reader users and automation.
+        """
+        current = bool(self.bot.playback_config.get("send_channel_messages", True))
+        if not args:
+            enabled = not current
+        else:
+            value = str(args[0]).strip().lower()
+            if value == "status":
+                state = self._("enabled") if current else self._("disabled")
+                self.bot.privateMessage(
+                    textmessage.nFromUserID,
+                    self._("Playback channel messages are now {state}.").format(state=state),
+                )
+                return
+            if value not in ("on", "off"):
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: cm on|off|status"))
+                return
+            enabled = value == "on"
+
         self.bot.playback_config["send_channel_messages"] = enabled
         self.bot.config_handler.update_playback_settings({"send_channel_messages": enabled})
         state = self._("enabled") if enabled else self._("disabled")

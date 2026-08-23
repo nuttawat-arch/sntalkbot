@@ -1,13 +1,13 @@
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 
-คำสั่งในข้อความส่วนตัวไม่ต้องใส่ `/` นำหน้าอีกต่อไป เช่น `h`, `ap on`, `rs` และคำสั่งแบบเดิม `/h`, `/ap on`, `/rs` ยังใช้ได้เหมือนเดิม ในห้องสาธารณะยังคงใช้ `/` เพื่อป้องกันข้อความธรรมดาชนกับคำสั่งย่อ
+คำสั่งใช้ได้ทั้ง Private และ Channel โดยไม่ต้องใส่ `/` เช่น `h`, `p เพลง`, `ap on`, `rs`; รูปแบบเดิมที่มี `/` ยังใช้ได้ ผู้ดูแลปิดการรับข้อความ Channel ได้ด้วย `ci off` และเปิดกลับทาง Private ด้วย `ci on`
 
 
 โปรเจกต์นี้รวม `tt_utilities-nut`, ส่วนที่จำเป็นจาก `tt_utilities-main` และแนวทางที่แข็งแรงจาก `TTMediaBot-th` ไว้ในบอต TeamTalk ตัวเดียว โดยใช้ single-bot config เท่านั้น ไม่มีระบบหลายโปรไฟล์
 
 ## จุดสำคัญของรุ่นนี้
 
-- Private Message ใช้คำสั่งที่รู้จักได้โดยไม่ต้องมี `/`; ใน Channel/Broadcast ทุกคำสั่งต้องขึ้นต้นด้วย `/` เพื่อไม่ให้ข้อความธรรมดาชนกับคำสั่ง
+- Private และ Channel ใช้คำสั่งที่รู้จักได้โดยไม่ต้องมี `/`; `ci on|off|status` ควบคุมการรับข้อความ Channel และ `cm on|off|status` ควบคุมข้อความ Player ที่ประกาศออก Channel
 - ชื่อคำสั่งที่ลงทะเบียนจริงไม่ซ้ำกัน และระบบจะหยุดทันทีด้วย error หากนักพัฒนาเพิ่มชื่อซ้ำในอนาคต
 - `help` ส่งหัวข้อก่อนหนึ่งข้อความ แล้วส่งคำสั่งพร้อมคำอธิบายทีละคำสั่ง หนึ่งคำสั่งต่อหนึ่ง TeamTalk private message
 - Player ใช้ `yt-dlp` โดยตรง รองรับ YouTube, YouTube Music, URL/stream, playlistchannel, queue, favorites, autoplay, history, seek, volumespeed, M1/M2/M3, audio filters และ download

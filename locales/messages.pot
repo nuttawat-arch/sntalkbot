@@ -2797,3 +2797,27 @@ msgstr ""
 #: bot/sntalkbot.py
 msgid "Initial TeamTalk user synchronization complete; live login welcomes are enabled."
 msgstr ""
+
+msgid "Channel input is currently {state}."
+msgstr ""
+
+msgid "Usage: channelinput on|off|status (short alias: ci)"
+msgstr ""
+
+msgid "Channel input is now {state}."
+msgstr ""
+
+msgid "Usage: cm on|off|status"
+msgstr ""
+
+msgid "Admins only: Enable, disable, or show channel input. When off, the bot ignores all channel text; private messages remain available. Short alias: ci."
+msgstr ""
+
+msgid "Admins only: Enable, disable, or show Player announcements in the TeamTalk channel. With no argument, toggle the current setting."
+msgstr ""
+
+msgid "Accept Commands from Channel Messages?"
+msgstr ""
+
+msgid "When enabled, registered commands can be used in channels without a slash. When disabled, the bot ignores channel text while private-message commands remain available."
+msgstr ""

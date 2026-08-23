@@ -2794,3 +2794,27 @@ msgstr "คำสั่งย่อ: {aliases}"
 #: bot/sntalkbot.py
 msgid "Initial TeamTalk user synchronization complete; live login welcomes are enabled."
 msgstr "ซิงก์รายชื่อผู้ใช้ TeamTalk เริ่มต้นเสร็จแล้ว ระบบต้อนรับจะทำงานเฉพาะการเข้าสู่ระบบใหม่หลังจากนี้"
+
+msgid "Channel input is currently {state}."
+msgstr "การรับข้อความจาก Channel ขณะนี้ {state}"
+
+msgid "Usage: channelinput on|off|status (short alias: ci)"
+msgstr "วิธีใช้: channelinput on|off|status (คำสั่งย่อ: ci)"
+
+msgid "Channel input is now {state}."
+msgstr "การรับข้อความจาก Channel ขณะนี้ {state}"
+
+msgid "Usage: cm on|off|status"
+msgstr "วิธีใช้: cm on|off|status"
+
+msgid "Admins only: Enable, disable, or show channel input. When off, the bot ignores all channel text; private messages remain available. Short alias: ci."
+msgstr "เฉพาะผู้ดูแล: เปิด ปิด หรือดูสถานะการรับข้อความจาก Channel เมื่อปิด บอตจะไม่อ่านและไม่ตอบสนองต่อข้อความใน Channel แต่ข้อความส่วนตัวยังใช้ได้ คำสั่งย่อ: ci"
+
+msgid "Admins only: Enable, disable, or show Player announcements in the TeamTalk channel. With no argument, toggle the current setting."
+msgstr "เฉพาะผู้ดูแล: เปิด ปิด หรือดูสถานะข้อความของ Player ที่ส่งใน Channel หากไม่ใส่ค่า จะสลับสถานะปัจจุบัน"
+
+msgid "Accept Commands from Channel Messages?"
+msgstr "รับคำสั่งจากข้อความใน Channel หรือไม่?"
+
+msgid "When enabled, registered commands can be used in channels without a slash. When disabled, the bot ignores channel text while private-message commands remain available."
+msgstr "เมื่อเปิด คำสั่งที่ลงทะเบียนไว้ใช้ใน Channel ได้โดยไม่ต้องมีสแลช เมื่อปิด บอตจะไม่สนใจข้อความใน Channel แต่คำสั่งผ่านข้อความส่วนตัวยังใช้ได้"

@@ -1,6 +1,6 @@
 # SNTalkBot
 
-Private-message commands no longer require a leading `/` (for example `h`, `ap on`, `rs`). Slash-prefixed commands remain backward compatible. Public-channel slashless parsing is intentionally disabled to avoid collisions with ordinary chat.
+Registered commands can be used without a leading `/` in both private messages and channels (for example `h`, `p song`, `ap on`). Slash-prefixed commands remain backward compatible. Admins can disable all channel-text input with `ci off` and re-enable it privately with `ci on`; `cm on|off|status` independently controls Player announcements sent to the channel.
 
 
 > **Platform:** Linux/Docker only. Windows GUI support has been removed intentionally.

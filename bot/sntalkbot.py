@@ -506,6 +506,15 @@ class SNTalkBot(TeamTalk):
     def onCmdUserTextMessage(self, textmessage: TextMessage):
         message_text = ttstr(textmessage.szMessage)
         from_uid = textmessage.nFromUserID
+
+        # Channel input is independently controllable. When disabled, absolutely
+        # no command, TTS shortcut, translation, moderation reaction, autoplay
+        # link, or selection workflow is triggered by channel text. Private
+        # messages remain active so an admin can always send `ci on`.
+        if not self.command_handler.channel_input_allowed(
+            textmessage, self.bot_config.get("channel_input_enabled", True)
+        ):
+            return
         from_username = ttstr(textmessage.szFromUsername)
         sender_user = self.getUser(from_uid)
         from_nickname = ttstr(sender_user.szNickname) if sender_user else "Unknown"
@@ -542,9 +551,9 @@ class SNTalkBot(TeamTalk):
         if self.player_cog is not None and self.player_cog.handle_prefixed_message(textmessage):
             return
 
-        # Commands may be written with or without the leading slash.  Slashless
-        # commands are accepted only in private messages by CommandHandler, so
-        # ordinary channel chat cannot be mistaken for short commands.
+        # Registered commands may be written with or without the leading slash
+        # in both private messages and channels. Channel-wide command intake can
+        # be disabled independently with `channelinput off` / `ci off`.
         if self.command_handler.handle_message(textmessage):
             return
 

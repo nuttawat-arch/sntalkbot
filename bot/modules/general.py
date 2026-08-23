@@ -32,9 +32,37 @@ class GeneralCog:
         command_handler.register_command('about', self.handle_about_command)
         command_handler.register_command('dr', self.handle_direct_report_command)
         command_handler.register_command('gcid', self.handle_gcid_command)
+        command_handler.register_command('channelinput', self.handle_channel_input_command, admin_only=True)
         if self.bot.server_management_enabled:
             command_handler.register_command('weather', self.handle_weather_command)
             command_handler.register_command('report', self.handle_report_command)
+
+    def handle_channel_input_command(self, textmessage, *args):
+        """Enable/disable all bot reactions to channel text while keeping PM control available."""
+        current = bool(self.bot.bot_config.get("channel_input_enabled", True))
+        if not args:
+            enabled = not current
+        else:
+            value = str(args[0]).strip().lower()
+            if value == "status":
+                state = self._("enabled") if current else self._("disabled")
+                self.bot.privateMessage(
+                    textmessage.nFromUserID,
+                    self._("Channel input is currently {state}.").format(state=state),
+                )
+                return
+            if value not in ("on", "off"):
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: channelinput on|off|status (short alias: ci)"))
+                return
+            enabled = value == "on"
+
+        self.bot.bot_config["channel_input_enabled"] = enabled
+        self.bot.config_handler.update_bot_settings({"channel_input_enabled": enabled})
+        state = self._("enabled") if enabled else self._("disabled")
+        self.bot.privateMessage(
+            textmessage.nFromUserID,
+            self._("Channel input is now {state}.").format(state=state),
+        )
 
     def handle_weather_command(self, textmessage, *args):
         sender_user_id = textmessage.nFromUserID

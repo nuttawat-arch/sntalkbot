@@ -210,66 +210,73 @@ def validate_slashless_dispatch():
             if to_user_id is None:
                 to_user_id = 99 if msg_type in (_MsgType.MSGTYPE_USER, _MsgType.MSGTYPE_CUSTOM) else 0
             if channel_id is None:
-                channel_id = 0 if to_user_id else 7
+                channel_id = 0 if msg_type in (_MsgType.MSGTYPE_USER, _MsgType.MSGTYPE_CUSTOM) else 7
             return types.SimpleNamespace(
                 szMessage=text, nMsgType=msg_type, nFromUserID=10,
                 nToUserID=to_user_id, nChannelID=channel_id, szFromUsername="user"
             )
 
-        assert handler.handle_message(msg("h", _MsgType.MSGTYPE_USER)) is True
+        # Private: slashless canonical commands and aliases work.
+        private = msg("h", _MsgType.MSGTYPE_USER)
+        assert handler.channel_input_allowed(private, False) is True
+        assert handler.handle_message(private) is True
         assert calls[-1] == ("HELP",)
-        assert handler.handle_message(msg("h", _MsgType.MSGTYPE_CUSTOM)) is True
-        assert calls[-1] == ("HELP",)
-        # A direct destination remains private even with an unexpected type.
-        odd_private = msg("h", 999, to_user_id=99, channel_id=0)
+        assert handler.handle_message(msg("s", _MsgType.MSGTYPE_CUSTOM)) is True
+        assert calls[-1] == ("STOP",)
+        assert handler.handle_message(msg("p รักเธอนะ", _MsgType.MSGTYPE_USER)) is True
+        assert calls[-1] == ("PLAY", "รักเธอนะ")
+        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_USER)) is True
+        assert calls[-1] == ("AP", "on")
+        assert handler.handle_message(msg("/ap off", _MsgType.MSGTYPE_USER)) is True
+        assert calls[-1] == ("AP", "off")
+
+        # Runtime regression from TeamTalk Python wrappers: an explicit USER/CUSTOM
+        # message must stay private even if nChannelID is unexpectedly non-zero.
+        odd_private = msg("h", _MsgType.MSGTYPE_USER, to_user_id=0, channel_id=7)
+        assert handler.is_channel_message(odd_private) is False
+        assert handler.channel_input_allowed(odd_private, False) is True
         assert handler.handle_message(odd_private) is True
         assert calls[-1] == ("HELP",)
 
-        # Real receive-wrapper regression: some runtime representations can zero
-        # nToUserID while still delivering a direct/private message with no
-        # channel target.  Channel ID zero + real sender must remain slashless.
-        zero_to_private = msg("h", _MsgType.MSGTYPE_USER, to_user_id=0, channel_id=0)
-        assert handler.handle_message(zero_to_private) is True
+        # Channel input ON: the same slashless syntax works in channel text.
+        channel = msg("h", _MsgType.MSGTYPE_CHANNEL)
+        assert handler.is_channel_message(channel) is True
+        assert handler.channel_input_allowed(channel, True) is True
+        assert handler.handle_message(channel) is True
         assert calls[-1] == ("HELP",)
-
-        class _OpaqueType:
-            pass
-        opaque_private = msg("s", _OpaqueType(), to_user_id=0, channel_id=0)
-        assert handler.handle_message(opaque_private) is True
+        assert handler.handle_message(msg("s", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls[-1] == ("STOP",)
-        class _Scalar:
-            def __init__(self, value): self.value = value
-        scalar_private = msg("s", _Scalar(_MsgType.MSGTYPE_USER), to_user_id=_Scalar(99), channel_id=0)
-        assert handler.handle_message(scalar_private) is True
-        assert calls[-1] == ("STOP",)
-        assert handler.handle_message(msg("s", _MsgType.MSGTYPE_CUSTOM)) is True
-        assert calls[-1] == ("STOP",)
-        assert handler.handle_message(msg("p รักเธอนะ", _MsgType.MSGTYPE_CUSTOM)) is True
+        assert handler.handle_message(msg("p รักเธอนะ", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls[-1] == ("PLAY", "รักเธอนะ")
-        before = list(calls)
-        assert handler.handle_message(msg("h", _MsgType.MSGTYPE_CHANNEL)) is False
-        assert calls == before
-        # nToUserID=0 must keep channel text non-command even if nMsgType is wrong.
-        assert handler.handle_message(msg("h", _MsgType.MSGTYPE_USER, to_user_id=0, channel_id=7)) is False
-        assert calls == before
+        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_CHANNEL)) is True
+        assert calls[-1] == ("AP", "on")
         assert handler.handle_message(msg("/h", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls[-1] == ("HELP",)
-        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_USER)) is True
-        assert calls[-1] == ("AP", "on")
-        assert handler.handle_message(msg("ap off", _MsgType.MSGTYPE_CUSTOM)) is True
-        assert calls[-1] == ("AP", "off")
-        assert handler.handle_message(msg("/ap on", _MsgType.MSGTYPE_USER)) is True
-        assert calls[-1] == ("AP", "on")
-        before = list(calls)
-        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_CHANNEL)) is False
-        assert calls == before
-        assert handler.handle_message(msg("/ap off", _MsgType.MSGTYPE_CHANNEL)) is True
-        assert calls[-1] == ("AP", "off")
-        assert handler.handle_message(msg("hello there", _MsgType.MSGTYPE_USER)) is False
 
+        # Channel input OFF: callback gate must reject all channel text, including
+        # explicitly slash-prefixed commands. Private control remains available.
+        assert handler.channel_input_allowed(channel, False) is False
+        assert handler.channel_input_allowed(msg("/h", _MsgType.MSGTYPE_CHANNEL), False) is False
+        assert handler.channel_input_allowed(private, False) is True
+
+        # Wrapper variants: non-zero nChannelID is sufficient to identify channel text.
+        class _Scalar:
+            def __init__(self, value): self.value = value
+        opaque_channel = msg("h", _Scalar(999), to_user_id=0, channel_id=_Scalar(7))
+        assert handler.is_channel_message(opaque_channel) is True
+        assert handler.channel_input_allowed(opaque_channel, False) is False
+
+        # Unknown plain chat is never consumed as a command in either context.
+        before = list(calls)
+        assert handler.handle_message(msg("hello there", _MsgType.MSGTYPE_USER)) is False
+        assert handler.handle_message(msg("hello there", _MsgType.MSGTYPE_CHANNEL)) is False
+        assert calls == before
+
+        # Blocking the canonical command blocks its alias in all contexts.
         bot.blocked_commands = {"autoplay"}
         before = list(calls)
         assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_USER)) is True
+        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls == before
         return True
     except Exception as exc:
@@ -282,7 +289,31 @@ def validate_slashless_dispatch():
             sys.modules["TeamTalk5"] = previous
 
 if validate_slashless_dispatch():
-    ok("private slashless dispatch uses zero-channel routing fallback (h/s/p/ap); channel traffic still requires slash; wrapper variants are covered")
+    ok("slashless commands work in private + channel when enabled; channel-input OFF rejects all channel text while private remains active")
+
+# The channel-input toggle must be persistent and enforced before any channel
+# moderation/TTS/player/translator workflow can react.
+sntalkbot_source = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
+config_source = (ROOT / "bot" / "config_handler.py").read_text(encoding="utf-8")
+general_source = (ROOT / "bot" / "modules" / "general.py").read_text(encoding="utf-8")
+player_source = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
+if "channel_input_enabled" not in config_source or "channel_input_allowed(" not in sntalkbot_source:
+    fail("persistent channel-input gate is missing")
+else:
+    gate_pos = sntalkbot_source.find("channel_input_allowed(")
+    profanity_pos = sntalkbot_source.find("# Profanity Filter", gate_pos)
+    if gate_pos < 0 or profanity_pos < 0 or gate_pos > profanity_pos:
+        fail("channel-input gate must run before channel text feature processing")
+    else:
+        ok("channel-input toggle is persistent and gates channel text before command/TTS/moderation workflows")
+if "register_command('channelinput'" not in general_source or '"ci": "channelinput"' not in (ROOT / "bot" / "command_aliases.py").read_text(encoding="utf-8"):
+    fail("channelinput/ci admin control is missing")
+else:
+    ok("channelinput command and ci short alias are registered")
+if 'value not in ("on", "off")' not in player_source or '"send_channel_messages"' not in player_source or '"status"' not in player_source:
+    fail("cm on|off|status playback-channel-message control is incomplete")
+else:
+    ok("cm supports on/off/status while preserving playback channel-message persistence")
 
 required_player_tts = {"ptts", "pttsmode", "pvoice", "pvoices", "pttsrate", "pttsspeed"}
 if not required_player_tts.issubset(set(names)):
@@ -476,9 +507,9 @@ spec = importlib.util.spec_from_file_location("sntalkbot_bot_identity", identity
 identity = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(identity)
 status_cases = {
-    (True, False): "Player Bot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
-    (False, True): "Server Manager Bot | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
-    (True, True): "Full Bot (Player + Server Manager) | ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h",
+    (True, False): "Player Bot | พิมพ์ h เพื่อดูคำสั่ง",
+    (False, True): "Server Manager Bot | พิมพ์ h เพื่อดูคำสั่ง",
+    (True, True): "Full Bot (Player + Server Manager) | พิมพ์ h เพื่อดูคำสั่ง",
 }
 for flags, expected in status_cases.items():
     actual = identity.role_status_message(*flags)
@@ -489,7 +520,7 @@ if identity.effective_status_message("SN TalkBot", True, False) != status_cases[
 elif identity.effective_status_message("auto", False, True) != status_cases[(False, True)]:
     fail("auto status does not resolve to Server Manager role status")
 elif identity.effective_status_message("Player Bot | พิมพ์ help เพื่อดูคำสั่ง", True, False) != status_cases[(True, False)]:
-    fail("r7.1 Player auto status does not migrate to the new h//h wording")
+    fail("legacy Player auto status does not migrate to the new slashless h wording")
 elif identity.effective_status_message("สถานะของฉัน", True, True) != "สถานะของฉัน":
     fail("custom status is not preserved")
 else:

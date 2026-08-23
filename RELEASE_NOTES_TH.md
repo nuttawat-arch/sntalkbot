@@ -1,3 +1,19 @@
+# Release 2026.08.23-r7.3
+
+- เปลี่ยนคำสั่งให้ใช้แบบไม่มี `/` ได้ทั้ง Private และ Channel; รูปแบบเดิมที่มี `/` ยังใช้ได้
+- เพิ่ม `channelinput on|off|status` คำสั่งย่อ `ci` สำหรับผู้ดูแล
+  - `ci off` = บอตไม่อ่านและไม่ตอบสนองต่อข้อความจาก Channel ทั้งหมด
+  - Private Message ยังทำงาน จึงใช้ `ci on` ทาง Private เพื่อเปิด Channel กลับได้เสมอ
+- ขยาย `cm` เป็น `cm on|off|status` และยังรองรับ `cm` เปล่าเพื่อสลับสถานะแบบเดิม
+  - `cm off` ปิดข้อความ Player ที่ประกาศลง Channel เช่น ใครเปิดเพลงหรือเพิ่มเพลงเข้าคิว
+  - ไม่กระทบการรับคำสั่ง; `ci` และ `cm` แยกจากกัน
+- เพิ่ม config `channel_input_enabled = True` และบันทึกค่าที่เปลี่ยนจากคำสั่งลง `config.ini`
+- สถานะอัตโนมัติย่อเป็น `พิมพ์ h เพื่อดูคำสั่ง`
+- Validator เพิ่ม regression test สำหรับ slashless Private + Channel, Channel Input OFF, alias/argument และความคงอยู่ของ config
+- คำสั่งหลักรวม 120 คำสั่ง และ alias 46 ตัว
+
+---
+
 # Release 2026.08.23-r7.2.3
 
 - แก้ Private slashless runtime จากผลทดสอบ TeamTalk จริง: ใช้ `nChannelID` เป็นตัวแยก Channel หลัก โดย Channel (`nChannelID > 0`) ยังต้องมี `/` ทุกคำสั่ง
@@ -23,7 +39,7 @@
 - ปรับสถานะเริ่มต้นให้บอกวิธีดูคำสั่งตามบริบท: `ส่วนตัวพิมพ์ h | ในห้องพิมพ์ /h`
 - ยืนยันกติกาคำสั่ง: Private Message ใช้คำสั่งโดยไม่ใส่ `/` ได้ ส่วน Channel/Broadcast ต้องใส่ `/` ทุกคำสั่ง
 - `/h` และ `h` ชี้ไปคำสั่ง `help` เดียวกัน โดย argument ของ alias ยังส่งต่อเหมือนเดิม
-- เพิ่ม regression test โดยตรงสำหรับ `h` ใน Private, `h` ใน Channel, `/h` ใน Channel และ `ap on/off`
+- เพิ่ม regression test โดยตรงสำหรับ `h` ใน Private หรือ Channel, `h` ใน Channel, `/h` ใน Channel และ `ap on/off`
 - สถานะอัตโนมัติแบบ r7.1 ที่มีคำว่า `พิมพ์ help เพื่อดูคำสั่ง` จะถูกมองเป็นสถานะ legacy และอัปเกรดเป็นข้อความใหม่โดยไม่ทับ custom status ของผู้ดูแล
 
 ## 2026.08.23-r7.1

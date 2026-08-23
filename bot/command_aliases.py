@@ -14,6 +14,7 @@ COMMAND_ALIASES = {
     "cid": "gcid",
     "ad": "admins",
     "sr": "search",
+    "ci": "channelinput",
 
     # Server Manager / Full
     "w": "weather",

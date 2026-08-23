@@ -69,61 +69,41 @@ class CommandHandler:
         except (TypeError, ValueError):
             return None
 
-    def _is_private_message(self, textmessage):
-        """Return True when *textmessage* is a direct/private user message.
+    def is_channel_message(self, textmessage):
+        """Return True for TeamTalk public channel/broadcast text.
 
-        Runtime TeamTalk wrappers do not always expose every destination field in
-        exactly the same way.  The most stable structural discriminator is
-        ``nChannelID``: channel messages carry a non-zero channel ID, while
-        user-to-user messages carry channel ID zero.  Explicit CHANNEL/BROADCAST
-        types are always rejected.  ``nToUserID`` and USER/CUSTOM types are used
-        as additional positive signals, and a final zero-channel/from-user
-        fallback covers wrapper variants which zero ``nToUserID`` on receive.
+        Prefer an explicit message type first. Some receive wrappers have exposed
+        a non-zero ``nChannelID`` even on direct messages, which is why older
+        private slashless detection failed at runtime. Only use channel ID as a
+        fallback when the message type is unavailable/unknown.
         """
         msg_type = self._numeric(getattr(textmessage, "nMsgType", None))
-        channel_id = self._numeric(getattr(textmessage, "nChannelID", None))
-        to_user_id = self._numeric(getattr(textmessage, "nToUserID", None))
-        from_user_id = self._numeric(getattr(textmessage, "nFromUserID", None))
-
         channel_type = self._numeric(getattr(TextMsgType, "MSGTYPE_CHANNEL", None))
         broadcast_type = self._numeric(getattr(TextMsgType, "MSGTYPE_BROADCAST", None))
         user_type = self._numeric(getattr(TextMsgType, "MSGTYPE_USER", None))
         custom_type = self._numeric(getattr(TextMsgType, "MSGTYPE_CUSTOM", None))
-
-        # Never allow slashless commands from channel or broadcast traffic.
-        if msg_type in {channel_type, broadcast_type}:
+        if msg_type in {value for value in (user_type, custom_type) if value is not None}:
             return False
-        if channel_id is not None and channel_id > 0:
-            return False
-
-        # A non-zero destination is a direct message.  Do not require an exact
-        # match with getMyUserID(), because some Python/SDK receive wrappers have
-        # historically represented the destination differently.
-        if to_user_id is not None and to_user_id > 0:
+        if msg_type in {value for value in (channel_type, broadcast_type) if value is not None}:
             return True
+        channel_id = self._numeric(getattr(textmessage, "nChannelID", None))
+        return channel_id is not None and channel_id > 0
 
-        # Normal SDK representation for private/user messages.
-        private_types = {value for value in (user_type, custom_type) if value is not None}
-        if msg_type in private_types:
-            return True
-
-        # Final structural fallback for receive-side wrappers: no channel target,
-        # a real sending user, and not an explicitly known channel/broadcast type.
-        if channel_id == 0 and from_user_id is not None and from_user_id > 0:
-            return True
-
-        return False
+    def channel_input_allowed(self, textmessage, enabled=True):
+        """Private input is always allowed; channel input follows the admin toggle."""
+        return bool(enabled) or not self.is_channel_message(textmessage)
 
     def is_slashless_command_candidate(self, message_text, textmessage):
-        """Return True only for a known slashless command in a private message.
+        """Return True for a known command written without the leading slash.
 
-        Slashless commands are intentionally private-message only. Channel text
-        always requires the leading slash so short aliases cannot hijack chat.
+        Slashless commands are supported in both private messages and channel
+        messages.  Whether channel input is currently enabled is enforced by the
+        bot's message callback before dispatch reaches CommandHandler. Unknown
+        plain text is never treated as a command, so ordinary chat that does not
+        start with a registered command/alias passes through unchanged.
         """
         text = ttstr(message_text).strip()
         if not text or text.startswith(self.prefix):
-            return False
-        if not self._is_private_message(textmessage):
             return False
         parts = self._split_message(text)
         if not parts:
