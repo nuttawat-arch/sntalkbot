@@ -70,37 +70,49 @@ class CommandHandler:
             return None
 
     def _is_private_message(self, textmessage):
-        """Return True when *textmessage* is addressed directly to this bot.
+        """Return True when *textmessage* is a direct/private user message.
 
-        TeamTalk's TextMessage structure gives user-to-user messages a non-zero
-        ``nToUserID`` while channel messages use ``nToUserID == 0``.  Prefer this
-        structural destination check because it reflects what the server actually
-        delivered and is robust across Python wrapper enum representations.
-
-        MSGTYPE_USER / MSGTYPE_CUSTOM remain a compatibility fallback for tests
-        or wrappers which do not expose ``nToUserID``.
+        Runtime TeamTalk wrappers do not always expose every destination field in
+        exactly the same way.  The most stable structural discriminator is
+        ``nChannelID``: channel messages carry a non-zero channel ID, while
+        user-to-user messages carry channel ID zero.  Explicit CHANNEL/BROADCAST
+        types are always rejected.  ``nToUserID`` and USER/CUSTOM types are used
+        as additional positive signals, and a final zero-channel/from-user
+        fallback covers wrapper variants which zero ``nToUserID`` on receive.
         """
+        msg_type = self._numeric(getattr(textmessage, "nMsgType", None))
+        channel_id = self._numeric(getattr(textmessage, "nChannelID", None))
         to_user_id = self._numeric(getattr(textmessage, "nToUserID", None))
-        if to_user_id is not None:
-            try:
-                my_user_id = self._numeric(self.bot.getMyUserID())
-            except Exception:
-                my_user_id = None
-            if to_user_id > 0:
-                # Incoming direct messages should target this bot.  If the local
-                # user ID is temporarily unavailable during an SDK edge case, a
-                # non-zero destination is still unambiguously not a channel msg.
-                return my_user_id in (None, 0, to_user_id)
-            # A real nToUserID field with zero means channel/broadcast, never a
-            # slashless private command.
+        from_user_id = self._numeric(getattr(textmessage, "nFromUserID", None))
+
+        channel_type = self._numeric(getattr(TextMsgType, "MSGTYPE_CHANNEL", None))
+        broadcast_type = self._numeric(getattr(TextMsgType, "MSGTYPE_BROADCAST", None))
+        user_type = self._numeric(getattr(TextMsgType, "MSGTYPE_USER", None))
+        custom_type = self._numeric(getattr(TextMsgType, "MSGTYPE_CUSTOM", None))
+
+        # Never allow slashless commands from channel or broadcast traffic.
+        if msg_type in {channel_type, broadcast_type}:
+            return False
+        if channel_id is not None and channel_id > 0:
             return False
 
-        msg_type = self._numeric(getattr(textmessage, "nMsgType", None))
-        private_types = {self._numeric(TextMsgType.MSGTYPE_USER)}
-        custom_type = getattr(TextMsgType, "MSGTYPE_CUSTOM", None)
-        if custom_type is not None:
-            private_types.add(self._numeric(custom_type))
-        return msg_type in private_types
+        # A non-zero destination is a direct message.  Do not require an exact
+        # match with getMyUserID(), because some Python/SDK receive wrappers have
+        # historically represented the destination differently.
+        if to_user_id is not None and to_user_id > 0:
+            return True
+
+        # Normal SDK representation for private/user messages.
+        private_types = {value for value in (user_type, custom_type) if value is not None}
+        if msg_type in private_types:
+            return True
+
+        # Final structural fallback for receive-side wrappers: no channel target,
+        # a real sending user, and not an explicitly known channel/broadcast type.
+        if channel_id == 0 and from_user_id is not None and from_user_id > 0:
+            return True
+
+        return False
 
     def is_slashless_command_candidate(self, message_text, textmessage):
         """Return True only for a known slashless command in a private message.

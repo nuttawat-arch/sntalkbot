@@ -220,11 +220,23 @@ def validate_slashless_dispatch():
         assert calls[-1] == ("HELP",)
         assert handler.handle_message(msg("h", _MsgType.MSGTYPE_CUSTOM)) is True
         assert calls[-1] == ("HELP",)
-        # Destination is authoritative: a direct message remains private even if
-        # a wrapper exposes an unexpected/enum-like message type representation.
+        # A direct destination remains private even with an unexpected type.
         odd_private = msg("h", 999, to_user_id=99, channel_id=0)
         assert handler.handle_message(odd_private) is True
         assert calls[-1] == ("HELP",)
+
+        # Real receive-wrapper regression: some runtime representations can zero
+        # nToUserID while still delivering a direct/private message with no
+        # channel target.  Channel ID zero + real sender must remain slashless.
+        zero_to_private = msg("h", _MsgType.MSGTYPE_USER, to_user_id=0, channel_id=0)
+        assert handler.handle_message(zero_to_private) is True
+        assert calls[-1] == ("HELP",)
+
+        class _OpaqueType:
+            pass
+        opaque_private = msg("s", _OpaqueType(), to_user_id=0, channel_id=0)
+        assert handler.handle_message(opaque_private) is True
+        assert calls[-1] == ("STOP",)
         class _Scalar:
             def __init__(self, value): self.value = value
         scalar_private = msg("s", _Scalar(_MsgType.MSGTYPE_USER), to_user_id=_Scalar(99), channel_id=0)
@@ -270,7 +282,7 @@ def validate_slashless_dispatch():
             sys.modules["TeamTalk5"] = previous
 
 if validate_slashless_dispatch():
-    ok("private slashless dispatch follows nToUserID (h/s/p/ap); channel nToUserID=0 requires slash; enum/ctypes values are normalized")
+    ok("private slashless dispatch uses zero-channel routing fallback (h/s/p/ap); channel traffic still requires slash; wrapper variants are covered")
 
 required_player_tts = {"ptts", "pttsmode", "pvoice", "pvoices", "pttsrate", "pttsspeed"}
 if not required_player_tts.issubset(set(names)):

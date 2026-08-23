@@ -7,7 +7,7 @@
 
 ## จุดสำคัญของรุ่นนี้
 
-- คำสั่งผู้ใช้ทั้งหมดต้องขึ้นต้นด้วย `/`; ข้อความธรรมดาจะไม่ถูก parser ตีความเป็นคำสั่ง
+- Private Message ใช้คำสั่งที่รู้จักได้โดยไม่ต้องมี `/`; ใน Channel/Broadcast ทุกคำสั่งต้องขึ้นต้นด้วย `/` เพื่อไม่ให้ข้อความธรรมดาชนกับคำสั่ง
 - ชื่อคำสั่งที่ลงทะเบียนจริงไม่ซ้ำกัน และระบบจะหยุดทันทีด้วย error หากนักพัฒนาเพิ่มชื่อซ้ำในอนาคต
 - `help` ส่งหัวข้อก่อนหนึ่งข้อความ แล้วส่งคำสั่งพร้อมคำอธิบายทีละคำสั่ง หนึ่งคำสั่งต่อหนึ่ง TeamTalk private message
 - Player ใช้ `yt-dlp` โดยตรง รองรับ YouTube, YouTube Music, URL/stream, playlistchannel, queue, favorites, autoplay, history, seek, volumespeed, M1/M2/M3, audio filters และ download

@@ -1,3 +1,10 @@
+# Release 2026.08.23-r7.2.3
+
+- แก้ Private slashless runtime จากผลทดสอบ TeamTalk จริง: ใช้ `nChannelID` เป็นตัวแยก Channel หลัก โดย Channel (`nChannelID > 0`) ยังต้องมี `/` ทุกคำสั่ง
+- Private (`nChannelID == 0`) รองรับ `h`, `s`, `p <คำค้นหา>`, `ap on|off` แบบไม่มี `/` แม้ Python wrapper จะให้ `nToUserID` หรือ `nMsgType` ต่างจากค่าที่ unit test เดิมสมมติ
+- ป้องกัน Broadcast/Channel แบบไม่มี `/` ด้วยการตัด `MSGTYPE_CHANNEL` และ `MSGTYPE_BROADCAST` ก่อนเสมอ
+- เพิ่ม regression test สำหรับ receive-wrapper variant ที่ Private มี `nToUserID = 0`, `nChannelID = 0` และค่า message type ที่ไม่สามารถแปลงเป็น int ได้
+
 # Release 2026.08.23-r7.2.2
 
 - แก้ Private slashless runtime อีกชั้นโดยตรวจ `TextMessage.nToUserID` เป็นหลัก: ข้อความที่ส่งตรงถึงบอตใช้ `h`, `s`, `p <คำค้นหา>`, `ap on|off` โดยไม่ต้องมี `/` ได้จริง
