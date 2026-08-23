@@ -146,7 +146,7 @@ class HelpCommands:
     def get(self, command_name):
         return self._by_name.get((command_name or "").lstrip("/").lower())
 
-    def line(self, command_name, admin_only=False):
+    def line(self, command_name, admin_only=False, aliases=None):
         item = self.get(command_name)
         if item:
             syntax, description = item
@@ -155,12 +155,16 @@ class HelpCommands:
             description = self._("No help text is available for this command.")
         if admin_only and "admin" not in description.lower() and "ผู้ดูแล" not in description:
             description = self._("Admins only") + ". " + description
+        aliases = list(aliases or [])
+        if aliases:
+            alias_text = ", ".join("/" + name for name in aliases)
+            description = description + " " + self._("Short aliases: {aliases}").format(aliases=alias_text)
         return f"{syntax} : {description}"
 
     def registered_lines(self, command_handler):
-        """Return exactly one help line for every registered command, sorted by command name."""
+        """Return one canonical help line per command, including its short aliases."""
         result = []
         for name in sorted(command_handler.commands, key=lambda value: value.lower()):
             command = command_handler.commands[name]
-            result.append(self.line(name, command.admin_only))
+            result.append(self.line(name, command.admin_only, command_handler.aliases_for(name)))
         return result

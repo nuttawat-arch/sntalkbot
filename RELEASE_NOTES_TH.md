@@ -1,3 +1,26 @@
+# SNTalkBot 2026.08.23-r6
+
+## แก้ไขหลัก
+
+- Welcome broadcast และ welcome ตอนเข้าห้องไม่ประกาศย้อนหลังให้ผู้ใช้ที่ออนไลน์อยู่ก่อนบอตเริ่มหรือ reconnect
+- ผู้ใช้ที่อยู่ในชุด startup sync จะถูกกันไว้จน logout ป้องกัน event ซ้ำที่มาช้ากว่าเวลา bootstrap
+- เพิ่มระบบคำสั่งย่อผ่าน alias resolver โดยไม่ลงทะเบียน command handler ซ้ำ
+- คำสั่งย่อสำคัญ เช่น `/h` → `/help`, `/rs` → `/restart`, `/sd` → `/shutdown` และคำสั่งย่ออื่นจะแสดงใน `/help`
+- `/cc`, `/csize`, `/cm` อยู่ใน PlayerCog เท่านั้น จึงไม่โผล่ใน Server Manager
+- แก้ `split_long_message()` ไม่ให้ข้อความช่วงรอยต่อหายเมื่อแบ่งที่ช่องว่าง
+- เพิ่ม guard ในงาน Player/Weather/SSH บางส่วนเมื่อผู้ใช้ออกจาก TeamTalk ระหว่างงาน async
+- blocked command ที่เคยบันทึกด้วยชื่อ alias จะถูก normalize กลับเป็นชื่อคำสั่งหลัก
+- คง Google standard gTTS, FIFO Player TTS, No Music Ducking และ `/dr` จาก r5
+
+## การตรวจสอบ
+
+- Python compile
+- ชื่อคำสั่งหลักไม่ซ้ำ
+- alias ไม่ชนชื่อคำสั่งหลักและ target ต้องมีจริง
+- Player/Manager role-specific commands ไม่ชนกัน
+- `/help` และ `COMMANDS_TH.md` ตรงกับคำสั่งหลักที่ลงทะเบียน
+- ไม่มี Telegram bot token ในไฟล์ release
+
 # SNTalkBot 2026.08.23-r5
 
 - `/dr` เปลี่ยนเป็นระบบรายงานถึงผู้พัฒนาแบบ relay กลางที่ `https://report.nuttawat.ddnsfree.com/api/report`

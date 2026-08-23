@@ -73,6 +73,17 @@ def help_catalog():
     return entries
 
 
+
+def alias_catalog():
+    path = ROOT / "bot" / "command_aliases.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "COMMAND_ALIASES" for t in node.targets):
+            value = ast.literal_eval(node.value)
+            return {str(k).strip().lstrip("/").lower(): str(v).strip().lstrip("/").lower() for k, v in value.items()}
+    fail("COMMAND_ALIASES mapping not found")
+    return {}
+
 def thai_untranslated():
     po = ROOT / "locales" / "th" / "LC_MESSAGES" / "messages.po"
     text = po.read_text(encoding="utf-8")
@@ -135,12 +146,24 @@ if same_handler:
 else:
     ok("no same-handler command aliases remain")
 
-forbidden_aliases = {"h", "gl", "rs", "sd"}
-remaining_aliases = sorted(forbidden_aliases.intersection(names))
-if remaining_aliases:
-    fail("retired duplicate aliases still registered: " + ", ".join('/' + x for x in remaining_aliases))
+aliases = alias_catalog()
+alias_names = set(aliases)
+canonical_names = set(names)
+if alias_names.intersection(canonical_names):
+    fail("alias names collide with canonical commands: " + ", ".join('/' + x for x in sorted(alias_names.intersection(canonical_names))))
 else:
-    ok("retired duplicate aliases are absent")
+    ok(f"intentional short aliases do not collide with canonical commands ({len(aliases)})")
+unknown_targets = sorted(set(aliases.values()) - canonical_names)
+if unknown_targets:
+    fail("aliases target unknown canonical commands: " + ", ".join('/' + x for x in unknown_targets))
+else:
+    ok("all short aliases target canonical commands")
+required_aliases = {"h": "help", "rs": "restart", "sd": "shutdown", "w": "weather", "ap": "autoplay", "ch": "channel", "pf": "playfav"}
+wrong_required = [f"/{a}->/{aliases.get(a, '?')}" for a, target in required_aliases.items() if aliases.get(a) != target]
+if wrong_required:
+    fail("required usability aliases missing or incorrect: " + ", ".join(wrong_required))
+else:
+    ok("required usability aliases are present (/h /rs /sd /w /ap /ch /pf)")
 
 required_player_tts = {"ptts", "pttsmode", "pvoice", "pvoices", "pttsrate", "pttsspeed"}
 if not required_player_tts.issubset(set(names)):
@@ -175,6 +198,11 @@ if role_collision:
     fail("Player/Manager role-specific command collision: " + ", ".join('/' + x for x in role_collision))
 else:
     ok(f"Player/Manager role-specific commands are disjoint (Player={len(player_only)}, Manager modules={len(manager_only)})")
+player_admin_utilities = {"cc", "csize", "cm"}
+if not player_admin_utilities.issubset(player_only) or player_admin_utilities.intersection(manager_only):
+    fail("Player cache/message controls must live only in PlayerCog: /cc /csize /cm")
+else:
+    ok("Player cache/message controls are no longer exposed by Manager-only mode")
 
 help_entries = help_catalog()
 help_names = []
@@ -214,6 +242,12 @@ if len(th_lines) != len(names) or set(th_names) != set(names):
     fail("COMMANDS_TH.md does not exactly match registered commands")
 else:
     ok(f"COMMANDS_TH.md matches all registered commands ({len(th_lines)})")
+commands_th_text = commands_th.read_text(encoding="utf-8") if commands_th.exists() else ""
+missing_alias_docs = sorted(alias for alias in aliases if f"/{alias}" not in commands_th_text)
+if missing_alias_docs:
+    fail("COMMANDS_TH.md is missing short-alias documentation: " + ", ".join('/' + x for x in missing_alias_docs))
+else:
+    ok(f"COMMANDS_TH.md documents all intentional aliases ({len(aliases)})")
 long_help_lines = [(len(line.encode("utf-8")), line) for line in th_lines if len(line.encode("utf-8")) > 480]
 if long_help_lines:
     longest = max(long_help_lines, key=lambda item: item[0])
@@ -239,6 +273,44 @@ if "send_telegram_notification" in general_py:
     fail("GeneralCog still sends /dr directly to Telegram")
 else:
     ok("/dr no longer sends directly to Telegram")
+
+sntalkbot_py = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
+user_manager_py = (ROOT / "bot" / "user_manager.py").read_text(encoding="utf-8")
+if "just_joined" in sntalkbot_py or "_is_fresh_login_event" not in sntalkbot_py or "fresh_login=fresh_login" not in sntalkbot_py:
+    fail("startup login replay suppression is missing or legacy just_joined logic remains")
+else:
+    ok("startup/reconnect user replay is separated from genuine fresh logins")
+if "if not fresh_login:" not in user_manager_py:
+    fail("UserManager does not suppress login-only side effects during startup replay")
+else:
+    ok("welcome/notify/pending-message side effects require a genuine fresh login")
+
+
+# Guard a few regression-prone runtime edges that can be checked statically.
+sntalkbot_source = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
+if 'message = chunk[last_space + 1:] + message' in sntalkbot_source:
+    fail("split_long_message still contains the old boundary-loss bug")
+else:
+    ok("long-message splitting no longer drops the text after a split boundary")
+
+fresh_start = sntalkbot_source.find("def _is_fresh_login_event")
+fresh_end = sntalkbot_source.find("def _is_live_join_event", fresh_start)
+fresh_block = sntalkbot_source[fresh_start:fresh_end]
+if "_initial_login_user_ids.discard" in fresh_block or "_initial_login_user_ids.add(user_id)" not in fresh_block:
+    fail("startup replay IDs are not retained safely through the current TeamTalk session")
+else:
+    ok("startup/reconnect replay IDs stay suppressed until logout")
+
+direct_getuser = []
+pattern_direct_user = re.compile(r"getUser\([^\n]*\)\.")
+for path in sorted((ROOT / "bot").rglob("*.py")):
+    for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+        if pattern_direct_user.search(line):
+            direct_getuser.append(f"{path.relative_to(ROOT)}:{lineno}")
+if direct_getuser:
+    fail("unguarded getUser(...).attribute access remains: " + ", ".join(direct_getuser))
+else:
+    ok("no direct unguarded getUser(...).attribute access remains")
 
 # Prevent accidentally publishing Telegram bot tokens or similar bot-token secrets.
 secret_pattern = re.compile(r"\b\d{8,12}:[A-Za-z0-9_-]{30,}\b")

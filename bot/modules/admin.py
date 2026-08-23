@@ -48,12 +48,9 @@ class AdminCog:
         command_handler.register_command('welcome', self.handle_welcome_toggle_command, admin_only=True)
         command_handler.register_command('welcomebroadcast', self.handle_welcome_broadcast_toggle_command, admin_only=True)
         command_handler.register_command('restart', self.handle_restart_command, admin_only=True)
-        command_handler.register_command('cc', self.handle_clear_cache_command, admin_only=True)
-        command_handler.register_command('csize', self.handle_cache_size_command, admin_only=True)
         command_handler.register_command('clearlog', self.handle_clear_log_command, admin_only=True)
         command_handler.register_command('vpn', self.handle_vpn_toggle_command, admin_only=True)
         command_handler.register_command('noname', self.handle_noname_toggle_command, admin_only=True)
-        command_handler.register_command('cm', self.handle_channel_messages_command, admin_only=True)
         command_handler.register_command('shutdown', self.handle_shutdown_command, admin_only=True)
         command_handler.register_command('blockcmd', self.handle_block_command, admin_only=True)
         command_handler.register_command('language', self.handle_language_command, admin_only=True)
@@ -66,7 +63,8 @@ class AdminCog:
             return
         token = args[0].strip().lower()
         action = token[:1]
-        name = token[1:].lstrip("/") if action in "+-" else token.lstrip("/")
+        requested_name = token[1:].lstrip("/") if action in "+-" else token.lstrip("/")
+        name = self.bot.command_handler.resolve_name(requested_name)
         if name not in self.bot.command_handler.commands:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Unknown command."))
             return
@@ -241,7 +239,10 @@ class AdminCog:
         self._execute_ssh_command(command, textmessage.nFromUserID)
 
     def _execute_ssh_command(self, command, user_id):
-        user_ip = ttstr(self.bot.getUser(user_id).szIPAddress)
+        user = self.bot.getUser(user_id)
+        if not user:
+            return
+        user_ip = ttstr(user.szIPAddress)
         if user_ip not in self.bot.ssh_config.get('allowed_ips', []):
             self.bot.privateMessage(user_id, self._("Not authorized for this IP address."))
             return
@@ -400,16 +401,6 @@ class AdminCog:
         self.bot.config_handler.save_bot_config(self.bot.bot_config)
         self.bot.config_handler.save_playback_config(self.bot.playback_config)
         self.bot.privateMessage(textmessage.nFromUserID, self._("Bot configuration saved."))
-
-    def handle_channel_messages_command(self, textmessage, *args):
-        enabled = not self.bot.playback_config.get("send_channel_messages", True)
-        self.bot.playback_config["send_channel_messages"] = enabled
-        self.bot.config_handler.update_playback_settings({"send_channel_messages": enabled})
-        state = self._("enabled") if enabled else self._("disabled")
-        self.bot.privateMessage(
-            textmessage.nFromUserID,
-            self._("Playback channel messages are now {state}.").format(state=state),
-        )
 
     def handle_shutdown_command(self, textmessage, *args):
         self.bot.privateMessage(textmessage.nFromUserID, self._("Shutting down..."))
@@ -630,19 +621,6 @@ class AdminCog:
     def handle_restart_command(self, textmessage, *args):
         self.bot.privateMessage(textmessage.nFromUserID, self._("Restarting..."))
         raise RestartSignal()
-
-    def handle_clear_cache_command(self, textmessage, *args):
-        prefetched, temporary = self.bot.player.clear_cache()
-        self.bot.privateMessage(
-            textmessage.nFromUserID,
-            self._("Cache cleared. Prefetched entries: {prefetched}; temporary files: {temporary}.").format(
-                prefetched=prefetched, temporary=temporary
-            ),
-        )
-
-    def handle_cache_size_command(self, textmessage, *args):
-        size_mb = self.bot.player.cache_size_bytes() / (1024 * 1024)
-        self.bot.privateMessage(textmessage.nFromUserID, self._("Cache size: {size:.2f} MB").format(size=size_mb))
 
     def handle_clear_log_command(self, textmessage, *args):
         data_dir = os.getenv("TTUTIL_DATA_DIR", ".")

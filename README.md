@@ -29,7 +29,7 @@ nuttawat0295/sntalkbot:latest
 Use a versioned tag for safer rollback:
 
 ```bash
-TTU_TAG=2026.08.23-r5 ./publish.sh
+TTU_TAG=2026.08.23-r6 ./publish.sh
 ```
 
 ## License and upstream attribution
@@ -37,9 +37,9 @@ TTU_TAG=2026.08.23-r5 ./publish.sh
 This combined main project is distributed under GPL-2.0 because its TTUtilities upstream is GPL-2.0. See `LICENSE` and `NOTICE.md`. MIT notices for adapted TTMediaBot components are preserved under `THIRD_PARTY_LICENSES/`.
 
 
-## 2026.08.23-r5
+## 2026.08.23-r6
 
-Player announcements are serialized through a FIFO TTS queue. Google mode now uses standard gTTS (Google Translate TTS) with no Cloud API key and is the default for both Player and Manager; Microsoft Edge TTS remains optional. Player and Manager TTS controls are separated, duplicate command aliases were removed, and `/dr` uses the official developer report relay without embedding Telegram credentials in user images. See `README_TH.md` and `RELEASE_NOTES_TH.md`.
+Startup/reconnect welcome replays are suppressed, intentional short aliases are resolved without duplicate handlers, Player-only cache/message commands are isolated from Manager-only mode, and long-message/async-user edge cases are hardened. FIFO Player TTS, standard gTTS, no-music-ducking, and `/dr` remain available. See `README_TH.md` and `RELEASE_NOTES_TH.md`.
 
 ## Player TTS and music mixing
 

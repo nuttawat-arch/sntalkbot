@@ -92,6 +92,35 @@ class PlayerCog:
         command_handler.register_command('pvoices', self.handle_player_voices_command)
         command_handler.register_command('pttsrate', self.handle_player_tts_rate_command, admin_only=True)
         command_handler.register_command('pttsspeed', self.handle_player_tts_speed_command, admin_only=True)
+        command_handler.register_command('cc', self.handle_clear_cache_command, admin_only=True)
+        command_handler.register_command('csize', self.handle_cache_size_command, admin_only=True)
+        command_handler.register_command('cm', self.handle_channel_messages_command, admin_only=True)
+
+    def handle_channel_messages_command(self, textmessage, *args):
+        enabled = not self.bot.playback_config.get("send_channel_messages", True)
+        self.bot.playback_config["send_channel_messages"] = enabled
+        self.bot.config_handler.update_playback_settings({"send_channel_messages": enabled})
+        state = self._("enabled") if enabled else self._("disabled")
+        self.bot.privateMessage(
+            textmessage.nFromUserID,
+            self._("Playback channel messages are now {state}.").format(state=state),
+        )
+
+    def handle_clear_cache_command(self, textmessage, *args):
+        prefetched, temporary = self.player.clear_cache()
+        self.bot.privateMessage(
+            textmessage.nFromUserID,
+            self._("Cache cleared. Prefetched entries: {prefetched}; temporary files: {temporary}.").format(
+                prefetched=prefetched, temporary=temporary
+            ),
+        )
+
+    def handle_cache_size_command(self, textmessage, *args):
+        size_mb = self.player.cache_size_bytes() / (1024 * 1024)
+        self.bot.privateMessage(
+            textmessage.nFromUserID,
+            self._("Cache size: {size:.2f} MB").format(size=size_mb),
+        )
 
     def handle_player_tts_command(self, textmessage, *args):
         """Control Player track/queue speech independently from Manager chat TTS."""
@@ -217,6 +246,16 @@ class PlayerCog:
             return False
         return True
 
+    def _nickname(self, user_id):
+        """Return a safe nickname even if an async task finishes after logout."""
+        try:
+            user = self.bot.getUser(user_id)
+            if user:
+                return ttstr(user.szNickname) or self._("Unknown")
+        except Exception:
+            pass
+        return self._("Unknown")
+
     def _send_playback_message(self, message, user_id=None):
         if self.bot.playback_config.get("send_channel_messages", True):
             self.bot.send_message(message)
@@ -272,7 +311,7 @@ class PlayerCog:
         except Exception as e:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Error playing stream: {e}").format(e=str(e)))
             return
-        user_nickname = ttstr(self.bot.getUser(textmessage.nFromUserID).szNickname)
+        user_nickname = self._nickname(textmessage.nFromUserID)
         self._send_playback_message(self._("{nickname} requested playing from a URL").format(nickname=user_nickname))
         self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
         self._announce_track(self.player.media_title)
@@ -286,7 +325,7 @@ class PlayerCog:
                 'link': link
             }
             self.player.queue.append(video)
-            user_nickname = ttstr(self.bot.getUser(user_id).szNickname)
+            user_nickname = self._nickname(user_id)
             self._send_playback_message(self._("{nickname} added to queue: {title}").format(nickname=user_nickname, title=video['title']))
             self._announce_queue(title=video['title'])
             if not self.player.is_playing:
@@ -304,7 +343,7 @@ class PlayerCog:
         if self.player.queue_mode:
             self.player.queue.extend(results)
             self._send_playback_message(self._("{nickname} added {count} items from {collection_type} to queue.").format(
-                nickname=ttstr(self.bot.getUser(user_id).szNickname),
+                nickname=self._nickname(user_id),
                 count=len(results),
                 collection_type=collection_type or "playlist/channel"
             ))
@@ -329,7 +368,7 @@ class PlayerCog:
             self.on_playback_end()
             return
         self._prefetch_next_for_current()
-        user_nickname = ttstr(self.bot.getUser(user_id).szNickname)
+        user_nickname = self._nickname(user_id)
         self._send_playback_message(self._("{nickname} requested to play from a {collection_type}").format(
             nickname=user_nickname, collection_type=collection_type or "playlist/channel"))
         self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
@@ -493,7 +532,7 @@ class PlayerCog:
                 self.on_playback_end()
                 return
             self._prefetch_next_for_current()
-            user_nickname = ttstr(self.bot.getUser(user_id).szNickname)
+            user_nickname = self._nickname(user_id)
             self._send_playback_message(self._("{nickname} requested to play: {title}").format(nickname=user_nickname, title=first_video['title']))
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
             self._announce_track(self.player.media_title)
@@ -512,7 +551,7 @@ class PlayerCog:
             self.player.current_search_index = 0
             video = results[0]
             self.player.queue.append(video)
-            user_nickname = ttstr(self.bot.getUser(user_id).szNickname)
+            user_nickname = self._nickname(user_id)
             self._send_playback_message(self._("{nickname} added to queue: {title}").format(nickname=user_nickname, title=video['title']))
             self._announce_queue(title=video['title'])
             if not self.player.is_playing:
@@ -548,7 +587,7 @@ class PlayerCog:
         if self.player.is_playing and not self.player.pause:
             self.player.pause_stream()
             self.bot.enableVoiceTransmission(False)
-            user_nickname = ttstr(self.bot.getUser(textmessage.nFromUserID).szNickname)
+            user_nickname = self._nickname(textmessage.nFromUserID)
             self._send_playback_message(self._("{nickname} paused the playback").format(nickname=user_nickname))
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Paused: {title}").format(title=title)))
         elif self.player.pause:
@@ -650,7 +689,7 @@ class PlayerCog:
             self.player.queue = []
             self.player.queue_index = -1
             self.bot.enableVoiceTransmission(False)
-            user_nickname = ttstr(self.bot.getUser(textmessage.nFromUserID).szNickname)
+            user_nickname = self._nickname(textmessage.nFromUserID)
             self._send_playback_message(self._("{nickname} stopped the playback and cleared queue").format(nickname=user_nickname))
             status_msg = self.bot.bot_config.get('status_message', "")
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
@@ -672,7 +711,7 @@ class PlayerCog:
                 self.bot.privateMessage(textmessage.nFromUserID, self._("Maximum allowed volume is {max_volume}").format(max_volume=max_volume))
             else:
                 self.player.volume = volume
-                user_nickname = ttstr(self.bot.getUser(textmessage.nFromUserID).szNickname)
+                user_nickname = self._nickname(textmessage.nFromUserID)
                 self._send_playback_message(self._("{name} has changed the volume to {volume}").format(name=user_nickname, volume=volume))
         except (ValueError, IndexError):
             self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: /v [volume_level]"))
@@ -878,7 +917,7 @@ class PlayerCog:
             self.bot.enableVoiceTransmission(True)
             result_message = self.player.play_from_history(index)
             if "Playing" in result_message:
-                user_nickname = ttstr(self.bot.getUser(textmessage.nFromUserID).szNickname)
+                user_nickname = self._nickname(textmessage.nFromUserID)
                 self._send_playback_message(self._("{nickname} requested to play {title} from history").format(nickname=user_nickname, title=self.player.media_title))
                 self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
             else:
@@ -921,7 +960,12 @@ class PlayerCog:
                     info_dict = ydl.extract_info(link, download=True)
                     filename = ydl.prepare_filename(info_dict)
 
-            channel_id = self.bot.getUser(user_id).nChannelID
+            user = self.bot.getUser(user_id)
+            if not user:
+                return
+            channel_id = int(getattr(user, "nChannelID", 0) or 0)
+            if not channel_id:
+                return
             self.bot.doSendFile(channel_id, ttstr(filename))
             filename_only = os.path.basename(filename)
             self.bot.privateMessage(user_id, self._("File {filename} downloaded. Uploading...").format(filename=filename_only))
@@ -1118,7 +1162,7 @@ class PlayerCog:
         
         if self.player.queue_mode:
             self.player.queue.extend(self.favorites)
-            self._send_playback_message(self._("{nickname} added all favorites to queue.").format(nickname=ttstr(self.bot.getUser(textmessage.nFromUserID).szNickname)))
+            self._send_playback_message(self._("{nickname} added all favorites to queue.").format(nickname=self._nickname(textmessage.nFromUserID)))
             if not self.player.is_playing:
                 self.player.queue_index = len(self.player.queue) - len(self.favorites)
                 self._play_from_queue(self.player.queue_index)

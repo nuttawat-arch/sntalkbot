@@ -30,12 +30,21 @@ class UserManager:
         command_handler.register_command('users', self.handle_users_command)
 
 
-    def on_user_logged_in(self, user):
-        """
-        Handles all general logic for when a user logs in.
+    def on_user_logged_in(self, user, fresh_login=True):
+        """Handle state for a TeamTalk login event.
+
+        ``fresh_login`` is False while TeamTalk replays users who were already
+        online before this bot connected/reconnected. In that case we still
+        allow server-side enforcement elsewhere, but do not fire user-facing
+        login notifications, pending-message delivery, or welcome broadcasts.
         """
         nickname = ttstr(user.szNickname)
         username = ttstr(user.szUsername)
+
+        # Startup/reconnect replay is not a genuine new login. Avoid sending
+        # false login notifications, pending-message delivery, and welcomes.
+        if not fresh_login:
+            return
 
         # 1. Handle Notifications
         if nickname in self.notifications:

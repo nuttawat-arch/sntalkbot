@@ -61,11 +61,12 @@ class GeneralCog:
 
         if country and city:
             weather_info = self.get_weather_from_api(country, city)
-            sender_channel_id = self.bot.getUser(lookup_user_id).nChannelID
+            user = self.bot.getUser(lookup_user_id)
+            sender_channel_id = int(getattr(user, "nChannelID", 0) or 0) if user else 0
             if msg_type == 1: # Private message
                 self.bot.privateMessage(lookup_user_id, weather_info)
-            else:
-                self.bot.send_message(weather_info, sender_channel_id or 0)
+            elif sender_channel_id:
+                self.bot.send_message(weather_info, sender_channel_id)
         else:
             self.bot.privateMessage(lookup_user_id, self._("Could not retrieve location information."))
 
@@ -127,12 +128,16 @@ class GeneralCog:
 
     def _send_help(self, sender_id, command_name=None):
         if command_name:
-            name = str(command_name).lstrip("/").lower()
+            requested = str(command_name).lstrip("/").lower()
+            name = self.bot.command_handler.resolve_name(requested)
             if name not in self.bot.command_handler.commands:
                 self.bot.privateMessage(sender_id, self._("Unknown command. Use /help to see all commands."))
                 return
             command = self.bot.command_handler.commands[name]
-            self.bot.privateMessage(sender_id, self.bot.help_commands.line(name, command.admin_only))
+            self.bot.privateMessage(
+                sender_id,
+                self.bot.help_commands.line(name, command.admin_only, self.bot.command_handler.aliases_for(name)),
+            )
             return
         self.bot.privateMessage(sender_id, self._("Available Commands:"))
         # Deliberately one TeamTalk message per command to avoid truncation.

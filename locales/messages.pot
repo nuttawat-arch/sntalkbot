@@ -2789,3 +2789,11 @@ msgstr ""
 #: bot/modules/player.py:654
 msgid "{nickname} stopped the playback and cleared queue"
 msgstr ""
+
+#: bot/help.py
+msgid "Short aliases: {aliases}"
+msgstr ""
+
+#: bot/sntalkbot.py
+msgid "Initial TeamTalk user synchronization complete; live login welcomes are enabled."
+msgstr ""

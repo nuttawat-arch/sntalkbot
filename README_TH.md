@@ -369,7 +369,7 @@ docker login
 หรือระบุ tag เอง:
 
 ```bash
-TTU_IMAGE_REPO=nuttawat0295/sntalkbot TTU_TAG=2026.08.23-r5 ./publish.sh
+TTU_IMAGE_REPO=nuttawat0295/sntalkbot TTU_TAG=2026.08.23-r6 ./publish.sh
 ```
 
 ### 2) บนเซิร์ฟเวอร์ที่ใช้ helper
@@ -397,7 +397,7 @@ helper จะอิงจาก `TTU_IMAGE_REPO` และ `TTU_TAG` ใน `/et
 sudo ttuhelper update
 ```
 
-ถ้าต้องการทดสอบ image ใหม่โดยไม่ทับ `latest` แนะนำให้ push เป็น tag ใหม่ก่อน เช่น `2026.08.23-r5` แล้วค่อยสลับ tag ที่ helper ใช้
+ถ้าต้องการทดสอบ image ใหม่โดยไม่ทับ `latest` แนะนำให้ push เป็น tag ใหม่ก่อน เช่น `2026.08.23-r6` แล้วค่อยสลับ tag ที่ helper ใช้
 
 
 ## การแบ่งหน้าที่ Full / Player / Server Manager
@@ -410,11 +410,11 @@ Runtime `/help` แสดงเฉพาะคำสั่งที่ถูก 
 
 `/report <message>` เป็นรายงานไปยังแอดมิน TeamTalk และมีเฉพาะ Manager/Full ส่วน `/dr <message>` ส่งตรงถึงระบบรายงานผู้พัฒนา SNTalkBot ทางการและมีทุกโหมด
 
-Alias ซ้ำที่เลิกใช้แล้ว: `/h`, `/gl`, `/rs`, `/sd` เหลือคำสั่งหลัก `/help`, `/l`, `/restart`, `/shutdown` อย่างละตัว
+คำสั่งหลักยังมีชื่อเดียวต่อฟังก์ชัน แต่มีคำสั่งย่อที่ตั้งใจไว้สำหรับพิมพ์เร็ว เช่น `/h` → `/help`, `/rs` → `/restart`, `/sd` → `/shutdown` และคำสั่งย่ออื่น ๆ จะแสดงต่อท้ายใน `/help` โดยไม่ลงทะเบียน handler ซ้ำ
 
 ## Player TTS — ประกาศคิว/เพลงแบบไม่พูดซ้อน
 
-รุ่น `2026.08.23-r5` เปลี่ยน Player announcement จากการยิงหลาย thread พร้อมกันเป็น **FIFO queue + worker เดียว** ดังนั้นข้อความเช่น “เพิ่มเพลงเข้าคิวแล้ว” และ “กำลังเล่นเพลง...” จะรอพูดต่อกันตามลำดับ ไม่พูดทับกัน
+รุ่น `2026.08.23-r6` เปลี่ยน Player announcement จากการยิงหลาย thread พร้อมกันเป็น **FIFO queue + worker เดียว** ดังนั้นข้อความเช่น “เพิ่มเพลงเข้าคิวแล้ว” และ “กำลังเล่นเพลง...” จะรอพูดต่อกันตามลำดับ ไม่พูดทับกัน
 
 คำสั่ง Player TTS:
 
@@ -490,20 +490,18 @@ Microsoft Edge TTS ยังเก็บไว้เป็นตัวเลื�
 
 ## `/dr` — รายงานถึงผู้พัฒนา SNTalkBot โดยตรง
 
-`/dr <message>` ใช้ endpoint ทางการที่ฝังใน SNTalkBot: `https://report.nuttawat.ddnsfree.com/api/report` ผู้ใช้ไม่ต้องตั้ง Telegram token หรือ chat ID ใน container
+`/dr <message>` ส่งรายงานปัญหาโดยตรงถึงผู้พัฒนา SNTalkBot
 
-ข้อมูลที่ส่งเมื่อผู้ใช้เรียก `/dr` เท่านั้น: เวอร์ชัน/โหมดบอต, ชื่อ TeamTalk server และ host/port, ชื่อบอต, nickname/username ของผู้รายงาน, channel และข้อความที่ผู้ใช้พิมพ์หลัง `/dr` ระบบไม่ส่ง TeamTalk password, channel password, cookies หรือบทสนทนาอื่น
-
-หาก API กลางหยุดทำงาน บอตจะแจ้งว่าระบบรายงานขัดข้องชั่วคราวและจะไม่ทำให้บอต crash ส่วน `/report` ยังคงเป็นคำสั่งรายงานหาแอดมิน TeamTalk ตามเดิม
+ส่วน `/report <message>` ยังคงส่งรายงานหาแอดมิน TeamTalk ที่ออนไลน์อยู่
 
 ## อัปเดต Docker image และ instance เดิม
 
 หลังแก้ source และ push GitHub แล้ว ให้ build/push tag ใหม่ เช่น:
 
 ```powershell
-docker build --platform linux/amd64 -t nuttawat0295/sntalkbot:2026.08.23-r5 .
-docker push nuttawat0295/sntalkbot:2026.08.23-r5
-docker tag nuttawat0295/sntalkbot:2026.08.23-r5 nuttawat0295/sntalkbot:latest
+docker build --platform linux/amd64 -t nuttawat0295/sntalkbot:2026.08.23-r6 .
+docker push nuttawat0295/sntalkbot:2026.08.23-r6
+docker tag nuttawat0295/sntalkbot:2026.08.23-r6 nuttawat0295/sntalkbot:latest
 docker push nuttawat0295/sntalkbot:latest
 ```
 
@@ -519,8 +517,11 @@ sudo ttuhelper update
 
 Player announcement ใช้ audio stream แยกจากเพลงและ mix กันที่ PulseAudio โดย **ไม่ลด volume, ไม่ pause และไม่ duck เพลง** ขณะพูด TTS ส่วน FIFO queue ทำให้ข้อความ TTS พูดทีละข้อความไม่ซ้อนกันเอง
 
-## 2026.08.23-r5
+## 2026.08.23-r6
 
-- `/dr` ใช้ official developer relay ที่ `https://report.nuttawat.ddnsfree.com/api/report`
-- Telegram Bot Token ไม่อยู่ใน Docker image หรือ config ของผู้ใช้
-- Player TTS และเพลงยังเป็น audio stream แยก ไม่มี music ducking
+- Welcome broadcast ไม่ประกาศย้อนหลังให้ผู้ใช้ที่ออนไลน์อยู่ก่อนบอตเริ่มหรือรีสตาร์ต
+- เพิ่มระบบคำสั่งย่อแบบ alias โดยไม่ลงทะเบียน handler ซ้ำ เช่น `/h`, `/rs`, `/sd`
+- ย้าย `/cc`, `/csize`, `/cm` ไปฝั่ง Player ให้ Server Manager ไม่เห็นคำสั่ง Player
+- แก้การแบ่งข้อความยาวไม่ให้ข้อความช่วงรอยต่อหาย
+- เพิ่ม guard สำหรับงาน async เมื่อผู้ใช้ออกจาก TeamTalk ระหว่างงาน
+- คง `/dr`, Google standard gTTS, FIFO TTS และ No Music Ducking จากรุ่นก่อน

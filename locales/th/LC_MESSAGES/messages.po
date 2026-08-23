@@ -189,7 +189,7 @@ msgstr "สำหรับผู้ดูแลเท่านั้น: บั�
 
 #: bot/help.py:138
 msgid "Admins only: Select Microsoft Edge TTS or Google standard gTTS for Player announcements."
-msgstr "สำหรับผู้ดูแลเท่านั้น: เลือก Microsoft Edge TTS หรือ Google standard gTTS สำหรับเสียงประกาศของ Player"
+msgstr "สำหรับผู้ดูแล: เลือกเสียง Microsoft หรือ Google สำหรับเสียงประกาศ Player"
 
 #: bot/help.py:113
 msgid "Admins only: Send a bot broadcast message according to the configured broadcast scope."
@@ -209,7 +209,7 @@ msgstr "สำหรับผู้ดูแลเท่านั้น: ส่�
 
 #: bot/help.py:142
 msgid "Admins only: Set Google standard Player announcement speaking speed."
-msgstr "สำหรับผู้ดูแลเท่านั้น: ตั้งความเร็วเสียงประกาศ Player เมื่อใช้ Google standard gTTS"
+msgstr "สำหรับผู้ดูแล: ตั้งความเร็วเสียงประกาศ Player ในโหมด Google"
 
 #: bot/help.py:141
 msgid "Admins only: Set Microsoft Player announcement speaking rate."
@@ -1285,11 +1285,11 @@ msgstr "License Name"
 
 #: bot/help.py:140
 msgid "List Microsoft Player voices or Google standard gTTS languages."
-msgstr "แสดงเสียง Microsoft ของ Player หรือภาษาที่ Google standard gTTS รองรับ"
+msgstr "แสดงรายการเสียงหรือภาษาที่เลือกใช้ได้สำหรับ Player"
 
 #: bot/help.py:37
 msgid "List Microsoft voices, or Google standard gTTS languages in Google mode."
-msgstr "แสดงเสียง Microsoft หรือภาษาที่ Google standard gTTS รองรับเมื่ออยู่ในโหมด Google"
+msgstr "แสดงรายการเสียงหรือภาษาที่เลือกใช้ได้ตามโหมด TTS"
 
 #: bot/help.py:103
 msgid "List currently connected users with account type, location, and status."
@@ -1821,7 +1821,7 @@ msgstr "ส่งข้อความส่วนตัวถึงผู้ใ
 
 #: bot/help.py:129
 msgid "Send a problem report directly to the official SNTalkBot developer report service."
-msgstr "ส่งรายงานปัญหาโดยตรงถึงผู้พัฒนา SNTalkBot ผ่านระบบรายงานทางการ"
+msgstr "ส่งรายงานปัญหาโดยตรงถึงผู้พัฒนา SNTalkBot"
 
 #: bot/config_handler.py:56
 msgid "Send a public welcome message when a user logs in."
@@ -1853,7 +1853,7 @@ msgstr "ตั้งโหมด M3 Repeat: เล่นเพลงปัจจ
 
 #: bot/help.py:31
 msgid "Set Microsoft voice name, or Google standard language code such as th."
-msgstr "ตั้งชื่อเสียง Microsoft หรือรหัสภาษา Google standard เช่น th"
+msgstr "เลือกเสียงหรือภาษาที่ใช้กับ TTS"
 
 #: bot/help.py:95
 msgid "Set music playback speed."
@@ -2013,7 +2013,7 @@ msgstr "เซอร์ไพรส์! {nickname} จาก {country} มาแ
 
 #: bot/help.py:36
 msgid "Switch TTS mode between Microsoft Edge TTS and Google standard gTTS (no API key)."
-msgstr "สลับโหมด TTS ระหว่าง Microsoft Edge TTS และ Google standard gTTS ซึ่งไม่ต้องใช้ API key"
+msgstr "เลือกเสียง TTS ระหว่าง Microsoft หรือ Google"
 
 #: bot/modules/tts.py:574
 msgid "TTS has been {state}."
@@ -2786,3 +2786,11 @@ msgstr "{nickname} พูดว่า: {translated}"
 #: bot/modules/player.py:654
 msgid "{nickname} stopped the playback and cleared queue"
 msgstr "{nickname} หยุดเล่นและล้างคิวแล้ว"
+
+#: bot/help.py
+msgid "Short aliases: {aliases}"
+msgstr "คำสั่งย่อ: {aliases}"
+
+#: bot/sntalkbot.py
+msgid "Initial TeamTalk user synchronization complete; live login welcomes are enabled."
+msgstr "ซิงก์รายชื่อผู้ใช้ TeamTalk เริ่มต้นเสร็จแล้ว ระบบต้อนรับจะทำงานเฉพาะการเข้าสู่ระบบใหม่หลังจากนี้"

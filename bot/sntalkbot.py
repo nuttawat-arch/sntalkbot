@@ -2,6 +2,7 @@
 from TeamTalk5 import TeamTalk, User, UserType, UserAccount, UserRight, TextMessage, ttstr, TextMsgType, Subscription, TTMessage, VideoCodec, Channel, ChannelType, AudioCodec, OpusCodec, Codec, OPUS_APPLICATION_VOIP, BanType, StreamType
 import TeamTalk5
 from bot.command_handler import CommandHandler
+from bot.command_aliases import COMMAND_ALIASES
 from bot.utils import BotUtils as utils, LoggingThreadPoolExecutor
 from bot.modules.admin import AdminCog
 from bot.modules.general import GeneralCog
@@ -64,6 +65,10 @@ class SNTalkBot(TeamTalk):
         self._reconnect_lock = threading.Lock()
         self._reconnect_scheduled = False
         self._reconnect_attempt = 0
+        self._event_bootstrap_lock = threading.Lock()
+        self._event_bootstrap_ready = False
+        self._initial_login_user_ids = set()
+        self._event_bootstrap_timer = None
         self.io_pool = LoggingThreadPoolExecutor(max_workers=10, thread_name_prefix='TTBot_IO')
         self.quick_task_pool = LoggingThreadPoolExecutor(max_workers=5, thread_name_prefix='TTBot_Quick')
         self.player = Player(self.config_handler, cookiefile=self.cookiefile) if self.player_enabled else None
@@ -120,7 +125,15 @@ class SNTalkBot(TeamTalk):
         """
         super().__init__()
         
-        self.just_joined = True
+        with self._event_bootstrap_lock:
+            self._event_bootstrap_ready = False
+            self._initial_login_user_ids = set()
+            if self._event_bootstrap_timer is not None:
+                try:
+                    self._event_bootstrap_timer.cancel()
+                except Exception:
+                    pass
+                self._event_bootstrap_timer = None
         self.last_command_sender_id = None
         self.last_command_sender_username = None
 
@@ -228,11 +241,34 @@ class SNTalkBot(TeamTalk):
         for cog in cogs_to_register:
             if cog is not None:
                 cog.register(self.command_handler)
+
+        # Register intentional short aliases only when their canonical command is
+        # available in this feature mode. Aliases resolve to one canonical handler
+        # rather than registering duplicate command handlers.
+        for alias, target in COMMAND_ALIASES.items():
+            if target in self.command_handler.commands:
+                self.command_handler.register_alias(alias, target)
+
+        # Migrate any blocked-command entries that were saved using an alias.
+        normalized_blocked = {
+            self.command_handler.resolve_name(name)
+            for name in self.blocked_commands
+            if self.command_handler.has_name(name)
+        }
+        if normalized_blocked != self.blocked_commands:
+            self.blocked_commands = normalized_blocked
+            self.bot_config["blocked_commands"] = sorted(normalized_blocked)
+            self.config_handler.update_bot_settings({"blocked_commands": sorted(normalized_blocked)})
+
         print(self._("All command modules have been registered."))
 
     def onConnectSuccess(self):
         print(self._("Connected successfully!"))
         self._reconnect_attempt = 0
+        self._event_bootstrap_lock = threading.Lock()
+        self._event_bootstrap_ready = False
+        self._initial_login_user_ids = set()
+        self._event_bootstrap_timer = None
         self.doLogin(ttstr(self.bot_config["nickname"]), ttstr(self.server_config["username"]), ttstr(self.server_config["password"]), ttstr(self.bot_config["client_name"]))
 
     def onConnectFailed(self):
@@ -279,8 +315,72 @@ class SNTalkBot(TeamTalk):
             with self._reconnect_lock:
                 self._reconnect_scheduled = False
     
+    def _finish_event_bootstrap(self):
+        with self._event_bootstrap_lock:
+            self._event_bootstrap_ready = True
+            self._event_bootstrap_timer = None
+        print(self._("Initial TeamTalk user synchronization complete; live login welcomes are enabled."))
+
+    def _begin_event_bootstrap(self):
+        """Suppress startup/reconnect replay events without disabling real checks.
+
+        TeamTalk can replay UserLoggedIn/UserJoinedChannel events for users that
+        were already online before the bot connected. Those events are state
+        synchronization, not new arrivals, and must not trigger welcome broadcasts.
+        """
+        try:
+            existing_ids = {
+                int(user.nUserID)
+                for user in self.getServerUsers()
+                if int(user.nUserID) != int(self.getMyUserID())
+            }
+        except Exception:
+            existing_ids = set()
+        with self._event_bootstrap_lock:
+            self._event_bootstrap_ready = False
+            self._initial_login_user_ids = existing_ids
+            if self._event_bootstrap_timer is not None:
+                try:
+                    self._event_bootstrap_timer.cancel()
+                except Exception:
+                    pass
+            # The short grace window drains TeamTalk's initial event replay. The
+            # baseline ID set also suppresses any delayed login replay after it.
+            self._event_bootstrap_timer = threading.Timer(3.0, self._finish_event_bootstrap)
+            self._event_bootstrap_timer.daemon = True
+            self._event_bootstrap_timer.start()
+
+    def _is_fresh_login_event(self, user):
+        """Return True only for a login that happened after startup sync finished.
+
+        User IDs seen during the initial/reconnect synchronization remain marked
+        for the lifetime of that TeamTalk session. This prevents delayed duplicate
+        login/join events from producing welcome messages later. The ID is removed
+        when TeamTalk reports a logout.
+        """
+        user_id = int(getattr(user, "nUserID", 0) or 0)
+        if not user_id or user_id == int(self.getMyUserID() or 0):
+            return False
+        with self._event_bootstrap_lock:
+            if not self._event_bootstrap_ready:
+                self._initial_login_user_ids.add(user_id)
+                return False
+            return user_id not in self._initial_login_user_ids
+
+    def _is_live_join_event(self, user):
+        """Suppress channel-join replay for users already present at bot startup."""
+        user_id = int(getattr(user, "nUserID", 0) or 0)
+        if not user_id or user_id == int(self.getMyUserID() or 0):
+            return False
+        with self._event_bootstrap_lock:
+            if not self._event_bootstrap_ready:
+                self._initial_login_user_ids.add(user_id)
+                return False
+            return user_id not in self._initial_login_user_ids
+
     def onCmdMyselfLoggedIn(self, userid, useraccount):
         print(self._("Logged in successfully"))
+        self._begin_event_bootstrap()
         channel_id = self.getChannelIDFromPath(ttstr(self.bot_config['default_channel']))
 
         if channel_id == 0 or channel_id is None:
@@ -301,14 +401,17 @@ class SNTalkBot(TeamTalk):
         print(self._("I've been kicked from the channel. Scheduling reconnect..."))
         self.reconnect()
 
-    def subscribe_user_messages(self):
-        users = self.getServerUsers()
+    def _subscribe_user(self, user):
+        if not user or int(getattr(user, "nUserID", 0) or 0) == int(self.getMyUserID() or 0):
+            return
+        self.doSubscribe(user.nUserID, Subscription.SUBSCRIBE_USER_MSG)
+        if self.server_management_enabled and self.bot_config['intercept_channel_messages'] is True:
+            self.doSubscribe(user.nUserID, 131072)
+            print(self._("intercepting channel messages for user {user}").format(user=ttstr(user.szNickname)))
 
-        for user in users:
-            self.doSubscribe(user.nUserID, Subscription.SUBSCRIBE_USER_MSG)
-            if self.server_management_enabled and self.bot_config['intercept_channel_messages'] is True:
-                self.doSubscribe(user.nUserID, 131072)
-                print(self._("intercepting channel messages for user {user}").format(user=ttstr(user.szNickname)))
+    def subscribe_user_messages(self):
+        for user in self.getServerUsers():
+            self._subscribe_user(user)
         print(self._("subscribed to user messages"))
 
     def subscribe_channel_messages(self):
@@ -318,11 +421,10 @@ class SNTalkBot(TeamTalk):
         print(self._("Subscribed to channel messages"))
 
     def onCmdUserLoggedIn(self, user: User):
-        if self.just_joined:
-            self.just_joined = False
-            return
-            
-        self.subscribe_user_messages()
+        fresh_login = self._is_fresh_login_event(user)
+        # Subscribe only the user represented by this event. Re-subscribing the
+        # entire server for every login was unnecessary work on busy servers.
+        self._subscribe_user(user)
         if self.accounts_config['detect_server_admins'] is True and user.uUserType == UserType.USERTYPE_ADMIN:
             username_lower = ttstr(user.szUsername).lower()
             if username_lower not in [u.lower() for u in self.accounts_config['authorized_users']]:
@@ -340,7 +442,7 @@ class SNTalkBot(TeamTalk):
         if self.admin_cog is not None:
             self.admin_cog.handle_user_login_checks(user)
         if self.user_manager is not None:
-            self.user_manager.on_user_logged_in(user)
+            self.user_manager.on_user_logged_in(user, fresh_login=fresh_login)
 
     def onCmdUserJoinedChannel(self, user: User):
         if self.jail_cog is not None:
@@ -348,7 +450,7 @@ class SNTalkBot(TeamTalk):
         self._maybe_start_random_tts_broadcast()
         
         # New Welcome logic
-        if self.server_management_enabled and self.welcome_mode > 0 and user.nUserID != self.getMyUserID():
+        if self.server_management_enabled and self.welcome_mode > 0 and self._is_live_join_event(user):
             nm = ttstr(user.szNickname)
             msg = self.welcome_msg.replace("ชื่อ", nm)
             self.send_message(msg)
@@ -362,6 +464,8 @@ class SNTalkBot(TeamTalk):
             self.tts_cog.on_user_parted(user)
 
     def onCmdUserLoggedOut(self, user: User):
+        with self._event_bootstrap_lock:
+            self._initial_login_user_ids.discard(int(getattr(user, "nUserID", 0) or 0))
         if self.user_manager is not None:
             self.user_manager.on_user_parted(user)
         if self.translator_cog is not None:
@@ -372,23 +476,30 @@ class SNTalkBot(TeamTalk):
             self.account_request_cog.on_user_parted(user)
 
     def split_long_message(self, message, chunk_size=500):
+        """Split text without dropping characters around a word boundary."""
+        remaining = str(message or "")
         chunks = []
-        while message:
-            chunk = message[:chunk_size]
-            message = message[chunk_size:]
-            if message:
-                last_space = chunk.rfind(" ")
-                if last_space != -1:
-                    chunk = chunk[:last_space]
-                    message = chunk[last_space + 1:] + message
-            chunks.append(chunk)
+        while remaining:
+            if len(remaining) <= chunk_size:
+                chunks.append(remaining)
+                break
+            candidate = remaining[:chunk_size]
+            split_at = candidate.rfind(" ")
+            if split_at <= 0:
+                split_at = chunk_size
+                chunks.append(remaining[:split_at])
+                remaining = remaining[split_at:]
+            else:
+                chunks.append(remaining[:split_at])
+                remaining = remaining[split_at + 1:]
         return chunks
 
     def onCmdUserTextMessage(self, textmessage: TextMessage):
         message_text = ttstr(textmessage.szMessage)
         from_uid = textmessage.nFromUserID
         from_username = ttstr(textmessage.szFromUsername)
-        from_nickname = ttstr(self.getUser(from_uid).szNickname) if self.getUser(from_uid) else "Unknown"
+        sender_user = self.getUser(from_uid)
+        from_nickname = ttstr(sender_user.szNickname) if sender_user else "Unknown"
 
         # Profanity Filter
         if self.server_management_enabled and self.profanity_filter_enabled and from_uid != self.getMyUserID():
@@ -569,9 +680,14 @@ class SNTalkBot(TeamTalk):
         self.doTextMessage(message)
 
     def kick_user(self, user_id):
-        user_channel_id = self.getUser(user_id).nChannelID
-        self.doKickUser(user_id, user_channel_id)
+        user = self.getUser(user_id)
+        if not user:
+            return False
+        user_channel_id = int(getattr(user, "nChannelID", 0) or 0)
+        if user_channel_id:
+            self.doKickUser(user_id, user_channel_id)
         self.doKickUser(user_id, 0)
+        return True
 
     def send_broadcast_messages_at_intervals(self, messages):
         random.seed()
