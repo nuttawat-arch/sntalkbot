@@ -6,7 +6,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: bot/config_handler.py:403
+#: bot/config_handler.py:446
 msgid "\nConfiguration saved to config.ini! You can now start the bot normally."
 msgstr ""
 
@@ -70,19 +70,19 @@ msgstr ""
 msgid "Action for Long Nicknames"
 msgstr ""
 
-#: bot/modules/player.py:1098
+#: bot/modules/player.py:1108
 msgid "Added to favorites: {title}"
 msgstr ""
 
-#: bot/modules/player.py:232
+#: bot/modules/player.py:242
 msgid "Added to queue: {title}"
 msgstr ""
 
-#: bot/modules/player.py:230
+#: bot/modules/player.py:240
 msgid "Added {count} tracks to the queue."
 msgstr ""
 
-#: bot/modules/player.py:253
+#: bot/modules/player.py:263
 msgid "Adding URL to queue..."
 msgstr ""
 
@@ -191,7 +191,7 @@ msgid "Admins only: Saves the configuration in case you changed the bot's name a
 msgstr ""
 
 #: bot/help.py:138
-msgid "Admins only: Select Microsoft Edge TTS or Google Cloud TTS for Player announcements."
+msgid "Admins only: Select Microsoft Edge TTS or Google standard gTTS for Player announcements."
 msgstr ""
 
 #: bot/help.py:113
@@ -211,7 +211,7 @@ msgid "Admins only: Sends a broadcast message to the server."
 msgstr ""
 
 #: bot/help.py:142
-msgid "Admins only: Set Google Cloud Player announcement speaking speed."
+msgid "Admins only: Set Google standard Player announcement speaking speed."
 msgstr ""
 
 #: bot/help.py:141
@@ -219,7 +219,7 @@ msgid "Admins only: Set Microsoft Player announcement speaking rate."
 msgstr ""
 
 #: bot/help.py:139
-msgid "Admins only: Set the Player announcement voice for the currently selected Player TTS mode."
+msgid "Admins only: Set Microsoft Player voice, or Google language code such as th."
 msgstr ""
 
 #: bot/help.py:123
@@ -278,7 +278,7 @@ msgstr ""
 msgid "Allows the bot to 'see' messages in all channels for features like word blacklisting and general bot commands, such as weather and other commands, even if it's not in that channel. Highly recommended."
 msgstr ""
 
-#: bot/modules/player.py:1100
+#: bot/modules/player.py:1110
 msgid "Already in favorites."
 msgstr ""
 
@@ -302,7 +302,7 @@ msgstr ""
 msgid "Announce playback actions (play/pause/stop/volume) in the channel."
 msgstr ""
 
-#: bot/modules/tts.py:298
+#: bot/modules/tts.py:289
 msgid "Another speech synthesis is already in progress. Please wait."
 msgstr ""
 
@@ -338,11 +338,11 @@ msgstr ""
 msgid "Automatically kick users who log in with the default 'NoName' nickname."
 msgstr ""
 
-#: bot/modules/player.py:739
+#: bot/modules/player.py:749
 msgid "Autoplay is {state}."
 msgstr ""
 
-#: bot/modules/player.py:799
+#: bot/modules/player.py:809
 msgid "Autoplaying: {title}"
 msgstr ""
 
@@ -358,7 +358,7 @@ msgstr ""
 msgid "Banned Countries"
 msgstr ""
 
-#: bot/modules/player.py:1168
+#: bot/modules/player.py:1178
 msgid "Bass Boost: {state}"
 msgstr ""
 
@@ -418,7 +418,7 @@ msgstr ""
 msgid "Channel not found."
 msgstr ""
 
-#: bot/modules/player.py:366
+#: bot/modules/player.py:376
 msgid "Channel selection expired. Use /channel again."
 msgstr ""
 
@@ -434,11 +434,11 @@ msgstr ""
 msgid "Check the list of online administrators."
 msgstr ""
 
-#: bot/modules/player.py:393
+#: bot/modules/player.py:403
 msgid "Choose a playlist by number:"
 msgstr ""
 
-#: bot/modules/player.py:352
+#: bot/modules/player.py:362
 msgid "Choose a tab by number:"
 msgstr ""
 
@@ -538,7 +538,7 @@ msgstr ""
 msgid "Could not connect to server {server_address} port={port}"
 msgstr ""
 
-#: bot/config_handler.py:375
+#: bot/config_handler.py:418
 msgid "Could not find any {type} devices. You may need to set this manually in config.ini."
 msgstr ""
 
@@ -550,7 +550,7 @@ msgstr ""
 msgid "Could not send the direct report to Telegram. Please contact an admin."
 msgstr ""
 
-#: bot/modules/player.py:978
+#: bot/modules/player.py:988
 msgid "Current Queue:"
 msgstr ""
 
@@ -562,15 +562,15 @@ msgstr ""
 msgid "Current language: {language}"
 msgstr ""
 
-#: bot/modules/player.py:1193
+#: bot/modules/player.py:1203
 msgid "Current mode: M{mode} - {txt}"
 msgstr ""
 
-#: bot/modules/player.py:1173
+#: bot/modules/player.py:1183
 msgid "Current speed: {speed}x"
 msgstr ""
 
-#: bot/modules/player.py:1037
+#: bot/modules/player.py:1047
 msgid "Currently playing: {title} [{elapsed}/{total}]"
 msgstr ""
 
@@ -610,7 +610,7 @@ msgstr ""
 msgid "Direct Telegram reporting is not configured on this bot."
 msgstr ""
 
-#: bot/modules/player.py:884
+#: bot/modules/player.py:894
 msgid "Download already in progress. Please wait."
 msgstr ""
 
@@ -618,7 +618,7 @@ msgstr ""
 msgid "Download audio with yt-dlp and upload it to the current TeamTalk channel."
 msgstr ""
 
-#: bot/modules/player.py:898
+#: bot/modules/player.py:908
 msgid "Downloading audio. Please wait..."
 msgstr ""
 
@@ -650,19 +650,19 @@ msgstr ""
 msgid "Enable whisper translation: translate channel/broadcast messages and send the translated text to you privately."
 msgstr ""
 
-#: bot/modules/player.py:286
+#: bot/modules/player.py:296
 msgid "Error adding to queue: {e}"
 msgstr ""
 
-#: bot/modules/player.py:942
+#: bot/modules/player.py:952
 msgid "Error deleting file: {e}"
 msgstr ""
 
-#: bot/modules/player.py:928
+#: bot/modules/player.py:938
 msgid "Error downloading or uploading: {e}"
 msgstr ""
 
-#: bot/modules/tts.py:360
+#: bot/modules/tts.py:368
 msgid "Error during speech synthesis: {e}"
 msgstr ""
 
@@ -674,23 +674,23 @@ msgstr ""
 msgid "Error fetching weather data."
 msgstr ""
 
-#: bot/modules/tts.py:180 bot/modules/tts.py:617
+#: bot/modules/tts.py:169 bot/modules/tts.py:646
 msgid "Error listing voices: {e}"
 msgstr ""
 
-#: bot/modules/player.py:263
+#: bot/modules/player.py:273
 msgid "Error playing stream: {e}"
 msgstr ""
 
-#: bot/modules/player.py:1247
+#: bot/modules/player.py:1257
 msgid "Error playing track: {error}"
 msgstr ""
 
-#: bot/modules/player.py:1130
+#: bot/modules/player.py:1140
 msgid "Error playing {title}: {e}"
 msgstr ""
 
-#: bot/modules/player.py:318 bot/modules/player.py:528 bot/modules/player.py:707 bot/modules/player.py:804 bot/modules/player.py:836 bot/modules/player.py:482
+#: bot/modules/player.py:328 bot/modules/player.py:538 bot/modules/player.py:717 bot/modules/player.py:814 bot/modules/player.py:846 bot/modules/player.py:492
 msgid "Error playing {title}: {e}. Skipping..."
 msgstr ""
 
@@ -734,11 +734,11 @@ msgstr ""
 msgid "Fade audio when seeking or changing volume. Set to 0 to disable."
 msgstr ""
 
-#: bot/modules/player.py:1188
+#: bot/modules/player.py:1198
 msgid "Fade effect: {state}"
 msgstr ""
 
-#: bot/modules/player.py:400
+#: bot/modules/player.py:410
 msgid "Failed to load the selected tab: {e}"
 msgstr ""
 
@@ -746,11 +746,11 @@ msgstr ""
 msgid "Failed to send verification email. Please try again later."
 msgstr ""
 
-#: bot/modules/player.py:1138
+#: bot/modules/player.py:1148
 msgid "Favorites list cleared."
 msgstr ""
 
-#: bot/modules/player.py:917
+#: bot/modules/player.py:927
 msgid "File {filename} downloaded. Uploading..."
 msgstr ""
 
@@ -760,10 +760,6 @@ msgstr ""
 
 #: bot/help.py:50
 msgid "For authorized users. Removes someone from the jails list and moves them back to the root channel"
-msgstr ""
-
-#: bot/help.py:37
-msgid "Get all voices for a specified language (Microsoft) or list Google voices when in Google mode."
 msgstr ""
 
 #: bot/help.py:79
@@ -818,20 +814,16 @@ msgstr ""
 msgid "Good vibes only for {nickname} from {country}! Welcome, my friend!"
 msgstr ""
 
-#: bot/modules/tts.py:686
-msgid "Google Cloud TTS API key is not configured."
+#: bot/modules/tts.py:527
+msgid "Google standard TTS language set to {lang}."
 msgstr ""
 
-#: bot/modules/player.py:136 bot/modules/tts.py:629
-msgid "Google Cloud TTS is not configured. Set [tts] google_api_key first."
+#: bot/modules/tts.py:145 bot/modules/tts.py:620
+msgid "Google standard TTS language: {name} ({code})"
 msgstr ""
 
-#: bot/modules/tts.py:697
-msgid "Google voice not found, using default voice."
-msgstr ""
-
-#: bot/modules/tts.py:505
-msgid "Google voice set to {voice_name}."
+#: bot/modules/player.py:156
+msgid "Google standard language"
 msgstr ""
 
 #: bot/user_manager.py:139
@@ -1014,11 +1006,11 @@ msgstr ""
 msgid "Howdy, {nickname}! Welcome from {country}."
 msgstr ""
 
-#: bot/config_handler.py:344
+#: bot/config_handler.py:387
 msgid "I'll ask a few questions to create your configuration file."
 msgstr ""
 
-#: bot/config_handler.py:218
+#: bot/config_handler.py:261
 msgid "I'll ask you for the required values now."
 msgstr ""
 
@@ -1034,7 +1026,7 @@ msgstr ""
 msgid "If you chose option 3 above, enter the specific username to watch for here."
 msgstr ""
 
-#: bot/modules/player.py:1227
+#: bot/modules/player.py:1237
 msgid "Index must be a number."
 msgstr ""
 
@@ -1054,11 +1046,11 @@ msgstr ""
 msgid "Interval in minutes for sending random broadcast messages from messages.txt. Set to 0 to disable."
 msgstr ""
 
-#: bot/config_handler.py:314
+#: bot/config_handler.py:357
 msgid "Invalid choice number."
 msgstr ""
 
-#: bot/config_handler.py:286
+#: bot/config_handler.py:329
 msgid "Invalid choice. Please enter 'y' or 'n'."
 msgstr ""
 
@@ -1070,15 +1062,15 @@ msgstr ""
 msgid "Invalid command format. Usage: /new <username> <password> [rights separated by space]"
 msgstr ""
 
-#: bot/modules/player.py:723
+#: bot/modules/player.py:733
 msgid "Invalid command. Usage: /autoplay [on|off]"
 msgstr ""
 
-#: bot/modules/player.py:890
+#: bot/modules/player.py:900
 msgid "Invalid command. Usage: /dl <youtube_link> or play a track first."
 msgstr ""
 
-#: bot/modules/player.py:1019
+#: bot/modules/player.py:1029
 msgid "Invalid command. Usage: /dq <index>"
 msgstr ""
 
@@ -1090,11 +1082,11 @@ msgstr ""
 msgid "Invalid command. Usage: /notify <nickname> <telegram_chat_id>"
 msgstr ""
 
-#: bot/modules/tts.py:467 bot/modules/tts.py:477
+#: bot/modules/tts.py:482 bot/modules/tts.py:492
 msgid "Invalid command. Usage: /pitch <pitch_value>"
 msgstr ""
 
-#: bot/modules/player.py:451
+#: bot/modules/player.py:461
 msgid "Invalid command. Usage: /pm <name>"
 msgstr ""
 
@@ -1102,23 +1094,23 @@ msgstr ""
 msgid "Invalid command. Usage: /private <second_name>"
 msgstr ""
 
-#: bot/modules/player.py:963
+#: bot/modules/player.py:973
 msgid "Invalid command. Usage: /q [on|off]"
 msgstr ""
 
-#: bot/modules/player.py:877
+#: bot/modules/player.py:887
 msgid "Invalid command. Usage: /r <index>"
 msgstr ""
 
-#: bot/modules/tts.py:449 bot/modules/tts.py:459
+#: bot/modules/tts.py:464 bot/modules/tts.py:474
 msgid "Invalid command. Usage: /rate <rate_value>."
 msgstr ""
 
-#: bot/modules/tts.py:516 bot/modules/tts.py:526
+#: bot/modules/tts.py:538 bot/modules/tts.py:548
 msgid "Invalid command. Usage: /speed <value>."
 msgstr ""
 
-#: bot/modules/player.py:242
+#: bot/modules/player.py:252
 msgid "Invalid command. Usage: /u <link>"
 msgstr ""
 
@@ -1126,15 +1118,19 @@ msgstr ""
 msgid "Invalid command. Usage: /unotify <username> <telegram_chat_id>"
 msgstr ""
 
-#: bot/modules/player.py:668
+#: bot/modules/player.py:678
 msgid "Invalid command. Usage: /v [volume_level]"
 msgstr ""
 
-#: bot/modules/tts.py:500
+#: bot/modules/tts.py:516
+msgid "Invalid command. Usage: /voice <language_code>, for example /voice th."
+msgstr ""
+
+#: bot/modules/tts.py:518
 msgid "Invalid command. Usage: /voice <voice_name>."
 msgstr ""
 
-#: bot/modules/tts.py:485 bot/modules/tts.py:495
+#: bot/modules/tts.py:500 bot/modules/tts.py:510
 msgid "Invalid command. Usage: /volume <volume_value>"
 msgstr ""
 
@@ -1154,43 +1150,43 @@ msgstr ""
 msgid "Invalid format. Usage: /udk <username> <duration>"
 msgstr ""
 
-#: bot/config_handler.py:267 bot/config_handler.py:316
+#: bot/config_handler.py:310 bot/config_handler.py:359
 msgid "Invalid input. Please enter a number."
 msgstr ""
 
-#: bot/config_handler.py:258
+#: bot/config_handler.py:301
 msgid "Invalid input. Please enter a whole number."
 msgstr ""
 
-#: bot/modules/tts.py:626
+#: bot/modules/tts.py:655
 msgid "Invalid mode. Use microsoft or google."
 msgstr ""
 
-#: bot/modules/tts.py:475
+#: bot/modules/tts.py:490
 msgid "Invalid pitch value. Pitch should be between -100 and 100."
 msgstr ""
 
-#: bot/modules/player.py:1017
+#: bot/modules/player.py:1027
 msgid "Invalid queue index."
 msgstr ""
 
-#: bot/modules/tts.py:457
+#: bot/modules/tts.py:472
 msgid "Invalid rate value. Rate should be between -100 and 100."
 msgstr ""
 
-#: bot/modules/player.py:374 bot/modules/player.py:419
+#: bot/modules/player.py:384 bot/modules/player.py:429
 msgid "Invalid selection. Choose a number from the list."
 msgstr ""
 
-#: bot/modules/player.py:1182
+#: bot/modules/player.py:1192
 msgid "Invalid speed value."
 msgstr ""
 
-#: bot/modules/tts.py:524
+#: bot/modules/tts.py:546
 msgid "Invalid speed value. Use a number between 0.25 and 4.0."
 msgstr ""
 
-#: bot/modules/player.py:610
+#: bot/modules/player.py:620
 msgid "Invalid time format. Use seconds or M:S or H:M:S."
 msgstr ""
 
@@ -1202,15 +1198,15 @@ msgstr ""
 msgid "Invalid value. Use /accounts on or /accounts off."
 msgstr ""
 
-#: bot/modules/tts.py:558
+#: bot/modules/tts.py:580
 msgid "Invalid value. Use /rb on or /rb off."
 msgstr ""
 
-#: bot/modules/tts.py:543
+#: bot/modules/tts.py:565
 msgid "Invalid value. Use /tts on or /tts off."
 msgstr ""
 
-#: bot/modules/tts.py:493
+#: bot/modules/tts.py:508
 msgid "Invalid volume value. Volume should be between 0.1 and 1.0."
 msgstr ""
 
@@ -1270,15 +1266,15 @@ msgstr ""
 msgid "Language Selection"
 msgstr ""
 
-#: bot/modules/tts.py:348
+#: bot/modules/tts.py:356
 msgid "Language detection failed. Using default voice."
 msgstr ""
 
-#: bot/modules/tts.py:574
+#: bot/modules/tts.py:596
 msgid "Language detection is now OFF."
 msgstr ""
 
-#: bot/modules/tts.py:572
+#: bot/modules/tts.py:594
 msgid "Language detection is now ON."
 msgstr ""
 
@@ -1302,6 +1298,14 @@ msgstr ""
 msgid "License Name"
 msgstr ""
 
+#: bot/help.py:140
+msgid "List Microsoft Player voices or Google standard gTTS languages."
+msgstr ""
+
+#: bot/help.py:37
+msgid "List Microsoft voices, or Google standard gTTS languages in Google mode."
+msgstr ""
+
 #: bot/help.py:103
 msgid "List currently connected users with account type, location, and status."
 msgstr ""
@@ -1314,23 +1318,19 @@ msgstr ""
 msgid "List saved favorite tracks, one track per message."
 msgstr ""
 
-#: bot/help.py:140
-msgid "List voices available for the current Player announcement TTS mode, optionally filtered by language code."
-msgstr ""
-
-#: bot/modules/player.py:336
+#: bot/modules/player.py:346
 msgid "Loading channel tabs..."
 msgstr ""
 
-#: bot/modules/player.py:423
+#: bot/modules/player.py:433
 msgid "Loading playlist..."
 msgstr ""
 
-#: bot/modules/player.py:248
+#: bot/modules/player.py:258
 msgid "Loading {collection_type}..."
 msgstr ""
 
-#: bot/modules/player.py:378
+#: bot/modules/player.py:388
 msgid "Loading {tab}..."
 msgstr ""
 
@@ -1362,7 +1362,7 @@ msgstr ""
 msgid "Maximum allowed characters in a user's nickname. Set to 0 to disable."
 msgstr ""
 
-#: bot/modules/player.py:662
+#: bot/modules/player.py:672
 msgid "Maximum allowed volume is {max_volume}"
 msgstr ""
 
@@ -1378,15 +1378,19 @@ msgstr ""
 msgid "Message received: {message} from {username}"
 msgstr ""
 
-#: bot/modules/player.py:1207
+#: bot/modules/player.py:159
+msgid "Microsoft voice"
+msgstr ""
+
+#: bot/modules/player.py:1217
 msgid "Mode set to: M1 (Single)"
 msgstr ""
 
-#: bot/modules/player.py:1211
+#: bot/modules/player.py:1221
 msgid "Mode set to: M2 (Auto/Next)"
 msgstr ""
 
-#: bot/modules/player.py:1216
+#: bot/modules/player.py:1226
 msgid "Mode set to: M3 (Repeat)"
 msgstr ""
 
@@ -1406,11 +1410,7 @@ msgstr ""
 msgid "Multiple pages found for '{query}'. Please be more specific."
 msgstr ""
 
-#: bot/modules/tts.py:161 bot/modules/tts.py:593
-msgid "Name: {voice_name}"
-msgstr ""
-
-#: bot/modules/tts.py:172 bot/modules/tts.py:605
+#: bot/modules/tts.py:161 bot/modules/tts.py:635
 msgid "Name: {voice_name}, ShortName: {short_name}, Locale: {locale}"
 msgstr ""
 
@@ -1442,8 +1442,8 @@ msgstr ""
 msgid "Nickname: {nickname}\nUsername: {username}\nType: {type}\nFrom: {country}\nStatus: {status}"
 msgstr ""
 
-#: bot/modules/tts.py:159 bot/modules/tts.py:591
-msgid "No Google Cloud TTS voices available. Check your API key."
+#: bot/modules/tts.py:141 bot/modules/tts.py:616
+msgid "No Google standard TTS language found for {lang}."
 msgstr ""
 
 #: bot/modules/general.py:151
@@ -1454,7 +1454,7 @@ msgstr ""
 msgid "No admins online."
 msgstr ""
 
-#: bot/modules/player.py:346
+#: bot/modules/player.py:356
 msgid "No channel tabs with playable videos were found."
 msgstr ""
 
@@ -1466,15 +1466,15 @@ msgstr ""
 msgid "No help text is available for this command."
 msgstr ""
 
-#: bot/modules/player.py:778 bot/modules/player.py:813
+#: bot/modules/player.py:788 bot/modules/player.py:823
 msgid "No list to play from."
 msgstr ""
 
-#: bot/modules/player.py:387
+#: bot/modules/player.py:397
 msgid "No playlists found on this channel."
 msgstr ""
 
-#: bot/modules/player.py:491 bot/modules/player.py:512
+#: bot/modules/player.py:501 bot/modules/player.py:522
 msgid "No results found for '{query}'."
 msgstr ""
 
@@ -1486,11 +1486,11 @@ msgstr ""
 msgid "No verification code is active. Please start again."
 msgstr ""
 
-#: bot/modules/player.py:291
+#: bot/modules/player.py:301
 msgid "No videos found in the {collection_type}."
 msgstr ""
 
-#: bot/modules/tts.py:170 bot/modules/tts.py:609
+#: bot/modules/tts.py:159 bot/modules/tts.py:639
 msgid "No voices found for the specified language code."
 msgstr ""
 
@@ -1506,19 +1506,19 @@ msgstr ""
 msgid "Not authorized for this IP address."
 msgstr ""
 
-#: bot/modules/player.py:333 bot/modules/player.py:563 bot/modules/player.py:576 bot/modules/player.py:589 bot/modules/player.py:648 bot/modules/player.py:1041
+#: bot/modules/player.py:343 bot/modules/player.py:573 bot/modules/player.py:586 bot/modules/player.py:599 bot/modules/player.py:658 bot/modules/player.py:1051
 msgid "Nothing is currently playing"
 msgstr ""
 
-#: bot/modules/player.py:549
+#: bot/modules/player.py:559
 msgid "Nothing is currently playing to pause or resume."
 msgstr ""
 
-#: bot/modules/player.py:1031 bot/modules/player.py:1058 bot/modules/player.py:1088
+#: bot/modules/player.py:1041 bot/modules/player.py:1068 bot/modules/player.py:1098
 msgid "Nothing is currently playing."
 msgstr ""
 
-#: bot/modules/player.py:221
+#: bot/modules/player.py:231
 msgid "Now playing: {title}"
 msgstr ""
 
@@ -1558,7 +1558,7 @@ msgstr ""
 msgid "Pause or resume playback."
 msgstr ""
 
-#: bot/modules/player.py:543
+#: bot/modules/player.py:553
 msgid "Paused: {title}"
 msgstr ""
 
@@ -1566,11 +1566,11 @@ msgstr ""
 msgid "Pending message to {target}: {message}"
 msgstr ""
 
-#: bot/modules/tts.py:464
+#: bot/modules/tts.py:479
 msgid "Pitch is only available in Microsoft mode."
 msgstr ""
 
-#: bot/modules/tts.py:473
+#: bot/modules/tts.py:488
 msgid "Pitch set to {pitch}."
 msgstr ""
 
@@ -1594,35 +1594,35 @@ msgstr ""
 msgid "Playback channel messages are now {state}."
 msgstr ""
 
-#: bot/modules/player.py:1180
+#: bot/modules/player.py:1190
 msgid "Playback speed set to: {speed}x"
 msgstr ""
 
-#: bot/modules/player.py:190
+#: bot/modules/player.py:200
 msgid "Player Google TTS speed must be between 0.25 and 4.0."
 msgstr ""
 
-#: bot/modules/player.py:194
-msgid "Player Google TTS speed set to {value}."
+#: bot/modules/player.py:204
+msgid "Player Google standard TTS speed set to {value}."
 msgstr ""
 
-#: bot/modules/player.py:140
+#: bot/modules/player.py:137
 msgid "Player TTS mode set to {mode}."
 msgstr ""
 
-#: bot/modules/player.py:161
+#: bot/modules/player.py:171
 msgid "Player TTS rate is available in Microsoft mode. For Google use /pttsspeed."
 msgstr ""
 
-#: bot/modules/player.py:171
+#: bot/modules/player.py:181
 msgid "Player TTS rate must be between -100 and 100."
 msgstr ""
 
-#: bot/modules/player.py:175
+#: bot/modules/player.py:185
 msgid "Player TTS rate set to {value}."
 msgstr ""
 
-#: bot/modules/player.py:180
+#: bot/modules/player.py:190
 msgid "Player TTS speed is available in Google mode. For Microsoft use /pttsrate."
 msgstr ""
 
@@ -1634,27 +1634,27 @@ msgstr ""
 msgid "Player TTS: tracks={tracks}, queue={queue}, mode={mode}"
 msgstr ""
 
-#: bot/modules/player.py:152
-msgid "Player {mode} voice set to {voice}."
+#: bot/modules/player.py:162
+msgid "Player {label} set to {value}."
 msgstr ""
 
-#: bot/modules/player.py:1128
+#: bot/modules/player.py:1138
 msgid "Playing from favorites: {title}"
 msgstr ""
 
-#: bot/modules/player.py:992
+#: bot/modules/player.py:1002
 msgid "Playing: {current} / {total}"
 msgstr ""
 
-#: bot/modules/player.py:267 bot/modules/player.py:325 bot/modules/player.py:1243 bot/modules/player.py:488 bot/modules/player.py:525 bot/modules/player.py:704 bot/modules/player.py:797 bot/modules/player.py:800 bot/modules/player.py:832 bot/modules/player.py:833 bot/modules/player.py:547 bot/modules/player.py:873
+#: bot/modules/player.py:277 bot/modules/player.py:335 bot/modules/player.py:1253 bot/modules/player.py:498 bot/modules/player.py:535 bot/modules/player.py:714 bot/modules/player.py:807 bot/modules/player.py:810 bot/modules/player.py:842 bot/modules/player.py:843 bot/modules/player.py:557 bot/modules/player.py:883
 msgid "Playing: {title}"
 msgstr ""
 
-#: bot/modules/player.py:411
+#: bot/modules/player.py:421
 msgid "Playlist selection expired. Use /channel again."
 msgstr ""
 
-#: bot/modules/tts.py:302
+#: bot/modules/tts.py:293
 msgid "Please provide some text to speak."
 msgstr ""
 
@@ -1674,11 +1674,11 @@ msgstr ""
 msgid "Profanity Filter: {state}"
 msgstr ""
 
-#: bot/modules/player.py:1027
+#: bot/modules/player.py:1037
 msgid "Queue cleared."
 msgstr ""
 
-#: bot/modules/player.py:971
+#: bot/modules/player.py:981
 msgid "Queue system is {state}."
 msgstr ""
 
@@ -1686,19 +1686,19 @@ msgstr ""
 msgid "Random Message Interval (minutes)"
 msgstr ""
 
-#: bot/modules/tts.py:554
+#: bot/modules/tts.py:576
 msgid "Random broadcasts are currently {state}."
 msgstr ""
 
-#: bot/modules/tts.py:564
+#: bot/modules/tts.py:586
 msgid "Random broadcasts have been {state}."
 msgstr ""
 
-#: bot/modules/tts.py:446
+#: bot/modules/tts.py:461
 msgid "Rate is only available in Microsoft mode. For Google TTS, please use /speed"
 msgstr ""
 
-#: bot/modules/tts.py:455
+#: bot/modules/tts.py:470
 msgid "Rate set to {rate}."
 msgstr ""
 
@@ -1710,7 +1710,7 @@ msgstr ""
 msgid "Reconnect limit reached; waiting for a manual restart."
 msgstr ""
 
-#: bot/modules/player.py:1010
+#: bot/modules/player.py:1020
 msgid "Removed from queue: {title}"
 msgstr ""
 
@@ -1758,19 +1758,19 @@ msgstr ""
 msgid "Search and play/enqueue from YouTube."
 msgstr ""
 
-#: bot/modules/player.py:456
+#: bot/modules/player.py:466
 msgid "Searching YouTube Music to add to queue..."
 msgstr ""
 
-#: bot/modules/player.py:463
+#: bot/modules/player.py:473
 msgid "Searching YouTube Music..."
 msgstr ""
 
-#: bot/modules/player.py:434
+#: bot/modules/player.py:444
 msgid "Searching to add to queue..."
 msgstr ""
 
-#: bot/modules/player.py:441
+#: bot/modules/player.py:451
 msgid "Searching..."
 msgstr ""
 
@@ -1802,11 +1802,11 @@ msgstr ""
 msgid "Select the previous search result for the newest queued search item."
 msgstr ""
 
-#: bot/config_handler.py:383
+#: bot/config_handler.py:426
 msgid "Select {type} Device"
 msgstr ""
 
-#: bot/modules/player.py:1069 bot/modules/player.py:1082
+#: bot/modules/player.py:1079 bot/modules/player.py:1092
 msgid "Selection changed to: {title}"
 msgstr ""
 
@@ -1866,16 +1866,16 @@ msgstr ""
 msgid "Set M3 Repeat mode: repeat the current non-queue track."
 msgstr ""
 
+#: bot/help.py:31
+msgid "Set Microsoft voice name, or Google standard language code such as th."
+msgstr ""
+
 #: bot/help.py:95
 msgid "Set music playback speed."
 msgstr ""
 
 #: bot/help.py:84
 msgid "Set player volume up to the configured maximum."
-msgstr ""
-
-#: bot/help.py:31
-msgid "Set the voice name for text to speech."
 msgstr ""
 
 #: bot/help.py:33
@@ -1962,7 +1962,7 @@ msgstr ""
 msgid "So happy you made it, {nickname} from {country}!"
 msgstr ""
 
-#: bot/modules/tts.py:294 bot/modules/tts.py:531
+#: bot/modules/tts.py:285 bot/modules/tts.py:553
 msgid "Sorry, You are not in the same channel"
 msgstr ""
 
@@ -1970,11 +1970,11 @@ msgstr ""
 msgid "Sorry, your country information is not available."
 msgstr ""
 
-#: bot/modules/tts.py:513
+#: bot/modules/tts.py:535
 msgid "Speed is only available in Google TTS mode. For Microsoft, use /rate."
 msgstr ""
 
-#: bot/modules/tts.py:522
+#: bot/modules/tts.py:544
 msgid "Speed set to {value}."
 msgstr ""
 
@@ -1986,19 +1986,19 @@ msgstr ""
 msgid "Status Message"
 msgstr ""
 
-#: bot/modules/player.py:1277
+#: bot/modules/player.py:1287
 msgid "Status hidden."
 msgstr ""
 
-#: bot/modules/player.py:1281
+#: bot/modules/player.py:1291
 msgid "Status shown."
 msgstr ""
 
-#: bot/modules/player.py:1148
+#: bot/modules/player.py:1158
 msgid "Stereo 3D 1: {state}"
 msgstr ""
 
-#: bot/modules/player.py:1158
+#: bot/modules/player.py:1168
 msgid "Stereo 3D 2 (Echo): {state}"
 msgstr ""
 
@@ -2027,22 +2027,22 @@ msgid "Surprise, surprise! It's {nickname} from {country}! Glad to have you!"
 msgstr ""
 
 #: bot/help.py:36
-msgid "Switch TTS mode between Microsoft and Google Cloud TTS."
+msgid "Switch TTS mode between Microsoft Edge TTS and Google standard gTTS (no API key)."
 msgstr ""
 
-#: bot/modules/tts.py:548
+#: bot/modules/tts.py:570
 msgid "TTS has been {state}."
 msgstr ""
 
-#: bot/modules/tts.py:290
+#: bot/modules/tts.py:281
 msgid "TTS is currently disabled by an admin."
 msgstr ""
 
-#: bot/modules/tts.py:539
+#: bot/modules/tts.py:561
 msgid "TTS is currently {state}."
 msgstr ""
 
-#: bot/modules/tts.py:636
+#: bot/modules/tts.py:659
 msgid "TTS mode set to {mode}."
 msgstr ""
 
@@ -2102,16 +2102,12 @@ msgstr ""
 msgid "The client name shown in the user info (e.g., 'SN TalkBot v2.3')."
 msgstr ""
 
-#: bot/modules/player.py:656
+#: bot/modules/player.py:666
 msgid "The current volume is {volume}"
 msgstr ""
 
 #: bot/modules/general.py:75
 msgid "The current weather in {city}, {country_name} is {temperature}°C, {condition}. The perceived temperature is {feels_like} degrees C, the wind speed is at {wind_speed} kph, The wind gusts are at {gust_kph} kph, The windchill is {windchill_c}°C.\nThe Precipitation is {precip_mm} MM, The cloudiness is of {cloudiness}%, With a {chance_of_rain}% chance of rain.\nThe visibility is up to {visibility} km. The humidity is {humidity}%, The current time is {time}."
-msgstr ""
-
-#: bot/modules/tts.py:342
-msgid "The detected language ({detected_lang}) is not available in Microsoft Speech, using Google voices."
 msgstr ""
 
 #: bot/config_handler.py:53
@@ -2150,7 +2146,7 @@ msgstr ""
 msgid "The private message sent to a user before they are kicked for having no name."
 msgstr ""
 
-#: bot/modules/player.py:975 bot/modules/player.py:989 bot/modules/player.py:1263
+#: bot/modules/player.py:985 bot/modules/player.py:999 bot/modules/player.py:1273
 msgid "The queue is empty."
 msgstr ""
 
@@ -2158,7 +2154,7 @@ msgstr ""
 msgid "The time window in seconds to monitor a jailed user for spamming join attempts."
 msgstr ""
 
-#: bot/modules/player.py:1269
+#: bot/modules/player.py:1279
 msgid "The unplayed queue has been shuffled."
 msgstr ""
 
@@ -2194,7 +2190,7 @@ msgstr ""
 msgid "This email address is already registered."
 msgstr ""
 
-#: bot/config_handler.py:242
+#: bot/config_handler.py:285
 msgid "This field is required. Please enter a value."
 msgstr ""
 
@@ -2242,11 +2238,11 @@ msgstr ""
 msgid "Too many invalid attempts. Please start again."
 msgstr ""
 
-#: bot/modules/player.py:1049
+#: bot/modules/player.py:1059
 msgid "Total duration: {total_duration}. Elapsed time: {elapsed_time}. Remaining time: {remaining_time}"
 msgstr ""
 
-#: bot/modules/player.py:1233
+#: bot/modules/player.py:1243
 msgid "Track index is out of range."
 msgstr ""
 
@@ -2258,12 +2254,20 @@ msgstr ""
 msgid "Trying to reconnect."
 msgstr ""
 
-#: bot/modules/player.py:342
+#: bot/modules/player.py:352
 msgid "Unable to determine the channel for the current video."
 msgstr ""
 
-#: bot/modules/general.py:144 bot/modules/general.py:166 bot/modules/player.py:1034 bot/modules/player.py:232
+#: bot/modules/general.py:144 bot/modules/general.py:166 bot/modules/player.py:1044 bot/modules/player.py:242
 msgid "Unknown"
+msgstr ""
+
+#: bot/modules/tts.py:524
+msgid "Unknown Google standard TTS language: {lang}. Use /get_voices to list languages."
+msgstr ""
+
+#: bot/modules/player.py:152
+msgid "Unknown Google standard TTS language: {lang}. Use /pvoices to list languages."
 msgstr ""
 
 #: bot/modules/admin.py:71
@@ -2298,7 +2302,7 @@ msgstr ""
 msgid "Usage: /cs <new_status>"
 msgstr ""
 
-#: bot/modules/player.py:1003
+#: bot/modules/player.py:1013
 msgid "Usage: /dq <index>"
 msgstr ""
 
@@ -2338,15 +2342,19 @@ msgstr ""
 msgid "Usage: /pttsmode microsoft|google"
 msgstr ""
 
-#: bot/modules/player.py:164
+#: bot/modules/player.py:174
 msgid "Usage: /pttsrate <-100..100>"
 msgstr ""
 
-#: bot/modules/player.py:183
+#: bot/modules/player.py:193
 msgid "Usage: /pttsspeed <0.25..4.0>"
 msgstr ""
 
-#: bot/modules/player.py:145
+#: bot/modules/player.py:144
+msgid "Usage: /pvoice <language_code>, for example /pvoice th"
+msgstr ""
+
+#: bot/modules/player.py:146
 msgid "Usage: /pvoice <voice_name>"
 msgstr ""
 
@@ -2358,15 +2366,15 @@ msgstr ""
 msgid "Usage: /search <query>"
 msgstr ""
 
-#: bot/modules/player.py:1222
+#: bot/modules/player.py:1232
 msgid "Usage: /select <index>"
 msgstr ""
 
-#: bot/modules/player.py:592
+#: bot/modules/player.py:602
 msgid "Usage: /t <time> (e.g., 1:30 or 90)"
 msgstr ""
 
-#: bot/modules/tts.py:622
+#: bot/modules/tts.py:651
 msgid "Usage: /ttsmode <microsoft|google>"
 msgstr ""
 
@@ -2422,7 +2430,7 @@ msgstr ""
 msgid "User {second_name} not found."
 msgstr ""
 
-#: bot/modules/tts.py:340
+#: bot/modules/tts.py:349
 msgid "Using voice {voice_name} for {detected_lang}"
 msgstr ""
 
@@ -2434,7 +2442,7 @@ msgstr ""
 msgid "Verification code expired. Please start again."
 msgstr ""
 
-#: bot/modules/tts.py:508
+#: bot/modules/tts.py:530
 msgid "Voice set to {voice_name}."
 msgstr ""
 
@@ -2446,11 +2454,11 @@ msgstr ""
 msgid "Volume Fading (seconds)"
 msgstr ""
 
-#: bot/modules/tts.py:482
+#: bot/modules/tts.py:497
 msgid "Volume is only available in Microsoft mode."
 msgstr ""
 
-#: bot/modules/tts.py:491
+#: bot/modules/tts.py:506
 msgid "Volume set to {volume}."
 msgstr ""
 
@@ -2462,7 +2470,7 @@ msgstr ""
 msgid "Warning: You are trying to get out of jail. If you continue to spam, you will be banned."
 msgstr ""
 
-#: bot/config_handler.py:179
+#: bot/config_handler.py:180
 msgid "Warning: Your config.ini is missing some settings."
 msgstr ""
 
@@ -2494,7 +2502,7 @@ msgstr ""
 msgid "Welcome in, {nickname}! {country} brings good energy."
 msgstr ""
 
-#: bot/config_handler.py:343
+#: bot/config_handler.py:386
 msgid "Welcome to the SN TalkBot setup wizard!"
 msgstr ""
 
@@ -2622,11 +2630,11 @@ msgstr ""
 msgid "You already have an active account request. Please continue in private messages."
 msgstr ""
 
-#: bot/modules/player.py:819
+#: bot/modules/player.py:829
 msgid "You are at the beginning of the list."
 msgstr ""
 
-#: bot/modules/player.py:206
+#: bot/modules/player.py:216
 msgid "You are not in the same channel"
 msgstr ""
 
@@ -2646,7 +2654,7 @@ msgstr ""
 msgid "You have no pending messages."
 msgstr ""
 
-#: bot/modules/player.py:784
+#: bot/modules/player.py:794
 msgid "You've reached the end of the list."
 msgstr ""
 
@@ -2662,7 +2670,7 @@ msgstr ""
 msgid "Your direct report was sent to Telegram."
 msgstr ""
 
-#: bot/modules/player.py:1106 bot/modules/player.py:1253
+#: bot/modules/player.py:1116 bot/modules/player.py:1263
 msgid "Your favorites list is empty."
 msgstr ""
 
@@ -2678,11 +2686,11 @@ msgstr ""
 msgid "Your verification code"
 msgstr ""
 
-#: bot/modules/account_requests.py:98 bot/modules/account_requests.py:81 bot/modules/admin.py:408 bot/modules/admin.py:626 bot/modules/player.py:738 bot/modules/player.py:970 bot/modules/tts.py:547 bot/modules/tts.py:563 bot/modules/tts.py:538 bot/modules/tts.py:553
+#: bot/modules/account_requests.py:98 bot/modules/account_requests.py:81 bot/modules/admin.py:408 bot/modules/admin.py:626 bot/modules/player.py:748 bot/modules/player.py:980 bot/modules/tts.py:569 bot/modules/tts.py:585 bot/modules/tts.py:560 bot/modules/tts.py:575
 msgid "disabled"
 msgstr ""
 
-#: bot/modules/account_requests.py:98 bot/modules/account_requests.py:81 bot/modules/admin.py:408 bot/modules/admin.py:626 bot/modules/player.py:738 bot/modules/player.py:970 bot/modules/tts.py:547 bot/modules/tts.py:563 bot/modules/tts.py:538 bot/modules/tts.py:553
+#: bot/modules/account_requests.py:98 bot/modules/account_requests.py:81 bot/modules/admin.py:408 bot/modules/admin.py:626 bot/modules/player.py:748 bot/modules/player.py:980 bot/modules/tts.py:569 bot/modules/tts.py:585 bot/modules/tts.py:560 bot/modules/tts.py:575
 msgid "enabled"
 msgstr ""
 
@@ -2698,7 +2706,7 @@ msgstr ""
 msgid "weatherapi.com API Key"
 msgstr ""
 
-#: bot/modules/player.py:666
+#: bot/modules/player.py:676
 msgid "{name} has changed the volume to {volume}"
 msgstr ""
 
@@ -2710,15 +2718,15 @@ msgstr ""
 msgid "{nickname} (Username ban) has been unbanned."
 msgstr ""
 
-#: bot/modules/player.py:1111
+#: bot/modules/player.py:1121
 msgid "{nickname} added all favorites to queue."
 msgstr ""
 
-#: bot/modules/player.py:280 bot/modules/player.py:506
+#: bot/modules/player.py:290 bot/modules/player.py:516
 msgid "{nickname} added to queue: {title}"
 msgstr ""
 
-#: bot/modules/player.py:296
+#: bot/modules/player.py:306
 msgid "{nickname} added {count} items from {collection_type} to queue."
 msgstr ""
 
@@ -2758,23 +2766,23 @@ msgstr ""
 msgid "{nickname} just dropped in from {country}. Say hello!"
 msgstr ""
 
-#: bot/modules/player.py:542
+#: bot/modules/player.py:552
 msgid "{nickname} paused the playback"
 msgstr ""
 
-#: bot/modules/player.py:266
+#: bot/modules/player.py:276
 msgid "{nickname} requested playing from a URL"
 msgstr ""
 
-#: bot/modules/player.py:323
+#: bot/modules/player.py:333
 msgid "{nickname} requested to play from a {collection_type}"
 msgstr ""
 
-#: bot/modules/player.py:872
+#: bot/modules/player.py:882
 msgid "{nickname} requested to play {title} from history"
 msgstr ""
 
-#: bot/modules/player.py:487
+#: bot/modules/player.py:497
 msgid "{nickname} requested to play: {title}"
 msgstr ""
 
@@ -2782,6 +2790,6 @@ msgstr ""
 msgid "{nickname} says: {translated}"
 msgstr ""
 
-#: bot/modules/player.py:644
+#: bot/modules/player.py:654
 msgid "{nickname} stopped the playback and cleared queue"
 msgstr ""

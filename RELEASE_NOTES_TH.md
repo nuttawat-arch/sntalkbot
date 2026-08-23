@@ -1,3 +1,18 @@
+# SN TalkBot 2026.08.23-r3 — Google Standard TTS
+
+## เปลี่ยน TTS หลัก
+
+- ตัด Google Cloud Text-to-Speech ออกจาก runtime และลบ `bot/GoogleCloudTTSClient.py`
+- โหมด `google` ใช้ `gTTS` (Google Translate TTS แบบมาตรฐาน) ไม่ต้องใช้ API key
+- Player และ Server Manager ตั้ง Google standard เป็นค่าเริ่มต้นทั้งคู่
+- ค่าเริ่มต้นภาษาไทยคือ `th`
+- `/voice` และ `/pvoice` ใน Google mode ใช้รหัสภาษา เช่น `th`, `en`, `ja` แทนชื่อ Cloud voice
+- `/get_voices` และ `/pvoices` ใน Google mode แสดงภาษาที่ gTTS รองรับ
+- `/speed` และ `/pttsspeed` ยังรองรับ `0.25..4.0` โดยใช้ FFmpeg `atempo`
+- Microsoft Edge TTS ยังอยู่เป็น engine สำรอง ไม่ได้ลบออก
+- มี migration ครั้งเดียวสำหรับ config r2: ลบ key Google Cloud เก่าและเปลี่ยนค่าเริ่มต้นทั้ง Manager/Player เป็น gTTS
+- FIFO Player announcement จาก r2 ยังคงอยู่ จึงยังพูดทีละข้อความไม่ซ้อนกัน
+
 # SN TalkBot 2026.08.23-r2 — Release Notes
 
 ## แก้ไขสำคัญ
@@ -21,13 +36,13 @@ Player announcement TTS แยกจาก Server Manager TTS อย่างช
 - `/pttsrate <-100..100>` สำหรับ Microsoft
 - `/pttsspeed <0.25..4.0>` สำหรับ Google
 
-Google Player TTS ใช้ `[tts] google_api_key` แต่ voice/mode/speed ของ Player เก็บใน `[playback]` จึงไม่ปนกับ TTS ของ Server Manager
+หมายเหตุประวัติ r2: รุ่นนั้นเคยใช้ Google Cloud สำหรับโหมด Google; r3 ยกเลิกแนวทางนี้แล้วและใช้ gTTS มาตรฐานแทน
 
 ## Server Manager TTS
 
 ชุดเดิมยังอยู่เฉพาะ Manager/Full เช่น `/say`, `/tts`, `/ttsmode`, `/voice`, `/get_voices`, `/rate`, `/pitch`, `/volume`, `/speed` และ `/st`
 
-ถ้าสั่งเปลี่ยนเป็น Google ทั้งที่ยังไม่มี `google_api_key` ระบบจะปฏิเสธด้วยข้อความอธิบายแทนการ fallback แบบเงียบ ๆ
+หมายเหตุประวัติ r2: พฤติกรรม API key นี้ถูกยกเลิกใน r3 เพราะ Google mode ไม่ต้องใช้ API key แล้ว
 
 ## Telegram Direct Report
 

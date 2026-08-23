@@ -61,7 +61,7 @@ if native.exists() and wrapper.exists():
     except Exception as exc:
         add("TeamTalk SDK import", False, str(exc))
 
-for module in ("yt_dlp", "edge_tts", "mpv", "requests", "paramiko", "deep_translator"):
+for module in ("yt_dlp", "edge_tts", "gtts", "mpv", "requests", "paramiko", "deep_translator"):
     try:
         m = importlib.import_module(module)
         version = getattr(m, "__version__", getattr(m, "version", "installed"))

@@ -132,24 +132,34 @@ class PlayerCog:
             self.bot.privateMessage(user_id, self._("Usage: /pttsmode microsoft|google"))
             return
         mode = args[0].lower()
-        if mode == "google" and not self.bot.tts_cog.player_google_ready():
-            self.bot.privateMessage(user_id, self._("Google Cloud TTS is not configured. Set [tts] google_api_key first."))
-            return
         self.bot.playback_config["announcement_tts_mode"] = mode
         self.bot.config_handler.update_playback_settings({"announcement_tts_mode": mode})
         self.bot.privateMessage(user_id, self._("Player TTS mode set to {mode}.").format(mode=mode))
 
     def handle_player_voice_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
-        if not args:
-            self.bot.privateMessage(user_id, self._("Usage: /pvoice <voice_name>"))
-            return
-        voice = " ".join(args).strip()
         mode = self.bot.tts_cog.get_player_tts_mode()
-        key = "announcement_google_voice" if mode == "google" else "announcement_microsoft_voice"
-        self.bot.playback_config[key] = voice
-        self.bot.config_handler.update_playback_settings({key: voice})
-        self.bot.privateMessage(user_id, self._("Player {mode} voice set to {voice}.").format(mode=mode, voice=voice))
+        if not args:
+            if mode == "google":
+                self.bot.privateMessage(user_id, self._("Usage: /pvoice <language_code>, for example /pvoice th"))
+            else:
+                self.bot.privateMessage(user_id, self._("Usage: /pvoice <voice_name>"))
+            return
+        value = " ".join(args).strip()
+        if mode == "google":
+            lang = self.bot.tts_cog._resolve_google_lang(value)
+            if not lang:
+                self.bot.privateMessage(user_id, self._("Unknown Google standard TTS language: {lang}. Use /pvoices to list languages.").format(lang=value))
+                return
+            key = "announcement_google_lang"
+            value = lang
+            label = self._("Google standard language")
+        else:
+            key = "announcement_microsoft_voice"
+            label = self._("Microsoft voice")
+        self.bot.playback_config[key] = value
+        self.bot.config_handler.update_playback_settings({key: value})
+        self.bot.privateMessage(user_id, self._("Player {label} set to {value}.").format(label=label, value=value))
 
     def handle_player_voices_command(self, textmessage, *args):
         lang_code = args[0] if args else None
@@ -191,7 +201,7 @@ class PlayerCog:
             return
         self.bot.playback_config["announcement_google_speed"] = value
         self.bot.config_handler.update_playback_settings({"announcement_google_speed": value})
-        self.bot.privateMessage(user_id, self._("Player Google TTS speed set to {value}.").format(value=value))
+        self.bot.privateMessage(user_id, self._("Player Google standard TTS speed set to {value}.").format(value=value))
 
     def handle_prefixed_message(self, textmessage):
         """

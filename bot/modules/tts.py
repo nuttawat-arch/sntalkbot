@@ -7,10 +7,12 @@ import threading
 import time
 import queue
 from gtts import gTTS
+from gtts.lang import tts_langs
 import TeamTalk5 as teamtalk
 import edge_tts
 import mpv
 import tempfile
+import subprocess
 
 
 
@@ -56,8 +58,6 @@ class EdgeTTSWrapper:
         await communicate.save(filepath)
         return os.path.getsize(filepath) if os.path.exists(filepath) else 0
 
-# นำเข้า GoogleCloudTTSClient แทน ElevenLabsClient
-from bot.GoogleCloudTTSClient import GoogleCloudTTSClient
 
 class TTSCog:
     """
@@ -67,40 +67,23 @@ class TTSCog:
         self.bot = bot
         self._ = bot._
         self.speech_engine = EdgeTTSWrapper()
-        
-        # เปลี่ยนจากการใช้ ElevenLabs เป็น Google Cloud TTS
-        self.google_tts = GoogleCloudTTSClient(
-            api_key=self.bot.tts_config.get("google_api_key"),
-            base_url=self.bot.tts_config.get("google_base_url"),
-        )
-        
+
+        # Google mode uses gTTS (Google Translate TTS), not Google Cloud TTS.
+        # It needs no API key and matches the standard Google speech path.
         self.user_speech_settings = {}
         self.speech_thread = None
         self.voice_thread = None
         self.speech_synthesis_in_progress = False
-        
-        self.google_cache_path = os.path.join("files", "google_tts_cache.json")
-        self.google_cache = {}
-        self.google_refresh_interval = 120
-        self.google_refresh_thread = None
-        
+
         self.broadcast_speech_lock = threading.Lock()
         self.broadcast_queue = queue.Queue()
         self.broadcast_worker = None
         self.broadcast_worker_lock = threading.Lock()
 
-        # Player announcements must be serialized. The previous implementation
-        # submitted each announcement to a shared thread pool, so "added to queue"
-        # and "now playing" could speak over each other. One FIFO worker keeps
-        # announcement order deterministic and prevents overlapping speech.
+        # Serialize Player announcements so queue/track messages never overlap.
         self.player_announcement_queue = queue.Queue()
         self.player_announcement_worker = None
         self.player_announcement_worker_lock = threading.Lock()
-        
-        self._load_google_cache()
-        if self._get_tts_mode() == "google":
-            self._refresh_google_cache()
-        self._start_google_refresh_loop()
 
     def announce_player(self, text):
         """Queue a short player/queue announcement for sequential playback."""
@@ -136,13 +119,12 @@ class TTSCog:
                 self.player_announcement_queue.task_done()
 
     def get_player_tts_mode(self):
-        mode = str(self.bot.playback_config.get("announcement_tts_mode", "microsoft") or "microsoft").strip().lower()
-        if mode == "google" and not self.google_tts.is_configured():
-            return "microsoft"
-        return mode if mode in ("microsoft", "google") else "microsoft"
+        mode = str(self.bot.playback_config.get("announcement_tts_mode", "google") or "google").strip().lower()
+        return mode if mode in ("microsoft", "google") else "google"
 
     def player_google_ready(self):
-        return self.google_tts.is_configured()
+        # gTTS needs no Cloud API key. Network availability is checked at synthesis time.
+        return True
 
     def list_player_voices(self, user_id, lang_code=None):
         """List voices for the Player announcement engine without registering Manager TTS commands."""
@@ -150,22 +132,29 @@ class TTSCog:
 
     def _list_player_voices_task(self, user_id, lang_code=None):
         try:
-            lang = (lang_code or "").strip().lower()
+            lang = (lang_code or "").strip()
             if self.get_player_tts_mode() == "google":
-                voices = self._get_google_voices()
+                languages = tts_langs()
                 if lang:
-                    voices = [v for v in voices if any(str(code).lower().startswith(lang) for code in v.get("languageCodes", []))]
-                if not voices:
-                    self.bot.privateMessage(user_id, self._("No Google Cloud TTS voices available. Check your API key."))
+                    resolved = self._resolve_google_lang(lang)
+                    if not resolved:
+                        self.bot.privateMessage(user_id, self._("No Google standard TTS language found for {lang}.").format(lang=lang))
+                        return
+                    self.bot.privateMessage(
+                        user_id,
+                        self._("Google standard TTS language: {name} ({code})").format(
+                            name=languages.get(resolved, resolved), code=resolved
+                        ),
+                    )
                     return
-                lines = [self._("Name: {voice_name}").format(voice_name=voice.get("name", "")) for voice in voices]
-                for i in range(0, len(lines), 6):
-                    self.bot.privateMessage(user_id, "\n".join(lines[i:i+6]))
+                items = [f"{name} ({code})" for code, name in sorted(languages.items(), key=lambda item: item[1].lower())]
+                for i in range(0, len(items), 8):
+                    self.bot.privateMessage(user_id, "\n".join(items[i:i+8]))
                 return
 
             voices = asyncio.run(self.speech_engine.get_voices_list())
             if lang:
-                voices = [v for v in voices if str(v.get("Locale", "")).lower().startswith(lang)]
+                voices = [v for v in voices if str(v.get("Locale", "")).lower().startswith(lang.lower())]
             if not voices:
                 self.bot.privateMessage(user_id, self._("No voices found for the specified language code."))
                 return
@@ -189,12 +178,14 @@ class TTSCog:
             os.close(fd)
 
             if mode == "google":
-                voice = playback.get("announcement_google_voice") or self.bot.tts_config.get("google_voice_name") or "th-TH-Standard-A"
+                lang = playback.get("announcement_google_lang") or self.bot.tts_config.get("google_lang") or "th"
+                tld = playback.get("announcement_google_tld") or self.bot.tts_config.get("google_tld") or "com"
+                slow = self._as_bool(playback.get("announcement_google_slow", self.bot.tts_config.get("google_slow", False)))
                 try:
                     speed = max(0.25, min(4.0, float(playback.get("announcement_google_speed", 1.0))))
                 except (TypeError, ValueError):
                     speed = 1.0
-                self.google_tts.synthesize(text, voice, "standard", temp_path, {"speed": speed})
+                self._synthesize_google_standard(text, temp_path, lang=lang, tld=tld, slow=slow, speed=speed)
             else:
                 voice = playback.get("announcement_microsoft_voice") or playback.get("announcement_voice") or "th-TH-PremwadeeNeural"
                 rate_value = playback.get("announcement_rate", 0)
@@ -316,19 +307,37 @@ class TTSCog:
     async def _speak(self, text_to_speak, user_id, filename="speech.mp3"):
         """Asynchronous speech synthesis logic."""
         filepath = os.path.join("files", filename)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         try:
+            user_settings = self._get_user_settings(user_id)
+            lang_detection = user_settings.get("lang_detection", False)
+
             if self._get_tts_mode() == "google":
-                bytes_written = self._speak_google(text_to_speak, filepath, user_id)
-                if bytes_written > 0:
-                    self._stream_file(user_id, filepath)
+                lang = user_settings.get("google_lang") or self.bot.tts_config.get("google_lang") or "th"
+                if lang_detection:
+                    try:
+                        lang = langdetect.detect(text_to_speak)
+                    except langdetect.lang_detect_exception.LangDetectException:
+                        pass
+                try:
+                    speed = max(0.25, min(4.0, float(user_settings.get("speed", self.bot.tts_config.get("google_speed", 1.0)))))
+                except (TypeError, ValueError):
+                    speed = 1.0
+                self._synthesize_google_standard(
+                    text_to_speak,
+                    filepath,
+                    lang=lang,
+                    tld=self.bot.tts_config.get("google_tld", "com"),
+                    slow=self._as_bool(self.bot.tts_config.get("google_slow", False)),
+                    speed=speed,
+                )
+                self._stream_file(user_id, filepath)
                 return
 
-            user_settings = self._get_user_settings(user_id)
             voice_name = user_settings.get("voice")
             rate = user_settings.get("rate", 0)
             pitch = user_settings.get("pitch", 0)
             volume = user_settings.get("volume", 1.0)
-            lang_detection = user_settings.get("lang_detection", False)
 
             if lang_detection:
                 try:
@@ -337,11 +346,10 @@ class TTSCog:
                     matching_voices = [v for v in voices if v["Locale"].lower().startswith(detected_lang)]
                     if matching_voices:
                         voice_name = random.choice(matching_voices)["ShortName"]
-                        self.bot.privateMessage(user_id, self._("Using voice {voice_name} for {detected_lang}").format(voice_name=voice_name, detected_lang=detected_lang))
+                        self.bot.privateMessage(user_id, self._("Using voice {voice_name} for {detected_lang}").format(
+                            voice_name=voice_name, detected_lang=detected_lang))
                     else:
-                        self.bot.privateMessage(user_id, self._("The detected language ({detected_lang}) is not available in Microsoft Speech, using Google voices.").format(detected_lang=detected_lang))
-                        tts = gTTS(text=text_to_speak, lang=detected_lang)
-                        tts.save(filepath)
+                        self._synthesize_google_standard(text_to_speak, filepath, lang=detected_lang)
                         self._stream_file(user_id, filepath)
                         return
                 except langdetect.lang_detect_exception.LangDetectException:
@@ -351,7 +359,7 @@ class TTSCog:
             await self.speech_engine.set_rate(rate)
             await self.speech_engine.set_pitch(pitch)
             await self.speech_engine.set_volume(volume)
-            
+
             bytes_written = await self.speech_engine.synthesize(text_to_speak, filepath)
             if bytes_written > 0:
                 self._stream_file(user_id, filepath)
@@ -368,44 +376,47 @@ class TTSCog:
             self.bot.startStreamingMediaFileToChannel(ttstr(filepath), streamer)
 
     def speak_random_broadcast(self, text_to_speak, filename="random_broadcast.mp3"):
-        """Speak random broadcasts with Google Cloud or Edge TTS."""
+        """Speak random broadcasts using Google standard gTTS or Edge TTS."""
         if self.speech_synthesis_in_progress:
             return 0
         if self._get_tts_mode() == "google":
-            if not self.google_tts.is_configured():
-                return 0
             with self.broadcast_speech_lock:
                 filepath = os.path.join("files", filename)
-                bytes_written = self._speak_google_random_voice(text_to_speak, filepath)
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                try:
+                    bytes_written = self._speak_google(text_to_speak, filepath, self.bot.getMyUserID())
+                except Exception as exc:
+                    print(f"Google standard TTS broadcast failed: {exc}")
+                    return 0
                 if bytes_written > 0:
                     self._stream_file(self.bot.getMyUserID(), filepath)
                 return bytes_written
 
-        # Microsoft/Edge mode: use the same local output path as player announcements.
         self._run_player_announcement(text_to_speak)
         return 1
 
     def speak_broadcast(self, text_to_speak, filename="broadcast.mp3", voice_name=None):
         if self._get_tts_mode() != "google":
             return 0
-        if not self.google_tts.is_configured():
-            return 0
         if self.speech_synthesis_in_progress:
             return 0
         with self.broadcast_speech_lock:
             filepath = os.path.join("files", filename)
-            if voice_name:
-                bytes_written = self._speak_google_with_voice_name(text_to_speak, filepath, voice_name)
-            else:
-                bytes_written = self._speak_google(text_to_speak, filepath, self.bot.getMyUserID())
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            try:
+                if voice_name:
+                    bytes_written = self._speak_google_with_voice_name(text_to_speak, filepath, voice_name)
+                else:
+                    bytes_written = self._speak_google(text_to_speak, filepath, self.bot.getMyUserID())
+            except Exception as exc:
+                print(f"Google standard TTS broadcast failed: {exc}")
+                return 0
             if bytes_written > 0:
                 self._stream_file(self.bot.getMyUserID(), filepath)
             return bytes_written
 
     def enqueue_broadcast(self, text_to_speak, filename="broadcast.mp3", voice_name=None):
         if self._get_tts_mode() != "google":
-            return
-        if not self.google_tts.is_configured():
             return
         self.broadcast_queue.put((text_to_speak, filename, voice_name))
         with self.broadcast_worker_lock:
@@ -430,13 +441,17 @@ class TTSCog:
 
             with self.broadcast_speech_lock:
                 filepath = os.path.join("files", filename)
-                if voice_name:
-                    bytes_written = self._speak_google_with_voice_name(text_to_speak, filepath, voice_name)
-                else:
-                    bytes_written = self._speak_google(text_to_speak, filepath, self.bot.getMyUserID())
-                if bytes_written > 0:
-                    self._stream_file(self.bot.getMyUserID(), filepath)
-                    self._wait_for_broadcast_finish(filepath, text_to_speak)
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                try:
+                    if voice_name:
+                        bytes_written = self._speak_google_with_voice_name(text_to_speak, filepath, voice_name)
+                    else:
+                        bytes_written = self._speak_google(text_to_speak, filepath, self.bot.getMyUserID())
+                    if bytes_written > 0:
+                        self._stream_file(self.bot.getMyUserID(), filepath)
+                        self._wait_for_broadcast_finish(filepath, text_to_speak)
+                except Exception as exc:
+                    print(f"Google standard TTS queue failed: {exc}")
 
             self.broadcast_queue.task_done()
 
@@ -497,15 +512,22 @@ class TTSCog:
     def handle_voice_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
         if not args:
-            self.bot.privateMessage(user_id, self._("Invalid command. Usage: /voice <voice_name>."))
+            if self._get_tts_mode() == "google":
+                self.bot.privateMessage(user_id, self._("Invalid command. Usage: /voice <language_code>, for example /voice th."))
+            else:
+                self.bot.privateMessage(user_id, self._("Invalid command. Usage: /voice <voice_name>."))
             return
-        voice_name = " ".join(args)
+        value = " ".join(args).strip()
         if self._get_tts_mode() == "google":
-            self._get_user_settings(user_id, create=True)["google_voice_name"] = voice_name
-            self.bot.privateMessage(user_id, self._("Google voice set to {voice_name}.").format(voice_name=voice_name))
+            lang = self._resolve_google_lang(value)
+            if not lang:
+                self.bot.privateMessage(user_id, self._("Unknown Google standard TTS language: {lang}. Use /get_voices to list languages.").format(lang=value))
+                return
+            self._get_user_settings(user_id, create=True)["google_lang"] = lang
+            self.bot.privateMessage(user_id, self._("Google standard TTS language set to {lang}.").format(lang=lang))
         else:
-            self._get_user_settings(user_id, create=True)["voice"] = voice_name
-            self.bot.privateMessage(user_id, self._("Voice set to {voice_name}.").format(voice_name=voice_name))
+            self._get_user_settings(user_id, create=True)["voice"] = value
+            self.bot.privateMessage(user_id, self._("Voice set to {voice_name}.").format(voice_name=value))
 
     def handle_speed_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
@@ -582,36 +604,43 @@ class TTSCog:
         asyncio.run(self._list_voices(textmessage, *args))
 
     async def _list_voices(self, textmessage, *args):
-        """Asynchronous logic for listing voices."""
+        """List Microsoft voices or Google standard gTTS languages."""
         user_id = textmessage.nFromUserID
         try:
             if self._get_tts_mode() == "google":
-                voices = self._get_google_voices()
-                if not voices:
-                    self.bot.privateMessage(user_id, self._("No Google Cloud TTS voices available. Check your API key."))
+                languages = tts_langs()
+                lang_code = args[0].strip() if args else None
+                if lang_code:
+                    resolved = self._resolve_google_lang(lang_code)
+                    if not resolved:
+                        self.bot.privateMessage(user_id, self._("No Google standard TTS language found for {lang}.").format(lang=lang_code))
+                        return
+                    self.bot.privateMessage(
+                        user_id,
+                        self._("Google standard TTS language: {name} ({code})").format(
+                            name=languages.get(resolved, resolved), code=resolved
+                        ),
+                    )
                     return
-                found_voices = [self._("Name: {voice_name}").format(voice_name=v.get("name", "")) for v in voices]
-                for i in range(0, len(found_voices), 6):
-                    chunk = "\n".join(found_voices[i:i+6])
-                    self.bot.privateMessage(user_id, chunk)
+                found = [f"{name} ({code})" for code, name in sorted(languages.items(), key=lambda item: item[1].lower())]
+                for i in range(0, len(found), 8):
+                    self.bot.privateMessage(user_id, "\n".join(found[i:i+8]))
                 return
 
             voices = await self.speech_engine.get_voices_list()
             lang_code = args[0].lower() if args else None
-            
             found_voices = []
             for voice in voices:
                 if not lang_code or voice["Locale"].lower().startswith(lang_code):
                     found_voices.append(self._("Name: {voice_name}, ShortName: {short_name}, Locale: {locale}").format(
                         voice_name=voice['FriendlyName'], short_name=voice['ShortName'], locale=voice['Locale']))
-            
+
             if not found_voices:
                 self.bot.privateMessage(user_id, self._("No voices found for the specified language code."))
                 return
 
             for i in range(0, len(found_voices), 4):
-                chunk = "\n".join(found_voices[i:i+4])
-                self.bot.privateMessage(user_id, chunk)
+                self.bot.privateMessage(user_id, "\n".join(found_voices[i:i+4]))
 
         except Exception as e:
             self.bot.privateMessage(user_id, self._("Error listing voices: {e}").format(e=e))
@@ -625,97 +654,117 @@ class TTSCog:
         if mode not in ("microsoft", "google"):
             self.bot.privateMessage(user_id, self._("Invalid mode. Use microsoft or google."))
             return
-        if mode == "google" and not self.google_tts.is_configured():
-            self.bot.privateMessage(user_id, self._("Google Cloud TTS is not configured. Set [tts] google_api_key first."))
-            return
         self.bot.tts_config["mode"] = mode
         self.bot.config_handler.save_tts_config(self.bot.tts_config)
-        if mode == "google":
-            self._refresh_google_cache()
-            self._start_google_refresh_loop()
         self.bot.privateMessage(user_id, self._("TTS mode set to {mode}.").format(mode=mode))
 
     def _get_tts_mode(self):
-        mode = (self.bot.tts_config.get("mode") or "microsoft").strip().lower()
-        if mode == "google" and not self.google_tts.is_configured():
-            return "microsoft"
-        return mode
+        mode = (self.bot.tts_config.get("mode") or "google").strip().lower()
+        return mode if mode in ("microsoft", "google") else "google"
 
-    def _load_google_cache(self):
-        if not self.google_tts.is_configured():
-            return
+    def _as_bool(self, value):
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+    def _resolve_google_lang(self, lang):
+        value = str(lang or "").strip()
+        if not value:
+            return "th"
+        languages = tts_langs()
+        if value in languages:
+            return value
+        lower_map = {code.lower(): code for code in languages}
+        if value.lower() in lower_map:
+            return lower_map[value.lower()]
+        base = value.split("-", 1)[0].lower()
+        if base in lower_map:
+            return lower_map[base]
+        return None
+
+    def is_google_language(self, lang):
+        return self._resolve_google_lang(lang) is not None
+
+    def _atempo_filter(self, speed):
+        speed = max(0.25, min(4.0, float(speed)))
+        factors = []
+        while speed < 0.5:
+            factors.append(0.5)
+            speed /= 0.5
+        while speed > 2.0:
+            factors.append(2.0)
+            speed /= 2.0
+        factors.append(speed)
+        return ",".join(f"atempo={factor:.6g}" for factor in factors)
+
+    def _synthesize_google_standard(self, text, filepath, lang="th", tld="com", slow=False, speed=1.0):
+        """Generate Google standard speech with gTTS. No Google Cloud credentials are used."""
+        resolved_lang = self._resolve_google_lang(lang) or "th"
+        tld = str(tld or "com").strip() or "com"
+        speed = max(0.25, min(4.0, float(speed)))
+        os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
+
+        source_path = filepath
+        temp_source = None
+        if abs(speed - 1.0) > 0.001:
+            fd, temp_source = tempfile.mkstemp(prefix="sntalkbot_gtts_", suffix=".mp3")
+            os.close(fd)
+            source_path = temp_source
+
         try:
-            self.google_cache = self.google_tts.load_cache(self.google_cache_path)
-        except Exception:
-            self.google_cache = {}
+            gTTS(text=str(text), lang=resolved_lang, tld=tld, slow=self._as_bool(slow)).save(source_path)
+            if temp_source:
+                result = subprocess.run(
+                    [
+                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                        "-i", temp_source, "-filter:a", self._atempo_filter(speed),
+                        "-vn", filepath,
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(result.stderr.strip() or "ffmpeg failed while adjusting Google TTS speed")
+            return os.path.getsize(filepath) if os.path.exists(filepath) else 0
+        finally:
+            if temp_source:
+                try:
+                    os.remove(temp_source)
+                except OSError:
+                    pass
 
-    def _start_google_refresh_loop(self):
-        if self.google_refresh_thread and self.google_refresh_thread.is_alive():
-            return
-        self.google_refresh_thread = threading.Thread(
-            target=self._google_refresh_loop,
-            daemon=True,
-            name="TTBot_GoogleRefresh",
-        )
-        self.google_refresh_thread.start()
 
-    def _google_refresh_loop(self):
-        while True:
-            if self._get_tts_mode() == "google" and self.google_tts.is_configured():
-                self._refresh_google_cache()
-            time.sleep(self.google_refresh_interval)
 
-    def _refresh_google_cache(self):
-        if not self.google_tts.is_configured():
-            return
-        try:
-            voices = self.google_tts.list_voices()
-            self.google_cache = {"voices": voices}
-            self.google_tts.save_cache(self.google_cache_path, self.google_cache)
-        except Exception:
-            pass
 
-    def _get_google_voices(self):
-        if not self.google_cache:
-            self._refresh_google_cache()
-        voices = (self.google_cache or {}).get("voices") or {}
-        return voices.get("voices") if isinstance(voices, dict) else voices
 
     def _speak_google(self, text_to_speak, filepath, user_id):
-        if not self.google_tts.is_configured():
-            self.bot.privateMessage(user_id, self._("Google Cloud TTS API key is not configured."))
-            return 0
-        if not self.google_cache:
-            self._refresh_google_cache()
-            
         user_settings = self._get_user_settings(user_id)
-        voice_name = user_settings.get("google_voice_name") or self.bot.tts_config.get("google_voice_name")
-        voices = self._get_google_voices() or []
-        
-        voice_id = self.google_tts.resolve_voice_id(voice_name, voices) if voice_name else None
-        if voice_name and not voice_id:
-            self.bot.privateMessage(user_id, self._("Google voice not found, using default voice."))
-            
-        if not voice_id:
-            # ใช้เสียงมาตรฐานหากไม่มีการตั้งค่า
-            voice_id = "th-TH-Standard-A"
-            
-        voice_settings_dict = {"speed": user_settings.get("speed", 1.0)}
-        return self.google_tts.synthesize(text_to_speak, voice_id, None, filepath, voice_settings=voice_settings_dict)
+        lang = user_settings.get("google_lang") or self.bot.tts_config.get("google_lang") or "th"
+        try:
+            speed = max(0.25, min(4.0, float(user_settings.get("speed", self.bot.tts_config.get("google_speed", 1.0)))))
+        except (TypeError, ValueError):
+            speed = 1.0
+        return self._synthesize_google_standard(
+            text_to_speak,
+            filepath,
+            lang=lang,
+            tld=self.bot.tts_config.get("google_tld", "com"),
+            slow=self.bot.tts_config.get("google_slow", False),
+            speed=speed,
+        )
 
     def _speak_google_with_voice_name(self, text_to_speak, filepath, voice_name):
-        if not self.google_tts.is_configured():
-            return 0
-        if not self.google_cache:
-            self._refresh_google_cache()
-            
-        voices = self._get_google_voices() or []
-        voice_id = self.google_tts.resolve_voice_id(voice_name, voices) if voice_name else None
-        if not voice_id:
-            return 0
-            
-        voice_settings_dict = {"speed": 1.0}
-        return self.google_tts.synthesize(text_to_speak, voice_id, None, filepath, voice_settings=voice_settings_dict)
+        # gTTS has language/accent selection rather than Cloud named voices.
+        lang = self._resolve_google_lang(voice_name) or self.bot.tts_config.get("google_lang") or "th"
+        return self._synthesize_google_standard(
+            text_to_speak,
+            filepath,
+            lang=lang,
+            tld=self.bot.tts_config.get("google_tld", "com"),
+            slow=self.bot.tts_config.get("google_slow", False),
+            speed=self.bot.tts_config.get("google_speed", 1.0),
+        )
 
     def _wait_for_broadcast_finish(self, filepath, text_to_speak):
         duration_ms = self.bot.get_media_file_duration_ms(filepath)
@@ -731,22 +780,15 @@ class TTSCog:
         return int(seconds * 1000)
 
     def _speak_google_random_voice(self, text_to_speak, filepath):
-        if not self.google_tts.is_configured():
-            return 0
-        if not self.google_cache:
-            self._refresh_google_cache()
-            
-        voices = self._get_google_voices() or []
-        if not voices:
-            return 0
-            
-        voice = random.choice(voices)
-        voice_id = voice.get("name")
-        if not voice_id:
-            return 0
-            
-        voice_settings_dict = {"speed": 1.0}
-        return self.google_tts.synthesize(text_to_speak, voice_id, None, filepath, voice_settings=voice_settings_dict)
+        # Kept for backward compatibility: Google standard gTTS has no named voice catalogue.
+        return self._synthesize_google_standard(
+            text_to_speak,
+            filepath,
+            lang=self.bot.tts_config.get("google_lang", "th"),
+            tld=self.bot.tts_config.get("google_tld", "com"),
+            slow=self.bot.tts_config.get("google_slow", False),
+            speed=self.bot.tts_config.get("google_speed", 1.0),
+        )
 
     def _get_user_settings_key(self, user_id):
         user = self.bot.getUser(user_id)

@@ -132,6 +132,8 @@ python tools/validate_project.py
 ไม่มี dependency GUI และไม่ใช้ wxPython โปรเจกต์นี้เป็น Linux/Docker only
 
 
-## Google Cloud TTS
+## Google Standard TTS (gTTS)
 
-Google Cloud TTS ใช้ REST API ผ่าน `requests` และต้องเปิด Text-to-Speech API พร้อม API key ใน `[tts] google_api_key`. Microsoft/Edge TTS ยังเป็นค่าเริ่มต้นและไม่ต้องใช้ Google key.
+โหมด Google ใช้แพ็กเกจ `gTTS` ซึ่งสร้างเสียงผ่าน Google Translate TTS แบบมาตรฐาน ไม่ใช้ Google Cloud Text-to-Speech API และไม่ต้องใช้ API key/service account/billing
+
+ค่าเริ่มต้นทั้ง Player และ Server Manager คือ Google standard ภาษาไทย (`lang=th`). FFmpeg ที่มีอยู่ใน image ใช้ปรับความเร็วเมื่อ `/speed` หรือ `/pttsspeed` ไม่เท่ากับ `1.0`. Microsoft Edge TTS ยังคงติดตั้งไว้เป็น engine สำรองและสลับได้ด้วย `/ttsmode microsoft` หรือ `/pttsmode microsoft`.

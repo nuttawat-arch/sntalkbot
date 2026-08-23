@@ -46,7 +46,7 @@
 /favorites : แสดงเพลงโปรดที่บันทึกไว้ โดยส่งหนึ่งเพลงต่อหนึ่งข้อความ
 /filter : เฉพาะผู้ดูแล: เปิดหรือปิดตัวกรองคำไม่เหมาะสม/บัญชีดำ
 /gcid [channel path] : แสดง Channel ID ของ TeamTalk สำหรับห้องปัจจุบันหรือพาธห้องที่ระบุ
-/get_voices langcode : แสดงเสียงทั้งหมดของภาษาที่ระบุในโหมด Microsoft หรือแสดงเสียง Google เมื่อใช้โหมด Google
+/get_voices langcode : โหมด Microsoft แสดงรายชื่อเสียง; โหมด Google standard แสดงภาษาที่ gTTS รองรับ
 /help [command] : แสดงรายการคำสั่ง โดยส่งหนึ่งคำสั่งต่อหนึ่งข้อความ TeamTalk ใช้: /help หรือ /help คำสั่ง
 /hide : เปิดหรือปิดการซ่อนชื่อเพลงที่กำลังเล่นจากสถานะของบอท
 /jail <name> : สำหรับผู้ดูแลหรือผู้ได้รับอนุญาต: เพิ่ม username ในรายชื่อห้องขังและย้ายผู้ใช้นั้นไปห้องขัง โดยใช้ username ไม่ใช่ nickname
@@ -82,7 +82,7 @@
 /ql : แสดงรายการในคิวปัจจุบัน
 /r : แสดงเพลงที่เล่นล่าสุด
 /rate value : ตั้งอัตราความเร็วเสียง (เฉพาะโหมด Microsoft) ค่า -100 ถึง 100
-/rb on|off : สำหรับผู้ดูแลเท่านั้น: เปิดหรือปิดประกาศสุ่มด้วย Google TTS
+/rb on|off : สำหรับผู้ดูแลเท่านั้น: เปิดหรือปิดประกาศสุ่มด้วย TTS; โหมด Google ใช้ gTTS มาตรฐาน
 /reboot : สำหรับผู้ดูแลเท่านั้น. รีบูตเซิร์ฟเวอร์ (ต้องได้รับอนุญาต)
 /report <message> : ส่งคำขอความช่วยเหลือหรือรายงานปัญหาไปยังผู้ดูแลที่ออนไลน์
 /dr <message> : ส่งรายงานปัญหาโดยตรงไปยัง Telegram ที่ตั้งค่าไว้ หากยังไม่ตั้งค่า Telegram คำสั่งจะจบอย่างปลอดภัยโดยไม่เออเร่อ
@@ -95,11 +95,11 @@
 /select <index> : เลือกและเล่นรายการตามลำดับจากผลการค้นหาหรือรายการที่กำลังใช้งาน
 /shuffle : สุ่มเฉพาะเพลงในคิวที่ยังไม่ได้เล่น
 /ptts [on|off|status] : สำหรับผู้ดูแล: เปิด/ปิดหรือดูสถานะ TTS ประกาศเพลงและคิวของ Player; ใช้ tracks หรือ queue เพื่อแยกควบคุมได้
-/pttsmode microsoft|google : สำหรับผู้ดูแล: เลือก Microsoft Edge TTS หรือ Google Cloud TTS สำหรับเสียงประกาศของ Player
-/pvoice <voice_name> : สำหรับผู้ดูแล: ตั้งเสียงประกาศ Player ของโหมด TTS ที่เลือกอยู่
-/pvoices [langcode] : แสดงรายชื่อเสียงของโหมด TTS ประกาศ Player ปัจจุบัน และกรองตามรหัสภาษาได้
+/pttsmode microsoft|google : สำหรับผู้ดูแล: เลือก Microsoft Edge TTS หรือ Google standard gTTS แบบไม่ใช้ API key สำหรับเสียงประกาศ Player
+/pvoice <voice_or_language> : สำหรับผู้ดูแล: Microsoft ใช้ชื่อเสียง; Google standard ใช้รหัสภาษา เช่น th
+/pvoices [langcode] : โหมด Microsoft แสดงรายชื่อเสียง; โหมด Google standard แสดงภาษาที่ gTTS รองรับ
 /pttsrate <-100..100> : สำหรับผู้ดูแล: ตั้งอัตราความเร็วเสียงประกาศ Player เมื่อใช้ Microsoft
-/pttsspeed <0.25..4.0> : สำหรับผู้ดูแล: ตั้งความเร็วเสียงประกาศ Player เมื่อใช้ Google Cloud TTS
+/pttsspeed <0.25..4.0> : สำหรับผู้ดูแล: ตั้งความเร็วเสียงประกาศ Player เมื่อใช้ Google standard gTTS
 /shutdown : เฉพาะผู้ดูแล: ปิดบอทอย่างถูกต้องและปลอดภัย
 /sp <speed> : ตั้งค่าความเร็วในการเล่นเพลง
 /speed value : ตั้งความเร็วเสียง (เฉพาะโหมด Google TTS) ค่า 0.25 ถึง 4.0
@@ -108,7 +108,7 @@
 /t <time> : เลื่อนไปยังเวลาที่ระบุ เช่น 1:30
 /tr : เปิดหรือปิดการแปลข้อความในห้องอัตโนมัติ วิธีใช้: /tr <source_lang> <target_lang>
 /tts on|off : สำหรับผู้ดูแลเท่านั้น: เปิดหรือปิด TTS สำหรับทุกคน
-/ttsmode microsoft|google : สลับโหมด TTS ระหว่าง Microsoft และ Google Cloud TTS
+/ttsmode microsoft|google : สลับโหมด TTS ระหว่าง Microsoft Edge TTS และ Google standard gTTS แบบไม่ใช้ API key
 /u <link> : เล่นหรือเพิ่มสื่อจาก URL เข้าคิว
 /udb name duration : สำหรับผู้ดูแลเท่านั้น: แบนชื่อผู้ใช้ตามระยะเวลาที่กำหนด
 /udk <username> <duration> : เฉพาะผู้ดูแล: เตะชื่อผู้ใช้ TeamTalk ออกตามระยะเวลาที่กำหนด
@@ -116,7 +116,7 @@
 /unotify <username> <telegram_chat_id> : ส่งการแจ้งเตือนทาง Telegram เมื่อชื่อผู้ใช้ที่ระบุเข้าสู่ระบบ
 /users : แสดงผู้ใช้ที่เชื่อมต่ออยู่ พร้อมประเภทบัญชี ตำแหน่งโดยประมาณ และสถานะ
 /v <volume> : ตั้งระดับเสียงเครื่องเล่นได้ไม่เกินค่าสูงสุดที่กำหนดไว้
-/voice voiceName : ตั้งค่าชื่อเสียงสำหรับอ่านออกเสียง
+/voice voiceOrLanguage : โหมด Microsoft ใช้ชื่อเสียง; โหมด Google standard ใช้รหัสภาษา เช่น th
 /voicetx on|off : สำหรับผู้ดูแลเท่านั้น: เปิดหรือปิดการส่งเสียงของ TeamTalk ด้วยตนเอง
 /volume value : ตั้งระดับเสียงพูด (เฉพาะโหมด Microsoft) ค่า 0.1 ถึง 1.0
 /vpn : เฉพาะผู้ดูแล: เปิดหรือปิดการตรวจจับ VPN/พร็อกซี

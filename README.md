@@ -39,4 +39,4 @@ This combined main project is distributed under GPL-2.0 because its TTUtilities 
 
 ## 2026.08.23-r2
 
-Player announcements are now serialized through a FIFO TTS queue, Player and Manager TTS controls are separated, duplicate command aliases were removed, and `/dr` adds optional Telegram direct reporting. See `README_TH.md` and `RELEASE_NOTES_TH.md`.
+Player announcements are serialized through a FIFO TTS queue. Google mode now uses standard gTTS (Google Translate TTS) with no Cloud API key and is the default for both Player and Manager; Microsoft Edge TTS remains optional. Player and Manager TTS controls are separated, duplicate command aliases were removed, and `/dr` adds optional Telegram direct reporting. See `README_TH.md` and `RELEASE_NOTES_TH.md`.

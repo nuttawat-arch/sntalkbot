@@ -173,6 +173,7 @@ class ConfigHandler:
 
         self.config.read(self.config_file, encoding="utf-8")
         self._migrate_legacy_server_port()
+        self._migrate_google_standard_tts()
 
         missing_items = self._validate_config()
         if missing_items:
@@ -196,6 +197,48 @@ class ConfigHandler:
         if not sec.get("udp_port", "").strip():
             sec["udp_port"] = legacy
             changed = True
+        if changed:
+            with open(self.config_file, "w", encoding="utf-8") as configfile:
+                self.config.write(configfile)
+
+    def _migrate_google_standard_tts(self):
+        """Migrate pre-r3 Cloud/Microsoft defaults to Google standard gTTS once."""
+        changed = False
+
+        if not self.config.has_section("tts"):
+            self.config.add_section("tts")
+            changed = True
+        tts = self.config["tts"]
+        provider = tts.get("provider", "").strip().lower()
+        if provider != "gtts":
+            # r2 and older used Google Cloud keys and defaulted to Microsoft.
+            # r3 intentionally makes no-key Google standard gTTS the default.
+            tts["provider"] = "gtts"
+            tts["mode"] = "google"
+            tts.setdefault("google_lang", "th")
+            tts.setdefault("google_tld", "com")
+            tts.setdefault("google_slow", "False")
+            tts.setdefault("google_speed", "1.0")
+            for legacy_key in ("google_api_key", "google_base_url", "google_voice_name"):
+                if legacy_key in tts:
+                    del tts[legacy_key]
+            changed = True
+
+        if not self.config.has_section("playback"):
+            self.config.add_section("playback")
+            changed = True
+        playback = self.config["playback"]
+        if playback.get("announcement_provider", "").strip().lower() != "gtts":
+            playback["announcement_provider"] = "gtts"
+            playback["announcement_tts_mode"] = "google"
+            playback.setdefault("announcement_google_lang", "th")
+            playback.setdefault("announcement_google_tld", "com")
+            playback.setdefault("announcement_google_slow", "False")
+            playback.setdefault("announcement_google_speed", "1.0")
+            if "announcement_google_voice" in playback:
+                del playback["announcement_google_voice"]
+            changed = True
+
         if changed:
             with open(self.config_file, "w", encoding="utf-8") as configfile:
                 self.config.write(configfile)
@@ -522,11 +565,13 @@ class ConfigHandler:
             "autoplay_enabled": sec.getboolean("autoplay_enabled", True),
             "announce_tracks": sec.getboolean("announce_tracks", True),
             "announce_queue": sec.getboolean("announce_queue", True),
-            "announcement_tts_mode": sec.get("announcement_tts_mode", "microsoft"),
+            "announcement_tts_mode": sec.get("announcement_tts_mode", "google"),
             # announcement_voice remains as a backward-compatible alias for old configs.
             "announcement_voice": sec.get("announcement_voice", "th-TH-PremwadeeNeural"),
             "announcement_microsoft_voice": sec.get("announcement_microsoft_voice", sec.get("announcement_voice", "th-TH-PremwadeeNeural")),
-            "announcement_google_voice": sec.get("announcement_google_voice", "th-TH-Standard-A"),
+            "announcement_google_lang": sec.get("announcement_google_lang", "th"),
+            "announcement_google_tld": sec.get("announcement_google_tld", "com"),
+            "announcement_google_slow": sec.getboolean("announcement_google_slow", False),
             "announcement_rate": sec.getint("announcement_rate", 0),
             "announcement_google_speed": sec.getfloat("announcement_google_speed", 1.0),
             "announcement_volume": sec.getfloat("announcement_volume", 1.0),
@@ -608,10 +653,14 @@ class ConfigHandler:
 
     def get_tts_config(self):
         if not self.config.has_section("tts"):
-            return {"mode": "microsoft", "random_broadcast_enabled": False}
+            return {"mode": "google", "google_lang": "th", "google_tld": "com", "google_slow": False, "google_speed": 1.0, "random_broadcast_enabled": False}
         sec = self.config["tts"]
         result = {k: v for k, v in sec.items()}
-        result["mode"] = sec.get("mode", "microsoft")
+        result["mode"] = sec.get("mode", "google")
+        result["google_lang"] = sec.get("google_lang", "th")
+        result["google_tld"] = sec.get("google_tld", "com")
+        result["google_slow"] = sec.getboolean("google_slow", False)
+        result["google_speed"] = sec.getfloat("google_speed", 1.0)
         result["random_broadcast_enabled"] = sec.getboolean("random_broadcast_enabled", False)
         return result
 

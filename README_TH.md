@@ -186,16 +186,22 @@ play_mode = 2
 autoplay_enabled = True
 announce_tracks = True
 announce_queue = True
-announcement_tts_mode = microsoft
+announcement_provider = gtts
+announcement_tts_mode = google
 announcement_microsoft_voice = th-TH-PremwadeeNeural
-announcement_google_voice = th-TH-Standard-A
+announcement_google_lang = th
+announcement_google_tld = com
+announcement_google_slow = False
 announcement_rate = 0
 announcement_google_speed = 1.0
 
 [tts]
-mode = microsoft
-google_api_key =
-google_voice_name = th-TH-Standard-A
+provider = gtts
+mode = google
+google_lang = th
+google_tld = com
+google_slow = False
+google_speed = 1.0
 
 [telegram]
 telegram_bot_token =
@@ -420,51 +426,67 @@ Alias ซ้ำที่เลิกใช้แล้ว: `/h`, `/gl`, `/rs`, `
 /ptts queue on|off
 /pttsmode microsoft|google
 /pvoices [langcode]
-/pvoice <voice_name>
+/pvoice <voice_or_language>
 /pttsrate <-100..100>
 /pttsspeed <0.25..4.0>
 ```
 
 `/ptts`, `/pttsmode`, `/pvoice`, `/pttsrate`, `/pttsspeed` เป็นคำสั่งผู้ดูแลเพราะเปลี่ยนค่ารวมของ Player; `/pvoices` เป็นคำสั่งอ่านอย่างเดียว
 
-### เปลี่ยน Player จาก Microsoft เป็น Google Cloud TTS
+### Google Standard TTS (gTTS) — ค่าเริ่มต้นของ Player และ Server Manager
 
-Google Cloud TTS ต้องมี API key ก่อน โดยใส่ใน config ของ instance:
+โหมด `google` ใช้ `gTTS` หรือ Google Translate TTS แบบมาตรฐาน ไม่ใช่ Google Cloud Text-to-Speech จึงไม่ต้องมี API key, service account หรือ billing
+
+ค่าเริ่มต้นภาษาไทย:
 
 ```ini
 [tts]
-google_api_key = YOUR_GOOGLE_CLOUD_TTS_API_KEY
+provider = gtts
+mode = google
+google_lang = th
+google_tld = com
+google_slow = False
+google_speed = 1.0
 ```
 
-แล้ว restart instance และใช้:
+Player ใช้:
 
 ```text
 /pttsmode google
-/pvoices th-TH
-/pvoice th-TH-Standard-A
+/pvoices th
+/pvoice th
 /pttsspeed 1.0
 ```
 
-กลับ Microsoft:
+ใน Google mode คำสั่ง `/pvoice` ใช้เลือก **รหัสภาษา** เช่น `th`, `en`, `ja` เพราะ gTTS ไม่มีรายชื่อ named voice แบบ Google Cloud
+
+Server Manager ใช้:
+
+```text
+/ttsmode google
+/get_voices th
+/voice th
+/speed 1.0
+/say ข้อความทดสอบ
+```
+
+ใน Google mode คำสั่ง `/voice` ก็ใช้รหัสภาษาเช่นเดียวกัน และ `/ld` ยังใช้เปิด/ปิดการตรวจจับภาษาอัตโนมัติได้
+
+Microsoft Edge TTS ยังเก็บไว้เป็นตัวเลือกสำรอง:
 
 ```text
 /pttsmode microsoft
 /pvoices th-TH
 /pvoice th-TH-PremwadeeNeural
 /pttsrate 0
-```
 
-Server Manager ใช้ชุดเดิมแยกต่างหาก:
-
-```text
-/ttsmode google
+/ttsmode microsoft
 /get_voices th-TH
-/voice th-TH-Standard-A
-/speed 1.0
-/say ข้อความทดสอบ
+/voice th-TH-PremwadeeNeural
+/rate 0
 ```
 
-หากยังไม่มี `[tts] google_api_key` การสลับเป็น Google จะถูกปฏิเสธด้วยข้อความอธิบาย แทนการล้มด้วย exception
+เมื่ออัปเดตจาก r2 หรือต่ำกว่า ระบบจะ migrate ค่า TTS ครั้งเดียว: เอา key ของ Google Cloud เก่าออกและตั้ง Google standard gTTS เป็นค่าเริ่มต้น หลังจาก migration แล้วถ้าผู้ดูแลสลับกลับ Microsoft ระบบจะไม่บังคับกลับ Google ใน restart ถัดไป
 
 ## `/dr` — Direct Report ไป Telegram
 
