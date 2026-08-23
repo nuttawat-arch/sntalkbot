@@ -3,7 +3,7 @@
 msgid ""
 msgstr "Project-Id-Version: SNTalkBot 2026\nLanguage: th\nMIME-Version: 1.0\nContent-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: 8bit\nPlural-Forms: nplurals=1; plural=0;\n"
 
-#: bot/config_handler.py:446
+#: bot/config_handler.py:445
 msgid "\nConfiguration saved to config.ini! You can now start the bot normally."
 msgstr "\nบันทึกการตั้งค่าลง config.ini แล้ว ตอนนี้คุณสามารถเปิดบอทได้ตามปกติ"
 
@@ -27,7 +27,7 @@ msgstr "ส่งรหัสยืนยันแล้ว กรุณาก�
 msgid "A warm welcome to {nickname} from {country}!"
 msgstr "ขอต้อนรับ {nickname} จาก {country} ด้วยความอบอุ่นครับ!"
 
-#: bot/config_handler.py:102
+#: bot/config_handler.py:101
 msgid "API key for the weather command. See the README for instructions on how to get one."
 msgstr "API key สำหรับคำสั่งสภาพอากาศ ดูวิธีขอคีย์ได้ใน README"
 
@@ -287,7 +287,7 @@ msgstr "ตกลง ระบบจะแจ้งเมื่อ {name} เข
 msgid "Alright. You will be notified when {username} logs in."
 msgstr "ตกลง ระบบจะแจ้งเมื่อ {username} เข้าสู่ระบบ"
 
-#: bot/modules/general.py:115
+#: bot/modules/general.py:126
 msgid "An error occurred: {e}"
 msgstr "เกิดข้อผิดพลาด: {e}"
 
@@ -299,7 +299,7 @@ msgstr "ข้อความสถานะของบอท (ไม่บั�
 msgid "Announce playback actions (play/pause/stop/volume) in the channel."
 msgstr "ประกาศการทำงานของเครื่องเล่น เช่น เล่น พัก หยุด และระดับเสียงในห้อง"
 
-#: bot/modules/tts.py:289
+#: bot/modules/tts.py:293
 msgid "Another speech synthesis is already in progress. Please wait."
 msgstr "กำลังสร้างเสียงพูดรายการอื่นอยู่ กรุณารอสักครู่"
 
@@ -343,7 +343,7 @@ msgstr "เล่นอัตโนมัติ: {state}"
 msgid "Autoplaying: {title}"
 msgstr "กำลังเล่นอัตโนมัติ: {title}"
 
-#: bot/modules/general.py:126
+#: bot/modules/general.py:137
 msgid "Available Commands:"
 msgstr "คำสั่งที่ใช้ได้:"
 
@@ -403,7 +403,7 @@ msgstr "ล้างแคชแล้ว ข้อมูลที่พรี�
 msgid "Cache size: {size:.2f} MB"
 msgstr "ขนาดแคช: {size:.2f} MB"
 
-#: bot/modules/general.py:219
+#: bot/modules/general.py:252
 msgid "Channel ID for {path}: {channel_id}"
 msgstr "Channel ID ของ {path}: {channel_id}"
 
@@ -479,7 +479,7 @@ msgstr "รายการ IP ที่ยกเว้นจากกฎดู�
 msgid "Comma-separated list of nicknames immune to moderation rules."
 msgstr "รายชื่อชื่อเล่นที่ยกเว้นจากกฎดูแลระบบ คั่นด้วยจุลภาค"
 
-#: bot/config_handler.py:107
+#: bot/config_handler.py:106
 msgid "Comma-separated list of user IP addresses allowed to use SSH commands via the bot."
 msgstr "รายการ IP ผู้ใช้ที่อนุญาตให้ใช้คำสั่ง SSH ผ่านบอท คั่นด้วยจุลภาค"
 
@@ -535,23 +535,19 @@ msgstr "พาธไฟล์คุกกี้"
 msgid "Could not connect to server {server_address} port={port}"
 msgstr "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ {server_address} พอร์ต={port}"
 
-#: bot/config_handler.py:418
+#: bot/config_handler.py:417
 msgid "Could not find any {type} devices. You may need to set this manually in config.ini."
 msgstr "ไม่พบอุปกรณ์ประเภท {type} คุณอาจต้องตั้งค่าเองใน config.ini"
 
-#: bot/modules/general.py:59
+#: bot/modules/general.py:70
 msgid "Could not retrieve location information."
 msgstr "ไม่สามารถดึงข้อมูลตำแหน่งได้"
-
-#: bot/modules/general.py:209
-msgid "Could not send the direct report to Telegram. Please contact an admin."
-msgstr "ไม่สามารถส่งรายงานตรงไปยัง Telegram ได้ กรุณาติดต่อผู้ดูแล"
 
 #: bot/modules/player.py:988
 msgid "Current Queue:"
 msgstr "คิวปัจจุบัน:"
 
-#: bot/modules/general.py:221
+#: bot/modules/general.py:254
 msgid "Current channel ID: {channel_id}"
 msgstr "Channel ID ปัจจุบัน: {channel_id}"
 
@@ -598,14 +594,6 @@ msgstr "จำนวนวินาทีเริ่มต้นสำหรั
 #: bot/help.py:74
 msgid "Delete item from queue at index."
 msgstr "ลบรายการในคิวตามลำดับ"
-
-#: bot/config_handler.py:101
-msgid "Destination chat ID for /dr direct reports. Leave blank to disable direct Telegram reports."
-msgstr "Chat ID ปลายทางสำหรับรายงานตรงด้วย /dr เว้นว่างเพื่อปิดรายงานตรงผ่าน Telegram"
-
-#: bot/modules/general.py:162
-msgid "Direct Telegram reporting is not configured on this bot."
-msgstr "บอตตัวนี้ยังไม่ได้ตั้งค่าระบบรายงานตรงผ่าน Telegram"
 
 #: bot/modules/player.py:894
 msgid "Download already in progress. Please wait."
@@ -659,7 +647,7 @@ msgstr "เกิดข้อผิดพลาดในการลบไฟล
 msgid "Error downloading or uploading: {e}"
 msgstr "เกิดข้อผิดพลาดในการดาวน์โหลดหรืออัปโหลด: {e}"
 
-#: bot/modules/tts.py:368
+#: bot/modules/tts.py:372
 msgid "Error during speech synthesis: {e}"
 msgstr "เกิดข้อผิดพลาดระหว่างสร้างเสียงพูด: {e}"
 
@@ -667,11 +655,11 @@ msgstr "เกิดข้อผิดพลาดระหว่างสร้
 msgid "Error during translation: {e}. Disabling auto-translate."
 msgstr "เกิดข้อผิดพลาดระหว่างแปล: {e} กำลังปิดการแปลอัตโนมัติ"
 
-#: bot/modules/general.py:90
+#: bot/modules/general.py:101
 msgid "Error fetching weather data."
 msgstr "เกิดข้อผิดพลาดขณะดึงข้อมูลสภาพอากาศ"
 
-#: bot/modules/tts.py:169 bot/modules/tts.py:646
+#: bot/modules/tts.py:169 bot/modules/tts.py:650
 msgid "Error listing voices: {e}"
 msgstr "เกิดข้อผิดพลาดขณะแสดงรายชื่อเสียง: {e}"
 
@@ -811,11 +799,11 @@ msgstr "ดีใจที่ได้เจอคุณ {nickname} จาก {c
 msgid "Good vibes only for {nickname} from {country}! Welcome, my friend!"
 msgstr "ส่งพลังดี ๆ ให้ {nickname} จาก {country}! ยินดีต้อนรับครับ"
 
-#: bot/modules/tts.py:527
+#: bot/modules/tts.py:531
 msgid "Google standard TTS language set to {lang}."
 msgstr "ตั้งภาษา Google standard TTS เป็น {lang} แล้ว"
 
-#: bot/modules/tts.py:145 bot/modules/tts.py:620
+#: bot/modules/tts.py:145 bot/modules/tts.py:624
 msgid "Google standard TTS language: {name} ({code})"
 msgstr "ภาษา Google standard TTS: {name} ({code})"
 
@@ -907,7 +895,7 @@ msgstr "แจ้งเตือนสำคัญ: ผู้ใช้ {name} �
 msgid "Hello. Important: The user {username} has logged in."
 msgstr "แจ้งเตือนสำคัญ: ผู้ใช้ {username} เข้าสู่ระบบแล้ว"
 
-#: bot/modules/general.py:145
+#: bot/modules/general.py:156
 msgid "Help Request from {nickname}: {message}"
 msgstr "คำขอความช่วยเหลือจาก {nickname}: {message}"
 
@@ -995,7 +983,7 @@ msgstr "สวัสดี {nickname}! หวังว่าทุกอย่�
 msgid "Hi {nickname}! Nice to see someone from {country} here."
 msgstr "สวัสดี {nickname}! ดีใจที่ได้เจอเพื่อนจาก {country} ที่นี่ครับ"
 
-#: bot/config_handler.py:103
+#: bot/config_handler.py:102
 msgid "Hostname or IP for the SSH server for the /exec and /reboot commands. Leave blank to disable."
 msgstr "ชื่อโฮสต์หรือ IP ของเซิร์ฟเวอร์ SSH สำหรับคำสั่ง /exec และ /reboot เว้นว่างเพื่อปิดใช้งาน"
 
@@ -1003,11 +991,11 @@ msgstr "ชื่อโฮสต์หรือ IP ของเซิร์ฟ�
 msgid "Howdy, {nickname}! Welcome from {country}."
 msgstr "สวัสดี {nickname}! ยินดีต้อนรับเพื่อนจาก {country} ครับ"
 
-#: bot/config_handler.py:387
+#: bot/config_handler.py:386
 msgid "I'll ask a few questions to create your configuration file."
 msgstr "ระบบจะถามข้อมูลบางอย่างเพื่อสร้างไฟล์ตั้งค่า"
 
-#: bot/config_handler.py:261
+#: bot/config_handler.py:260
 msgid "I'll ask you for the required values now."
 msgstr "ระบบจะถามค่าที่จำเป็นในตอนนี้"
 
@@ -1043,11 +1031,11 @@ msgstr "รับข้อความจากทุกห้องหรือ
 msgid "Interval in minutes for sending random broadcast messages from messages.txt. Set to 0 to disable."
 msgstr "ช่วงเวลาเป็นนาทีสำหรับส่งข้อความสุ่มจาก messages.txt ตั้งเป็น 0 เพื่อปิด"
 
-#: bot/config_handler.py:357
+#: bot/config_handler.py:356
 msgid "Invalid choice number."
 msgstr "หมายเลขตัวเลือกไม่ถูกต้อง"
 
-#: bot/config_handler.py:329
+#: bot/config_handler.py:328
 msgid "Invalid choice. Please enter 'y' or 'n'."
 msgstr "ตัวเลือกไม่ถูกต้อง กรุณาพิมพ์ 'y' หรือ 'n'"
 
@@ -1079,7 +1067,7 @@ msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: 
 msgid "Invalid command. Usage: /notify <nickname> <telegram_chat_id>"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: /notify <ชื่อเล่น> <ID แชท Telegram>"
 
-#: bot/modules/tts.py:482 bot/modules/tts.py:492
+#: bot/modules/tts.py:486 bot/modules/tts.py:496
 msgid "Invalid command. Usage: /pitch <pitch_value>"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: /pitch <pitch_value>"
 
@@ -1099,11 +1087,11 @@ msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: 
 msgid "Invalid command. Usage: /r <index>"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: /r <ลำดับ>"
 
-#: bot/modules/tts.py:464 bot/modules/tts.py:474
+#: bot/modules/tts.py:468 bot/modules/tts.py:478
 msgid "Invalid command. Usage: /rate <rate_value>."
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: /rate <rate_value>"
 
-#: bot/modules/tts.py:538 bot/modules/tts.py:548
+#: bot/modules/tts.py:542 bot/modules/tts.py:552
 msgid "Invalid command. Usage: /speed <value>."
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: /speed <value>."
 
@@ -1119,15 +1107,15 @@ msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: 
 msgid "Invalid command. Usage: /v [volume_level]"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: /v [volume_level]"
 
-#: bot/modules/tts.py:516
+#: bot/modules/tts.py:520
 msgid "Invalid command. Usage: /voice <language_code>, for example /voice th."
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: /voice <รหัสภาษา> ตัวอย่าง /voice th"
 
-#: bot/modules/tts.py:518
+#: bot/modules/tts.py:522
 msgid "Invalid command. Usage: /voice <voice_name>."
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: /voice <voice_name>"
 
-#: bot/modules/tts.py:500 bot/modules/tts.py:510
+#: bot/modules/tts.py:504 bot/modules/tts.py:514
 msgid "Invalid command. Usage: /volume <volume_value>"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: /volume <volume_value>"
 
@@ -1147,19 +1135,19 @@ msgstr "รูปแบบไม่ถูกต้อง วิธีใช้: 
 msgid "Invalid format. Usage: /udk <username> <duration>"
 msgstr "รูปแบบไม่ถูกต้อง วิธีใช้: /udk <username> <duration>"
 
-#: bot/config_handler.py:310 bot/config_handler.py:359
+#: bot/config_handler.py:309 bot/config_handler.py:358
 msgid "Invalid input. Please enter a number."
 msgstr "ข้อมูลเข้าไม่ถูกต้อง กรุณาป้อนตัวเลข"
 
-#: bot/config_handler.py:301
+#: bot/config_handler.py:300
 msgid "Invalid input. Please enter a whole number."
 msgstr "ข้อมูลไม่ถูกต้อง กรุณากรอกจำนวนเต็ม"
 
-#: bot/modules/tts.py:655
+#: bot/modules/tts.py:659
 msgid "Invalid mode. Use microsoft or google."
 msgstr "โหมดไม่ถูกต้อง ใช้ microsoft หรือ google"
 
-#: bot/modules/tts.py:490
+#: bot/modules/tts.py:494
 msgid "Invalid pitch value. Pitch should be between -100 and 100."
 msgstr "ค่าระดับเสียงไม่ถูกต้อง ระดับเสียงควรอยู่ระหว่าง -100 ถึง 100"
 
@@ -1167,7 +1155,7 @@ msgstr "ค่าระดับเสียงไม่ถูกต้อง �
 msgid "Invalid queue index."
 msgstr "ลำดับคิวไม่ถูกต้อง"
 
-#: bot/modules/tts.py:472
+#: bot/modules/tts.py:476
 msgid "Invalid rate value. Rate should be between -100 and 100."
 msgstr "ค่าความเร็วไม่ถูกต้อง ความเร็วควรอยู่ระหว่าง -100 ถึง 100"
 
@@ -1179,7 +1167,7 @@ msgstr "ตัวเลือกไม่ถูกต้อง กรุณา�
 msgid "Invalid speed value."
 msgstr "ค่าความเร็วไม่ถูกต้อง"
 
-#: bot/modules/tts.py:546
+#: bot/modules/tts.py:550
 msgid "Invalid speed value. Use a number between 0.25 and 4.0."
 msgstr "ค่าความเร็วไม่ถูกต้อง ใช้ตัวเลขระหว่าง 0.25 ถึง 4.0"
 
@@ -1195,15 +1183,15 @@ msgstr "ชื่อผู้ใช้ไม่ถูกต้อง ใช้ 3
 msgid "Invalid value. Use /accounts on or /accounts off."
 msgstr "ค่าไม่ถูกต้อง ใช้ /accounts on หรือ /accounts off"
 
-#: bot/modules/tts.py:580
+#: bot/modules/tts.py:584
 msgid "Invalid value. Use /rb on or /rb off."
 msgstr "ค่าไม่ถูกต้อง ใช้ /rb on หรือ /rb off"
 
-#: bot/modules/tts.py:565
+#: bot/modules/tts.py:569
 msgid "Invalid value. Use /tts on or /tts off."
 msgstr "ค่าไม่ถูกต้อง ใช้ /tts on หรือ /tts off"
 
-#: bot/modules/tts.py:508
+#: bot/modules/tts.py:512
 msgid "Invalid volume value. Volume should be between 0.1 and 1.0."
 msgstr "ค่าความดังไม่ถูกต้อง ความดังควรอยู่ระหว่าง 0.1 ถึง 1.0"
 
@@ -1263,15 +1251,15 @@ msgstr "เตะ {nick} ออกจากเซิร์ฟเวอร์แ�
 msgid "Language Selection"
 msgstr "เลือกภาษา"
 
-#: bot/modules/tts.py:356
+#: bot/modules/tts.py:360
 msgid "Language detection failed. Using default voice."
 msgstr "การตรวจจับภาษาล้มเหลว กำลังใช้เสียงเริ่มต้น"
 
-#: bot/modules/tts.py:596
+#: bot/modules/tts.py:600
 msgid "Language detection is now OFF."
 msgstr "ปิดการตรวจจับภาษาแล้ว"
 
-#: bot/modules/tts.py:594
+#: bot/modules/tts.py:598
 msgid "Language detection is now ON."
 msgstr "เปิดการตรวจจับภาษาแล้ว"
 
@@ -1287,11 +1275,11 @@ msgstr "บันทึกภาษาเป็น {language} แล้ว ใ�
 msgid "Let the fun begin! Welcome, {nickname} from the land of {country}!"
 msgstr "เริ่มความสนุกกันเลย! ยินดีต้อนรับ {nickname} จาก {country} ครับ"
 
-#: bot/config_handler.py:111
+#: bot/config_handler.py:110
 msgid "License Key"
 msgstr "License Key"
 
-#: bot/config_handler.py:110
+#: bot/config_handler.py:109
 msgid "License Name"
 msgstr "License Name"
 
@@ -1403,11 +1391,11 @@ msgstr "ย้ายผู้ใช้ {count} คนไปยังห้อง
 msgid "Moves you and another one to a private hidden channel where no one can see it. This channel is only limited to 2 users only and will be deleted after both users log out of the server."
 msgstr "ย้ายคุณกับผู้ใช้อีกคนไปยังห้องส่วนตัวที่ซ่อนและจำกัด 2 คน ห้องจะถูกลบเมื่อผู้ใช้ทั้งสองออกจากเซิร์ฟเวอร์"
 
-#: bot/modules/general.py:113
+#: bot/modules/general.py:124
 msgid "Multiple pages found for '{query}'. Please be more specific."
 msgstr "พบหลายหน้าสำหรับ '{query}' กรุณาระบุให้เจาะจงมากขึ้น"
 
-#: bot/modules/tts.py:161 bot/modules/tts.py:635
+#: bot/modules/tts.py:161 bot/modules/tts.py:639
 msgid "Name: {voice_name}, ShortName: {short_name}, Locale: {locale}"
 msgstr "ชื่อ: {voice_name}, ชื่อย่อ: {short_name}, ภาษา: {locale}"
 
@@ -1439,15 +1427,15 @@ msgstr "จำกัดจำนวนตัวอักษรชื่อเล
 msgid "Nickname: {nickname}\nUsername: {username}\nType: {type}\nFrom: {country}\nStatus: {status}"
 msgstr "ชื่อเล่น: {nickname}\nชื่อผู้ใช้: {username}\nประเภท: {type}\nมาจาก: {country}\nสถานะ: {status}"
 
-#: bot/modules/tts.py:141 bot/modules/tts.py:616
+#: bot/modules/tts.py:141 bot/modules/tts.py:620
 msgid "No Google standard TTS language found for {lang}."
 msgstr "ไม่พบภาษา Google standard TTS สำหรับ {lang}"
 
-#: bot/modules/general.py:151
+#: bot/modules/general.py:162
 msgid "No admins online to receive your message."
 msgstr "ไม่มีผู้ดูแลออนไลน์เพื่อรับข้อความของคุณ"
 
-#: bot/modules/general.py:233
+#: bot/modules/general.py:266
 msgid "No admins online."
 msgstr "ไม่มีผู้ดูแลออนไลน์"
 
@@ -1487,7 +1475,7 @@ msgstr "ไม่มีรหัสยืนยันที่กำลังใ
 msgid "No videos found in the {collection_type}."
 msgstr "ไม่พบวิดีโอใน {collection_type}"
 
-#: bot/modules/tts.py:159 bot/modules/tts.py:639
+#: bot/modules/tts.py:159 bot/modules/tts.py:643
 msgid "No voices found for the specified language code."
 msgstr "ไม่พบเสียงสำหรับรหัสภาษาที่ระบุ"
 
@@ -1523,7 +1511,7 @@ msgstr "กำลังเล่น: {title}"
 msgid "Number of join attempts within the timer window that will trigger a ban."
 msgstr "จำนวนครั้งที่พยายามเข้าห้องภายในช่วงเวลาที่กำหนดก่อนถูกแบน"
 
-#: bot/modules/general.py:231
+#: bot/modules/general.py:264
 msgid "Online Admins: {admins}"
 msgstr "ผู้ดูแลออนไลน์: {admins}"
 
@@ -1543,7 +1531,7 @@ msgstr "พาธไฟล์คุกกี้ (เช่น cookies.txt) ส�
 msgid "Output Device"
 msgstr "อุปกรณ์เอาต์พุต"
 
-#: bot/modules/general.py:111
+#: bot/modules/general.py:122
 msgid "Page not found on Wikipedia."
 msgstr "ไม่พบหน้าใน Wikipedia"
 
@@ -1563,11 +1551,11 @@ msgstr "หยุดชั่วคราว: {title}"
 msgid "Pending message to {target}: {message}"
 msgstr "ข้อความที่รอส่งถึง {target}: {message}"
 
-#: bot/modules/tts.py:479
+#: bot/modules/tts.py:483
 msgid "Pitch is only available in Microsoft mode."
 msgstr "Pitch ใช้ได้เฉพาะโหมด Microsoft"
 
-#: bot/modules/tts.py:488
+#: bot/modules/tts.py:492
 msgid "Pitch set to {pitch}."
 msgstr "ตั้งค่าระดับเสียงเป็น {pitch}"
 
@@ -1651,7 +1639,7 @@ msgstr "กำลังเล่น: {title}"
 msgid "Playlist selection expired. Use /channel again."
 msgstr "รายการเลือกเพลย์ลิสต์หมดอายุแล้ว ใช้ /channel อีกครั้ง"
 
-#: bot/modules/tts.py:293
+#: bot/modules/tts.py:297
 msgid "Please provide some text to speak."
 msgstr "กรุณาป้อนข้อความที่จะให้พูด"
 
@@ -1683,19 +1671,19 @@ msgstr "ระบบคิว: {state}"
 msgid "Random Message Interval (minutes)"
 msgstr "ช่วงเวลาข้อความสุ่ม (นาที)"
 
-#: bot/modules/tts.py:576
+#: bot/modules/tts.py:580
 msgid "Random broadcasts are currently {state}."
 msgstr "ประกาศสุ่มขณะนี้ {state}"
 
-#: bot/modules/tts.py:586
+#: bot/modules/tts.py:590
 msgid "Random broadcasts have been {state}."
 msgstr "ประกาศสุ่มถูก{state}แล้ว"
 
-#: bot/modules/tts.py:461
+#: bot/modules/tts.py:465
 msgid "Rate is only available in Microsoft mode. For Google TTS, please use /speed"
 msgstr "Rate ใช้ได้เฉพาะโหมด Microsoft สำหรับ Google TTS ให้ใช้ /speed"
 
-#: bot/modules/tts.py:470
+#: bot/modules/tts.py:474
 msgid "Rate set to {rate}."
 msgstr "ตั้งค่าความเร็วเป็น {rate}"
 
@@ -1715,23 +1703,23 @@ msgstr "นำออกจากคิวแล้ว: {title}"
 msgid "Restarting..."
 msgstr "กำลังเริ่มต้นใหม่..."
 
-#: bot/config_handler.py:107
+#: bot/config_handler.py:106
 msgid "SSH Allowed IPs"
 msgstr "IP ที่อนุญาตให้ใช้ SSH"
 
-#: bot/config_handler.py:103
+#: bot/config_handler.py:102
 msgid "SSH Hostname"
 msgstr "ชื่อโฮสต์ SSH"
 
-#: bot/config_handler.py:106
+#: bot/config_handler.py:105
 msgid "SSH Password"
 msgstr "รหัสผ่าน SSH"
 
-#: bot/config_handler.py:104
+#: bot/config_handler.py:103
 msgid "SSH Port"
 msgstr "พอร์ต SSH"
 
-#: bot/config_handler.py:105
+#: bot/config_handler.py:104
 msgid "SSH Username"
 msgstr "ชื่อผู้ใช้ SSH"
 
@@ -1799,7 +1787,7 @@ msgstr "เลือกผลการค้นหาถัดไปสำหร
 msgid "Select the previous search result for the newest queued search item."
 msgstr "เลือกผลการค้นหาก่อนหน้าสำหรับรายการค้นหาล่าสุดที่เพิ่มเข้าคิว"
 
-#: bot/config_handler.py:426
+#: bot/config_handler.py:425
 msgid "Select {type} Device"
 msgstr "เลือกอุปกรณ์ {type}"
 
@@ -1823,10 +1811,6 @@ msgstr "ส่งการแจ้งเตือนทาง Telegram เม�
 msgid "Send a Telegram notification when a username logs in."
 msgstr "ส่งการแจ้งเตือนทาง Telegram เมื่อชื่อผู้ใช้ที่ระบุเข้าสู่ระบบ"
 
-#: bot/help.py:129
-msgid "Send a direct problem report to the configured Telegram destination. If Telegram is not configured, the command exits safely."
-msgstr "ส่งรายงานปัญหาโดยตรงไปยัง Telegram ที่ตั้งค่าไว้ หากยังไม่ได้ตั้งค่า Telegram คำสั่งจะจบอย่างปลอดภัยโดยไม่เกิดข้อผิดพลาด"
-
 #: bot/help.py:128
 msgid "Send a help request or problem report to online administrators."
 msgstr "ส่งคำขอความช่วยเหลือหรือรายงานปัญหาไปยังผู้ดูแลที่ออนไลน์"
@@ -1834,6 +1818,10 @@ msgstr "ส่งคำขอความช่วยเหลือหรือ
 #: bot/help.py:82
 msgid "Send a private message to a user."
 msgstr "ส่งข้อความส่วนตัวถึงผู้ใช้"
+
+#: bot/help.py:129
+msgid "Send a problem report directly to the official SNTalkBot developer report service."
+msgstr "ส่งรายงานปัญหาโดยตรงถึงผู้พัฒนา SNTalkBot ผ่านระบบรายงานทางการ"
 
 #: bot/config_handler.py:56
 msgid "Send a public welcome message when a user logs in."
@@ -1959,7 +1947,7 @@ msgstr "กำลังปิดบอท..."
 msgid "So happy you made it, {nickname} from {country}!"
 msgstr "ดีใจจริง ๆ ที่คุณมา {nickname} จาก {country}!"
 
-#: bot/modules/tts.py:285 bot/modules/tts.py:553
+#: bot/modules/tts.py:289 bot/modules/tts.py:557
 msgid "Sorry, You are not in the same channel"
 msgstr "ขออภัย, คุณไม่ได้อยู่ในช่องเดียวกัน"
 
@@ -1967,11 +1955,11 @@ msgstr "ขออภัย, คุณไม่ได้อยู่ในช่�
 msgid "Sorry, your country information is not available."
 msgstr "ขออภัย, ไม่มีข้อมูลประเทศของคุณ"
 
-#: bot/modules/tts.py:535
+#: bot/modules/tts.py:539
 msgid "Speed is only available in Google TTS mode. For Microsoft, use /rate."
 msgstr "Speed ใช้ได้เฉพาะโหมด Google TTS สำหรับ Microsoft ให้ใช้ /rate"
 
-#: bot/modules/tts.py:544
+#: bot/modules/tts.py:548
 msgid "Speed set to {value}."
 msgstr "ตั้งความเร็วเป็น {value} แล้ว"
 
@@ -2027,19 +2015,19 @@ msgstr "เซอร์ไพรส์! {nickname} จาก {country} มาแ
 msgid "Switch TTS mode between Microsoft Edge TTS and Google standard gTTS (no API key)."
 msgstr "สลับโหมด TTS ระหว่าง Microsoft Edge TTS และ Google standard gTTS ซึ่งไม่ต้องใช้ API key"
 
-#: bot/modules/tts.py:570
+#: bot/modules/tts.py:574
 msgid "TTS has been {state}."
 msgstr "TTS ถูก{state}แล้ว"
 
-#: bot/modules/tts.py:281
+#: bot/modules/tts.py:285
 msgid "TTS is currently disabled by an admin."
 msgstr "ผู้ดูแลปิด TTS ไว้ในขณะนี้"
 
-#: bot/modules/tts.py:561
+#: bot/modules/tts.py:565
 msgid "TTS is currently {state}."
 msgstr "TTS ขณะนี้ {state}"
 
-#: bot/modules/tts.py:659
+#: bot/modules/tts.py:663
 msgid "TTS mode set to {mode}."
 msgstr "ตั้งโหมด TTS เป็น {mode} แล้ว"
 
@@ -2055,7 +2043,7 @@ msgstr "ไม่พบ '{target}' ในรายการแบนหรือ
 msgid "Target channel not found."
 msgstr "ไม่พบห้องเป้าหมาย"
 
-#: bot/config_handler.py:109
+#: bot/config_handler.py:108
 msgid "TeamTalk License (Optional)"
 msgstr "ไลเซนส์ TeamTalk (ไม่บังคับ)"
 
@@ -2066,10 +2054,6 @@ msgstr "การเชื่อมต่อเซิร์ฟเวอร์ Te
 #: bot/config_handler.py:100
 msgid "Telegram Bot Token"
 msgstr "Telegram Bot Token"
-
-#: bot/config_handler.py:101
-msgid "Telegram Report Chat ID"
-msgstr "Telegram Report Chat ID"
 
 #: bot/modules/account_requests.py:186
 msgid "Thanks. Now send your email address."
@@ -2103,9 +2087,17 @@ msgstr "ชื่อไคลเอนต์ที่แสดงในข้อ
 msgid "The current volume is {volume}"
 msgstr "ความดังปัจจุบันคือ {volume}"
 
-#: bot/modules/general.py:75
+#: bot/modules/general.py:86
 msgid "The current weather in {city}, {country_name} is {temperature}°C, {condition}. The perceived temperature is {feels_like} degrees C, the wind speed is at {wind_speed} kph, The wind gusts are at {gust_kph} kph, The windchill is {windchill_c}°C.\nThe Precipitation is {precip_mm} MM, The cloudiness is of {cloudiness}%, With a {chance_of_rain}% chance of rain.\nThe visibility is up to {visibility} km. The humidity is {humidity}%, The current time is {time}."
 msgstr "สภาพอากาศปัจจุบันที่ {city}, {country_name}: {temperature}°C, {condition} อุณหภูมิที่รู้สึกได้ {feels_like}°C ความเร็วลม {wind_speed} กม./ชม. ลมกระโชก {gust_kph} กม./ชม. Wind chill {windchill_c}°C\nปริมาณฝน {precip_mm} มม. เมฆ {cloudiness}% โอกาสฝนตก {chance_of_rain}%\nทัศนวิสัย {visibility} กม. ความชื้น {humidity}% เวลาปัจจุบัน {time}"
+
+#: bot/modules/general.py:242 bot/modules/general.py:239
+msgid "The developer report service is temporarily unavailable. Please try again later."
+msgstr "ระบบรายงานถึงผู้พัฒนาขัดข้องชั่วคราว กรุณาลองใหม่ภายหลัง"
+
+#: bot/modules/general.py:173
+msgid "The direct report is too long. Please keep it under 2000 characters."
+msgstr "ข้อความรายงานยาวเกินไป กรุณาใช้ไม่เกิน 2000 ตัวอักษร"
 
 #: bot/config_handler.py:53
 msgid "The full path of the channel the bot should join after login (e.g., '/chatting'). The default is the root channel (/)."
@@ -2159,7 +2151,7 @@ msgstr "สุ่มลำดับเพลงที่ยังไม่ได
 msgid "The username for the bot's account on the server."
 msgstr "ชื่อผู้ใช้บัญชีบอทบนเซิร์ฟเวอร์"
 
-#: bot/modules/general.py:31
+#: bot/modules/general.py:42
 msgid "The weather feature is unavailable in this bot mode."
 msgstr "ฟีเจอร์สภาพอากาศไม่พร้อมใช้งานในโหมดบอตนี้"
 
@@ -2187,7 +2179,7 @@ msgstr "คำสั่งนี้ถูกผู้ดูแลบล็อก
 msgid "This email address is already registered."
 msgstr "อีเมลนี้ถูกลงทะเบียนแล้ว"
 
-#: bot/config_handler.py:285
+#: bot/config_handler.py:284
 msgid "This field is required. Please enter a value."
 msgstr "จำเป็นต้องกรอกช่องนี้ กรุณาใส่ค่า"
 
@@ -2235,6 +2227,10 @@ msgstr "Token ของ Telegram bot สำหรับเปิดการแ�
 msgid "Too many invalid attempts. Please start again."
 msgstr "พยายามกรอกผิดเกินจำนวนที่กำหนด กรุณาเริ่มใหม่"
 
+#: bot/modules/general.py:237
+msgid "Too many reports were sent recently. Please wait a little and try again."
+msgstr "มีการส่งรายงานมากเกินไปในช่วงนี้ กรุณารอสักครู่แล้วลองใหม่"
+
 #: bot/modules/player.py:1059
 msgid "Total duration: {total_duration}. Elapsed time: {elapsed_time}. Remaining time: {remaining_time}"
 msgstr "ความยาวทั้งหมด: {total_duration} เวลาที่เล่นไปแล้ว: {elapsed_time} เวลาที่เหลือ: {remaining_time}"
@@ -2255,11 +2251,11 @@ msgstr "กำลังพยายามเชื่อมต่อใหม่
 msgid "Unable to determine the channel for the current video."
 msgstr "ไม่สามารถระบุช่องของวิดีโอปัจจุบันได้"
 
-#: bot/modules/general.py:144 bot/modules/general.py:166 bot/modules/player.py:1044 bot/modules/player.py:242
+#: bot/modules/general.py:155 bot/modules/general.py:177 bot/modules/player.py:1044 bot/modules/player.py:242
 msgid "Unknown"
 msgstr "ไม่ทราบ"
 
-#: bot/modules/tts.py:524
+#: bot/modules/tts.py:528
 msgid "Unknown Google standard TTS language: {lang}. Use /get_voices to list languages."
 msgstr "ไม่รู้จักภาษา Google standard TTS: {lang} ใช้ /get_voices เพื่อดูรายการภาษา"
 
@@ -2271,7 +2267,7 @@ msgstr "ไม่รู้จักภาษา Google standard TTS: {lang} ใ�
 msgid "Unknown command."
 msgstr "ไม่รู้จักคำสั่งนี้"
 
-#: bot/command_handler.py:58 bot/modules/general.py:121
+#: bot/command_handler.py:58 bot/modules/general.py:132
 msgid "Unknown command. Use /help to see all commands."
 msgstr "ไม่รู้จักคำสั่งนี้ ใช้ /help เพื่อดูคำสั่งทั้งหมด"
 
@@ -2303,7 +2299,7 @@ msgstr "วิธีใช้: /cs <new_status>"
 msgid "Usage: /dq <index>"
 msgstr "วิธีใช้: /dq <index>"
 
-#: bot/modules/general.py:157
+#: bot/modules/general.py:168
 msgid "Usage: /dr <your message>"
 msgstr "วิธีใช้: /dr <ข้อความรายงาน>"
 
@@ -2355,11 +2351,11 @@ msgstr "วิธีใช้: /pvoice <รหัสภาษา> ตัวอ�
 msgid "Usage: /pvoice <voice_name>"
 msgstr "วิธีใช้: /pvoice <ชื่อเสียง>"
 
-#: bot/modules/general.py:140
+#: bot/modules/general.py:151
 msgid "Usage: /report <your message>"
 msgstr "วิธีใช้: /report <ข้อความของคุณ>"
 
-#: bot/modules/general.py:94
+#: bot/modules/general.py:105
 msgid "Usage: /search <query>"
 msgstr "วิธีใช้: /search <query>"
 
@@ -2371,7 +2367,7 @@ msgstr "วิธีใช้: /select <ลำดับ>"
 msgid "Usage: /t <time> (e.g., 1:30 or 90)"
 msgstr "วิธีใช้: /t <time> (e.g., 1:30 or 90)"
 
-#: bot/modules/tts.py:651
+#: bot/modules/tts.py:655
 msgid "Usage: /ttsmode <microsoft|google>"
 msgstr "วิธีใช้: /ttsmode <microsoft|google>"
 
@@ -2399,7 +2395,7 @@ msgstr "ไม่พบผู้ใช้ '{nickname}'"
 msgid "User '{nickname}' not found. They will be kicked when they log in for {duration}."
 msgstr "ไม่พบผู้ใช้ '{nickname}' ระบบจะเตะเมื่อเข้าสู่ระบบเป็นเวลา {duration}"
 
-#: bot/modules/general.py:39
+#: bot/modules/general.py:50
 msgid "User '{user}' not found."
 msgstr "ไม่พบผู้ใช้ '{user}'"
 
@@ -2427,7 +2423,7 @@ msgstr "ผู้ใช้ {nickname} อยู่ในรายการยก
 msgid "User {second_name} not found."
 msgstr "ไม่พบผู้ใช้ {second_name}"
 
-#: bot/modules/tts.py:349
+#: bot/modules/tts.py:353
 msgid "Using voice {voice_name} for {detected_lang}"
 msgstr "กำลังใช้เสียง {voice_name} สำหรับภาษา {detected_lang}"
 
@@ -2439,7 +2435,7 @@ msgstr "ตรวจจับ VPN: {state}"
 msgid "Verification code expired. Please start again."
 msgstr "รหัสยืนยันหมดอายุแล้ว กรุณาเริ่มใหม่"
 
-#: bot/modules/tts.py:530
+#: bot/modules/tts.py:534
 msgid "Voice set to {voice_name}."
 msgstr "ตั้งค่าเสียงพูดเป็น {voice_name}"
 
@@ -2451,11 +2447,11 @@ msgstr "การส่งเสียง TeamTalk: {state}"
 msgid "Volume Fading (seconds)"
 msgstr "ระยะเวลาเฟดระดับเสียง (วินาที)"
 
-#: bot/modules/tts.py:497
+#: bot/modules/tts.py:501
 msgid "Volume is only available in Microsoft mode."
 msgstr "การตั้งระดับเสียงพูดใช้ได้เฉพาะโหมด Microsoft"
 
-#: bot/modules/tts.py:506
+#: bot/modules/tts.py:510
 msgid "Volume set to {volume}."
 msgstr "ตั้งค่าความดังเป็น {volume}"
 
@@ -2467,7 +2463,7 @@ msgstr "ยินดีต้อนรับอย่างอบอุ่น {n
 msgid "Warning: You are trying to get out of jail. If you continue to spam, you will be banned."
 msgstr "คำเตือน: คุณกำลังพยายามออกจากห้องกักกัน หากยังสแปมต่อจะถูกแบน"
 
-#: bot/config_handler.py:180
+#: bot/config_handler.py:179
 msgid "Warning: Your config.ini is missing some settings."
 msgstr "คำเตือน: config.ini ของคุณยังขาดการตั้งค่าบางรายการ"
 
@@ -2499,7 +2495,7 @@ msgstr "ยินดีต้อนรับ {nickname}! วันนี้ท�
 msgid "Welcome in, {nickname}! {country} brings good energy."
 msgstr "ยินดีต้อนรับ {nickname}! วันนี้เพื่อนจาก {country} พาพลังดี ๆ มาด้วยครับ"
 
-#: bot/config_handler.py:386
+#: bot/config_handler.py:385
 msgid "Welcome to the SN TalkBot setup wizard!"
 msgstr "ยินดีต้อนรับสู่ตัวช่วยตั้งค่า SN TalkBot!"
 
@@ -2619,7 +2615,7 @@ msgstr "เปิดโหมดแปลข้อความกระซิบ
 msgid "Whoa! {nickname} just arrived from {country}! Let's party!"
 msgstr "ว้าว! {nickname} เดินทางมาจาก {country} แล้ว มาสนุกด้วยกันครับ!"
 
-#: bot/modules/general.py:109
+#: bot/modules/general.py:120
 msgid "Wikipedia link: {page_url}"
 msgstr "ลิงก์ Wikipedia: {page_url}"
 
@@ -2655,17 +2651,13 @@ msgstr "คุณไม่มีข้อความที่รอส่ง"
 msgid "You've reached the end of the list."
 msgstr "คุณมาถึงท้ายรายการแล้ว"
 
-#: bot/config_handler.py:111
+#: bot/config_handler.py:110
 msgid "Your TeamTalk SDK license key."
 msgstr "License Key ของ TeamTalk SDK"
 
-#: bot/config_handler.py:110
+#: bot/config_handler.py:109
 msgid "Your TeamTalk SDK license name, if you have one."
 msgstr "ชื่อ License ของ TeamTalk SDK หากมี"
-
-#: bot/modules/general.py:207
-msgid "Your direct report was sent to Telegram."
-msgstr "ส่งรายงานตรงไปยัง Telegram เรียบร้อยแล้ว"
 
 #: bot/modules/player.py:1116 bot/modules/player.py:1263
 msgid "Your favorites list is empty."
@@ -2675,19 +2667,23 @@ msgstr "รายการโปรดของคุณว่าง"
 msgid "Your message for {target_username} has been saved."
 msgstr "บันทึกข้อความสำหรับ {target_username} แล้ว"
 
-#: bot/modules/general.py:151
+#: bot/modules/general.py:162
 msgid "Your message has been sent to online admins."
 msgstr "ส่งข้อความของคุณให้ผู้ดูแลที่ออนไลน์แล้ว"
+
+#: bot/modules/general.py:235
+msgid "Your report was sent directly to the SNTalkBot developer."
+msgstr "ส่งรายงานของคุณโดยตรงถึงผู้พัฒนา SNTalkBot แล้ว"
 
 #: bot/modules/account_requests.py:260
 msgid "Your verification code"
 msgstr "รหัสยืนยันของคุณ"
 
-#: bot/modules/account_requests.py:98 bot/modules/account_requests.py:81 bot/modules/admin.py:408 bot/modules/admin.py:626 bot/modules/player.py:748 bot/modules/player.py:980 bot/modules/tts.py:569 bot/modules/tts.py:585 bot/modules/tts.py:560 bot/modules/tts.py:575
+#: bot/modules/account_requests.py:98 bot/modules/account_requests.py:81 bot/modules/admin.py:408 bot/modules/admin.py:626 bot/modules/player.py:748 bot/modules/player.py:980 bot/modules/tts.py:573 bot/modules/tts.py:589 bot/modules/tts.py:564 bot/modules/tts.py:579
 msgid "disabled"
 msgstr "ปิดใช้งาน"
 
-#: bot/modules/account_requests.py:98 bot/modules/account_requests.py:81 bot/modules/admin.py:408 bot/modules/admin.py:626 bot/modules/player.py:748 bot/modules/player.py:980 bot/modules/tts.py:569 bot/modules/tts.py:585 bot/modules/tts.py:560 bot/modules/tts.py:575
+#: bot/modules/account_requests.py:98 bot/modules/account_requests.py:81 bot/modules/admin.py:408 bot/modules/admin.py:626 bot/modules/player.py:748 bot/modules/player.py:980 bot/modules/tts.py:573 bot/modules/tts.py:589 bot/modules/tts.py:564 bot/modules/tts.py:579
 msgid "enabled"
 msgstr "เปิดใช้งาน"
 
@@ -2699,7 +2695,7 @@ msgstr "กำลังดักจับข้อความในช่อง
 msgid "subscribed to user messages"
 msgstr "สมัครรับข้อความจากผู้ใช้แล้ว"
 
-#: bot/config_handler.py:102
+#: bot/config_handler.py:101
 msgid "weatherapi.com API Key"
 msgstr "API Key ของ weatherapi.com"
 

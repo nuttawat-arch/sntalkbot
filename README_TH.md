@@ -369,7 +369,7 @@ docker login
 หรือระบุ tag เอง:
 
 ```bash
-TTU_IMAGE_REPO=nuttawat0295/sntalkbot TTU_TAG=2026.08.23-r2 ./publish.sh
+TTU_IMAGE_REPO=nuttawat0295/sntalkbot TTU_TAG=2026.08.23-r5 ./publish.sh
 ```
 
 ### 2) บนเซิร์ฟเวอร์ที่ใช้ helper
@@ -397,7 +397,7 @@ helper จะอิงจาก `TTU_IMAGE_REPO` และ `TTU_TAG` ใน `/et
 sudo ttuhelper update
 ```
 
-ถ้าต้องการทดสอบ image ใหม่โดยไม่ทับ `latest` แนะนำให้ push เป็น tag ใหม่ก่อน เช่น `2026.08.23-r2` แล้วค่อยสลับ tag ที่ helper ใช้
+ถ้าต้องการทดสอบ image ใหม่โดยไม่ทับ `latest` แนะนำให้ push เป็น tag ใหม่ก่อน เช่น `2026.08.23-r5` แล้วค่อยสลับ tag ที่ helper ใช้
 
 
 ## การแบ่งหน้าที่ Full / Player / Server Manager
@@ -408,13 +408,13 @@ Runtime `/help` แสดงเฉพาะคำสั่งที่ถูก 
 - **Server Manager**: คำสั่งจัดการเซิร์ฟเวอร์ + TTS แบบเดิม (`/say`, `/tts`, `/ttsmode`, `/voice`, `/get_voices` ฯลฯ); ไม่มี Music Player/queue
 - **Full Bot**: รวมทั้งสองชุด โดย Player TTS ใช้ชื่อคำสั่ง `p...` แยกจาก Manager TTS จึงไม่ชนกัน
 
-`/report <message>` เป็นรายงานไปยังแอดมิน TeamTalk และมีเฉพาะ Manager/Full ส่วน `/dr <message>` เป็น Direct Report ไป Telegram และมีทุกโหมด
+`/report <message>` เป็นรายงานไปยังแอดมิน TeamTalk และมีเฉพาะ Manager/Full ส่วน `/dr <message>` ส่งตรงถึงระบบรายงานผู้พัฒนา SNTalkBot ทางการและมีทุกโหมด
 
 Alias ซ้ำที่เลิกใช้แล้ว: `/h`, `/gl`, `/rs`, `/sd` เหลือคำสั่งหลัก `/help`, `/l`, `/restart`, `/shutdown` อย่างละตัว
 
 ## Player TTS — ประกาศคิว/เพลงแบบไม่พูดซ้อน
 
-รุ่น `2026.08.23-r2` เปลี่ยน Player announcement จากการยิงหลาย thread พร้อมกันเป็น **FIFO queue + worker เดียว** ดังนั้นข้อความเช่น “เพิ่มเพลงเข้าคิวแล้ว” และ “กำลังเล่นเพลง...” จะรอพูดต่อกันตามลำดับ ไม่พูดทับกัน
+รุ่น `2026.08.23-r5` เปลี่ยน Player announcement จากการยิงหลาย thread พร้อมกันเป็น **FIFO queue + worker เดียว** ดังนั้นข้อความเช่น “เพิ่มเพลงเข้าคิวแล้ว” และ “กำลังเล่นเพลง...” จะรอพูดต่อกันตามลำดับ ไม่พูดทับกัน
 
 คำสั่ง Player TTS:
 
@@ -488,29 +488,22 @@ Microsoft Edge TTS ยังเก็บไว้เป็นตัวเลื�
 
 เมื่ออัปเดตจาก r2 หรือต่ำกว่า ระบบจะ migrate ค่า TTS ครั้งเดียว: เอา key ของ Google Cloud เก่าออกและตั้ง Google standard gTTS เป็นค่าเริ่มต้น หลังจาก migration แล้วถ้าผู้ดูแลสลับกลับ Microsoft ระบบจะไม่บังคับกลับ Google ใน restart ถัดไป
 
-## `/dr` — Direct Report ไป Telegram
+## `/dr` — รายงานถึงผู้พัฒนา SNTalkBot โดยตรง
 
-`/report` เดิมยังส่งหาแอดมิน TeamTalk เหมือนเดิม ส่วน `/dr <message>` ส่งไป Telegram destination ที่ตั้งค่าไว้ โดยข้อความประกอบด้วย server, bot/mode, nickname, TeamTalk username, channel และข้อความรายงาน
+`/dr <message>` ใช้ endpoint ทางการที่ฝังใน SNTalkBot: `https://report.nuttawat.ddnsfree.com/api/report` ผู้ใช้ไม่ต้องตั้ง Telegram token หรือ chat ID ใน container
 
-ถ้ายังไม่ได้ตั้ง token หรือ chat ID `/dr` จะไม่ throw error และจะบอกผู้ใช้ว่ายังไม่ได้ตั้งค่า
+ข้อมูลที่ส่งเมื่อผู้ใช้เรียก `/dr` เท่านั้น: เวอร์ชัน/โหมดบอต, ชื่อ TeamTalk server และ host/port, ชื่อบอต, nickname/username ของผู้รายงาน, channel และข้อความที่ผู้ใช้พิมพ์หลัง `/dr` ระบบไม่ส่ง TeamTalk password, channel password, cookies หรือบทสนทนาอื่น
 
-**ห้ามใส่ token จริงลง GitHub, Dockerfile หรือ Docker image** สำหรับ Docker/TTUHelper ให้เก็บ secret ที่ `/etc/default/ttuhelper` แล้ว helper จะส่งเข้า container เป็น environment:
-
-```text
-SNTALKBOT_TELEGRAM_BOT_TOKEN
-SNTALKBOT_TELEGRAM_REPORT_CHAT_ID
-```
-
-ค่าจาก environment มีลำดับความสำคัญเหนือ `[telegram]` ใน `config.ini` เพื่อให้ตั้งค่า default กลางหนึ่งครั้งสำหรับทุก instance ได้อย่างปลอดภัยกว่า
+หาก API กลางหยุดทำงาน บอตจะแจ้งว่าระบบรายงานขัดข้องชั่วคราวและจะไม่ทำให้บอต crash ส่วน `/report` ยังคงเป็นคำสั่งรายงานหาแอดมิน TeamTalk ตามเดิม
 
 ## อัปเดต Docker image และ instance เดิม
 
 หลังแก้ source และ push GitHub แล้ว ให้ build/push tag ใหม่ เช่น:
 
 ```powershell
-docker build --platform linux/amd64 -t nuttawat0295/sntalkbot:2026.08.23-r2 .
-docker push nuttawat0295/sntalkbot:2026.08.23-r2
-docker tag nuttawat0295/sntalkbot:2026.08.23-r2 nuttawat0295/sntalkbot:latest
+docker build --platform linux/amd64 -t nuttawat0295/sntalkbot:2026.08.23-r5 .
+docker push nuttawat0295/sntalkbot:2026.08.23-r5
+docker tag nuttawat0295/sntalkbot:2026.08.23-r5 nuttawat0295/sntalkbot:latest
 docker push nuttawat0295/sntalkbot:latest
 ```
 
@@ -525,3 +518,9 @@ sudo ttuhelper update
 ## Player TTS และเพลง
 
 Player announcement ใช้ audio stream แยกจากเพลงและ mix กันที่ PulseAudio โดย **ไม่ลด volume, ไม่ pause และไม่ duck เพลง** ขณะพูด TTS ส่วน FIFO queue ทำให้ข้อความ TTS พูดทีละข้อความไม่ซ้อนกันเอง
+
+## 2026.08.23-r5
+
+- `/dr` ใช้ official developer relay ที่ `https://report.nuttawat.ddnsfree.com/api/report`
+- Telegram Bot Token ไม่อยู่ใน Docker image หรือ config ของผู้ใช้
+- Player TTS และเพลงยังเป็น audio stream แยก ไม่มี music ducking

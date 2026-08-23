@@ -1,3 +1,13 @@
+# SNTalkBot 2026.08.23-r5
+
+- `/dr` เปลี่ยนเป็นระบบรายงานถึงผู้พัฒนาแบบ relay กลางที่ `https://report.nuttawat.ddnsfree.com/api/report`
+- ไม่ต้องและไม่ควรฝัง Telegram Bot Token ใน Docker image หรือ config ของลูกค้า
+- API ล่ม/timeout แล้วคำสั่งจบอย่างปลอดภัย ไม่ทำให้บอต crash
+- จำกัดข้อความ `/dr` สูงสุด 2000 ตัวอักษร
+- `/about` อ่านเวอร์ชันจากไฟล์ VERSION จริง ไม่ hard-code รุ่นเก่า
+- คง Google standard gTTS และ FIFO TTS จาก r3
+- คง No Music Ducking จาก r4: TTS Player ไม่ปรับ volume เพลง
+
 # Release notes — 2026.08.23-r4
 
 - แก้ Player TTS announcement ไม่ให้ลด/duck/พักเพลงอีกต่อไป

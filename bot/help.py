@@ -126,7 +126,7 @@ class HelpCommands:
             '/shutdown': self._('Admins only: Cleanly shut down the bot.'),
             '/about': self._('Show bot version and runtime information.'),
             '/report <message>': self._('Send a help request or problem report to online administrators.'),
-            '/dr <message>': self._('Send a direct problem report to the configured Telegram destination. If Telegram is not configured, the command exits safely.'),
+            '/dr <message>': self._('Send a problem report directly to the official SNTalkBot developer report service.'),
             '/blockcmd [+|-]<command>': self._('Admins only: block or unblock one command for normal users; without an argument, list blocked commands.'),
             '/gcid [channel path]': self._('Show the TeamTalk channel ID for the current channel or a specified channel path.'),
             '/language <code>': self._('Admins only: save the bot interface language code. Restart the bot to reload every module in the new language.'),

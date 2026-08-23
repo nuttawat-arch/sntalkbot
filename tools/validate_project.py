@@ -149,9 +149,9 @@ else:
     ok("Player TTS controls are registered with distinct command names")
 
 if "dr" not in names:
-    fail("/dr direct Telegram report command is missing")
+    fail("/dr official developer report command is missing")
 else:
-    ok("/dr direct Telegram report command is registered")
+    ok("/dr official developer report command is registered")
 
 # Static role map: Player-only must not expose Manager TTS/admin commands and
 # Manager-only must not expose Player commands. General /dr remains common.
@@ -227,6 +227,39 @@ if missing_th:
     fail(f"Thai locale has {len(missing_th)} untranslated entries")
 else:
     ok("Thai locale has no empty translations")
+
+
+# Official /dr must use the central relay, not Telegram credentials embedded in the bot.
+general_py = (ROOT / "bot" / "modules" / "general.py").read_text(encoding="utf-8")
+if "https://report.nuttawat.ddnsfree.com" not in general_py or "/api/report" not in general_py:
+    fail("official developer report relay URL is missing")
+else:
+    ok("official developer report relay URL is embedded")
+if "send_telegram_notification" in general_py:
+    fail("GeneralCog still sends /dr directly to Telegram")
+else:
+    ok("/dr no longer sends directly to Telegram")
+
+# Prevent accidentally publishing Telegram bot tokens or similar bot-token secrets.
+secret_pattern = re.compile(r"\b\d{8,12}:[A-Za-z0-9_-]{30,}\b")
+secret_hits = []
+for path in ROOT.rglob("*"):
+    if not path.is_file() or ".git" in path.parts or path.suffix in {".mo", ".zip", ".7z"}:
+        continue
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        continue
+    if secret_pattern.search(text):
+        secret_hits.append(path.relative_to(ROOT).as_posix())
+if secret_hits:
+    fail("possible Telegram bot token leaked in release files: " + ", ".join(secret_hits))
+else:
+    ok("no Telegram bot-token shaped secrets found in release files")
+
+for forbidden_gui in ["bot/gui.py", "requirements-gui.txt", "setup.bat", "run_bot.bat"]:
+    if (ROOT / forbidden_gui).exists():
+        fail(f"Linux/Docker-only release still contains GUI/Windows runtime file: {forbidden_gui}")
 
 # Multi-profile functionality must stay removed.
 profile_hits = []

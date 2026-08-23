@@ -98,7 +98,6 @@ class ConfigHandler:
             
             {'type': 'header', 'text': self._("Optional Integrations")},
             {'section': 'telegram', 'key': 'telegram_bot_token', 'type': 'password', 'prompt': self._("Telegram Bot Token"), 'help_text': self._("Token for your Telegram bot to enable notifications. Leave blank to disable.")},
-            {'section': 'telegram', 'key': 'report_chat_id', 'type': 'text', 'prompt': self._("Telegram Report Chat ID"), 'help_text': self._("Destination chat ID for /dr direct reports. Leave blank to disable direct Telegram reports.")},
             {'section': 'weather', 'key': 'api_key', 'type': 'text', 'prompt': self._("weatherapi.com API Key"), 'help_text': self._("API key for the weather command. See the README for instructions on how to get one.")},
             {'section': 'ssh', 'key': 'hostname', 'type': 'text', 'prompt': self._("SSH Hostname"), 'help_text': self._("Hostname or IP for the SSH server for the /exec and /reboot commands. Leave blank to disable.")},
             {'section': 'ssh', 'key': 'port', 'type': 'int', 'prompt': self._("SSH Port"), 'default': 22},
@@ -604,10 +603,8 @@ class ConfigHandler:
         # Environment variables are intentionally supported so Docker/helper deployments
         # can keep secrets out of GitHub, Docker images, and per-instance config files.
         token = os.getenv("SNTALKBOT_TELEGRAM_BOT_TOKEN") or self.config.get("telegram", "telegram_bot_token", fallback="")
-        report_chat_id = os.getenv("SNTALKBOT_TELEGRAM_REPORT_CHAT_ID") or self.config.get("telegram", "report_chat_id", fallback="")
         return {
             "telegram_bot_token": str(token or "").strip(),
-            "report_chat_id": str(report_chat_id or "").strip(),
         }
 
     def get_exclusion_config(self):

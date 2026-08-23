@@ -2,7 +2,18 @@ from TeamTalk5 import ttstr, UserType
 import wikipedia
 import langdetect
 import requests
+from pathlib import Path
+from datetime import datetime, timezone
 from bot.utils import BotUtils as utils
+
+DEVELOPER_REPORT_BASE_URL = "https://report.nuttawat.ddnsfree.com"
+DEVELOPER_REPORT_ENDPOINT = DEVELOPER_REPORT_BASE_URL.rstrip("/") + "/api/report"
+
+def _project_version():
+    try:
+        return (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
+    except Exception:
+        return "unknown"
 
 class GeneralCog:
     """
@@ -151,15 +162,15 @@ class GeneralCog:
         self.bot.privateMessage(sender_id, self._("Your message has been sent to online admins.") if sent_to_any else self._("No admins online to receive your message."))
 
     def handle_direct_report_command(self, textmessage, *args):
-        """Send a direct problem report to the globally configured Telegram destination."""
+        """Send an explicit user-submitted bug report to the official developer relay."""
         sender_id = textmessage.nFromUserID
         if not args:
             self.bot.privateMessage(sender_id, self._("Usage: /dr <your message>"))
             return
-        token = str(self.bot.telegram_config.get("telegram_bot_token", "") or "").strip()
-        chat_id = str(self.bot.telegram_config.get("report_chat_id", "") or "").strip()
-        if not token or not chat_id:
-            self.bot.privateMessage(sender_id, self._("Direct Telegram reporting is not configured on this bot."))
+
+        report_message = " ".join(args).strip()
+        if len(report_message) > 2000:
+            self.bot.privateMessage(sender_id, self._("The direct report is too long. Please keep it under 2000 characters."))
             return
 
         sender_user = self.bot.getUser(sender_id)
@@ -175,42 +186,64 @@ class GeneralCog:
             channel_name = str(channel_id or "-")
 
         server_address = str(self.bot.server_config.get("address", "") or "-")
-        server_port = str(self.bot.server_config.get("tcp_port", "") or "")
-        server_display = server_address
+        server_port = int(self.bot.server_config.get("tcp_port", 0) or 0)
+        server_name = "-"
         try:
             props = self.bot.getServerProperties()
-            name = ttstr(getattr(props, "szServerName", ""))
-            if name:
-                server_display = name
+            server_name = ttstr(getattr(props, "szServerName", "")) or "-"
         except Exception:
             pass
-        if server_port:
-            server_display = f"{server_display} ({server_address}:{server_port})"
 
         mode = "full" if self.bot.player_enabled and self.bot.server_management_enabled else (
             "player" if self.bot.player_enabled else "manager"
         )
-        report_text = (
-            "SN TalkBot - Direct Report\n"
-            f"Server: {server_display}\n"
-            f"Bot: {self.bot.bot_config.get('nickname', 'SN TalkBot')} [{mode}]\n"
-            f"User: {nickname}\n"
-            f"Username: {username}\n"
-            f"Channel: {channel_name} (ID {channel_id})\n"
-            f"Report: {' '.join(args)}"
-        )
-        self.bot.io_pool.submit(self._send_direct_report_task, sender_id, token, chat_id, report_text)
+        payload = {
+            "product": "SNTalkBot",
+            "version": _project_version(),
+            "mode": mode,
+            "server_name": server_name,
+            "server_host": server_address,
+            "server_port": server_port,
+            "bot_nickname": str(self.bot.bot_config.get("nickname", "SN TalkBot") or "SN TalkBot"),
+            "nickname": nickname,
+            "username": username,
+            "channel": channel_name,
+            "channel_id": int(channel_id or 0),
+            "message": report_message,
+            "client_timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        self.bot.io_pool.submit(self._send_direct_report_task, sender_id, payload)
 
-    def _send_direct_report_task(self, sender_id, token, chat_id, report_text):
-        ok = utils.send_telegram_notification(token, chat_id, report_text)
-        if ok:
-            self.bot.privateMessage(sender_id, self._("Your direct report was sent to Telegram."))
-        else:
-            self.bot.privateMessage(sender_id, self._("Could not send the direct report to Telegram. Please contact an admin."))
+    def _send_direct_report_task(self, sender_id, payload):
+        try:
+            response = requests.post(
+                DEVELOPER_REPORT_ENDPOINT,
+                json=payload,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": f"SNTalkBot/{payload.get('version', 'unknown')}",
+                    "X-SNTalkBot-Report": "1",
+                },
+                timeout=(5, 15),
+            )
+            data = {}
+            try:
+                data = response.json()
+            except Exception:
+                pass
+            if response.status_code in (200, 201, 202) and bool(data.get("accepted", data.get("ok", False))):
+                self.bot.privateMessage(sender_id, self._("Your report was sent directly to the SNTalkBot developer."))
+            elif response.status_code == 429:
+                self.bot.privateMessage(sender_id, self._("Too many reports were sent recently. Please wait a little and try again."))
+            else:
+                self.bot.privateMessage(sender_id, self._("The developer report service is temporarily unavailable. Please try again later."))
+        except requests.exceptions.RequestException as exc:
+            print(f"Developer report relay error: {exc}")
+            self.bot.privateMessage(sender_id, self._("The developer report service is temporarily unavailable. Please try again later."))
 
     def handle_about_command(self, textmessage, *args):
         import platform
-        self.bot.privateMessage(textmessage.nFromUserID, f"SN TalkBot 2026.08.23-r2 | Python {platform.python_version()} | Linux/Docker ready | yt-dlp + MPV + TeamTalk")
+        self.bot.privateMessage(textmessage.nFromUserID, f"SN TalkBot {_project_version()} | Python {platform.python_version()} | Linux/Docker ready | yt-dlp + MPV + TeamTalk | Developer reports: {DEVELOPER_REPORT_BASE_URL}")
 
     def handle_gcid_command(self, textmessage, *args):
         if args:
