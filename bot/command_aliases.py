@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Intentional short slash-command aliases.
+"""Intentional short command aliases.
 
 Aliases are resolved by CommandHandler and never register a second handler.
 This keeps the canonical command set unambiguous while preserving fast,
-screen-reader-friendly shortcuts.
+screen-reader-friendly shortcuts. Commands accept the same arguments as their canonical target.
 """
 
 COMMAND_ALIASES = {

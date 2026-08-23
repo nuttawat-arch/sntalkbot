@@ -381,7 +381,10 @@ class AdminCog:
             return
         status_message = " ".join(args)
         self.bot.bot_config["status_message"] = status_message
-        self.bot.doChangeStatus(self.bot.bot_config['gender'], ttstr(status_message))
+        self.bot.doChangeStatus(
+            self.bot.bot_config['gender'],
+            ttstr(self.bot.get_idle_status_message()),
+        )
         self.bot.privateMessage(textmessage.nFromUserID, self._("Success"))
 
     def handle_change_gender(self, textmessage, *args):
@@ -392,7 +395,7 @@ class AdminCog:
         gender_map = {'m': 0, 'f': 256, 'n': 4096}
         if gender_mode in gender_map:
             self.bot.bot_config["gender"] = gender_map[gender_mode]
-            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self.bot.bot_config['status_message']))
+            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self.bot.get_idle_status_message()))
             self.bot.privateMessage(textmessage.nFromUserID, self._("Success"))
         else:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Available modes are: m for male, f for female, n for neutral."))

@@ -150,14 +150,19 @@ class HelpCommands:
         item = self.get(command_name)
         if item:
             syntax, description = item
+            syntax = syntax.lstrip("/")
         else:
-            syntax = "/" + (command_name or "unknown").lstrip("/")
+            syntax = (command_name or "unknown").lstrip("/")
             description = self._("No help text is available for this command.")
         if admin_only and "admin" not in description.lower() and "ผู้ดูแล" not in description:
             description = self._("Admins only") + ". " + description
+        # Present slashless syntax as the default.  The old /command form remains
+        # accepted for backward compatibility, but users no longer need to type it.
+        for known_name in self._by_name:
+            description = description.replace("/" + known_name, known_name)
         aliases = list(aliases or [])
         if aliases:
-            alias_text = ", ".join("/" + name for name in aliases)
+            alias_text = ", ".join(name for name in aliases)
             description = description + " " + self._("Short aliases: {aliases}").format(aliases=alias_text)
         return f"{syntax} : {description}"
 

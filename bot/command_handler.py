@@ -1,5 +1,5 @@
 import shlex
-from TeamTalk5 import TextMessage, UserType, ttstr
+from TeamTalk5 import TextMessage, TextMsgType, UserType, ttstr
 
 
 class Command:
@@ -53,20 +53,48 @@ class CommandHandler:
         normalized = self._normalize(name)
         return normalized in self.commands or normalized in self.aliases
 
+    def _split_message(self, message_text):
+        try:
+            return shlex.split(message_text)
+        except ValueError:
+            return message_text.split()
+
+    def is_slashless_command_candidate(self, message_text, msg_type):
+        """Return True only for a known slashless command in a private message.
+
+        Slashless commands are intentionally private-message only.  This prevents
+        short names such as ``m``, ``w``, ``h`` and ``l`` from hijacking ordinary
+        channel conversation.  Slash-prefixed commands remain valid everywhere
+        they were valid before.
+        """
+        text = ttstr(message_text).strip()
+        if not text or text.startswith(self.prefix):
+            return False
+        if msg_type != TextMsgType.MSGTYPE_USER:
+            return False
+        parts = self._split_message(text)
+        if not parts:
+            return False
+        return self.has_name(parts[0])
+
     def handle_message(self, textmessage: TextMessage):
         message_text = ttstr(textmessage.szMessage).strip()
-        # All commands are slash commands. Plain text is never parsed as a command.
-        if not message_text.startswith(self.prefix):
+        if not message_text:
             return False
 
-        try:
-            parts = shlex.split(message_text)
-        except ValueError:
-            parts = message_text.split()
+        explicit_prefix = message_text.startswith(self.prefix)
+        if explicit_prefix:
+            command_text = message_text[len(self.prefix):].lstrip()
+        else:
+            if not self.is_slashless_command_candidate(message_text, textmessage.nMsgType):
+                return False
+            command_text = message_text
+
+        parts = self._split_message(command_text)
         if not parts:
             return False
 
-        requested_name = parts[0][len(self.prefix):].lower()
+        requested_name = parts[0].lower()
         args = parts[1:]
         if not requested_name:
             return False
@@ -74,8 +102,12 @@ class CommandHandler:
         command_name = self.resolve_name(requested_name)
         command = self.commands.get(command_name)
         if command is None:
-            self.bot.privateMessage(textmessage.nFromUserID, self.bot._("Unknown command. Use /help to see all commands."))
-            return True
+            # Unknown plain text is never treated as a command.  Only an explicit
+            # slash invocation gets an unknown-command response.
+            if explicit_prefix:
+                self.bot.privateMessage(textmessage.nFromUserID, self.bot._("Unknown command. Use /help to see all commands."))
+                return True
+            return False
 
         sender_username = ttstr(textmessage.szFromUsername)
         is_authorized = self.bot.is_authorized_user(sender_username)

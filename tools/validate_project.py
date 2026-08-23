@@ -9,6 +9,8 @@ import ast
 from pathlib import Path
 import re
 import sys
+import importlib.util
+import types
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -165,6 +167,72 @@ if wrong_required:
 else:
     ok("required usability aliases are present (/h /rs /sd /w /ap /ch /pf)")
 
+# Command-dispatch regression test without importing the native TeamTalk SDK.
+def validate_slashless_dispatch():
+    fake = types.ModuleType("TeamTalk5")
+    class _MsgType:
+        MSGTYPE_USER = 1
+        MSGTYPE_CHANNEL = 2
+        MSGTYPE_BROADCAST = 3
+    class _UserType:
+        USERTYPE_ADMIN = 2
+    fake.TextMessage = object
+    fake.TextMsgType = _MsgType
+    fake.UserType = _UserType
+    fake.ttstr = lambda value: str(value)
+    previous = sys.modules.get("TeamTalk5")
+    sys.modules["TeamTalk5"] = fake
+    try:
+        spec = importlib.util.spec_from_file_location("_sntalkbot_command_handler_test", ROOT / "bot" / "command_handler.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        calls = []
+        class Bot:
+            commands_locked = False
+            blocked_commands = set()
+            def _(self, text): return text
+            def privateMessage(self, user_id, message): pass
+            def is_authorized_user(self, username): return False
+            def getUser(self, user_id): return None
+        bot = Bot()
+        handler = module.CommandHandler(bot)
+        handler.register_command("autoplay", lambda msg, *args: calls.append(tuple(args)))
+        handler.register_alias("ap", "autoplay")
+
+        def msg(text, msg_type):
+            return types.SimpleNamespace(szMessage=text, nMsgType=msg_type, nFromUserID=10, szFromUsername="user")
+
+        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_USER)) is True
+        assert calls[-1] == ("on",)
+        assert handler.handle_message(msg("ap off", _MsgType.MSGTYPE_USER)) is True
+        assert calls[-1] == ("off",)
+        assert handler.handle_message(msg("/ap on", _MsgType.MSGTYPE_USER)) is True
+        assert calls[-1] == ("on",)
+        before = list(calls)
+        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_CHANNEL)) is False
+        assert calls == before
+        assert handler.handle_message(msg("/ap off", _MsgType.MSGTYPE_CHANNEL)) is True
+        assert calls[-1] == ("off",)
+        assert handler.handle_message(msg("hello there", _MsgType.MSGTYPE_USER)) is False
+
+        bot.blocked_commands = {"autoplay"}
+        before = list(calls)
+        assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_USER)) is True
+        assert calls == before
+        return True
+    except Exception as exc:
+        fail(f"slashless command-dispatch regression: {exc}")
+        return False
+    finally:
+        if previous is None:
+            sys.modules.pop("TeamTalk5", None)
+        else:
+            sys.modules["TeamTalk5"] = previous
+
+if validate_slashless_dispatch():
+    ok("slashless private commands preserve alias arguments/on-off; slash form remains compatible; plain channel chat stays safe")
+
 required_player_tts = {"ptts", "pttsmode", "pvoice", "pvoices", "pttsrate", "pttsspeed"}
 if not required_player_tts.issubset(set(names)):
     fail("Player TTS control commands missing: " + ", ".join('/' + x for x in sorted(required_player_tts - set(names))))
@@ -235,15 +303,19 @@ else:
 commands_th = ROOT / "COMMANDS_TH.md"
 th_lines = [
     line for line in commands_th.read_text(encoding="utf-8").splitlines()
-    if line.startswith("/")
+    if " : " in line and line.split(" : ", 1)[0].split()[0].lstrip("/").lower() in set(names)
 ] if commands_th.exists() else []
 th_names = [line.split(" : ", 1)[0].split()[0].lstrip("/").lower() for line in th_lines]
+if any(line.startswith("/") for line in th_lines):
+    fail("COMMANDS_TH.md still presents slash-prefixed syntax as primary")
+else:
+    ok("COMMANDS_TH.md presents slashless syntax as primary")
 if len(th_lines) != len(names) or set(th_names) != set(names):
     fail("COMMANDS_TH.md does not exactly match registered commands")
 else:
     ok(f"COMMANDS_TH.md matches all registered commands ({len(th_lines)})")
 commands_th_text = commands_th.read_text(encoding="utf-8") if commands_th.exists() else ""
-missing_alias_docs = sorted(alias for alias in aliases if f"/{alias}" not in commands_th_text)
+missing_alias_docs = sorted(alias for alias in aliases if not re.search(rf"(?:คำสั่งย่อ|Short aliases):[^\n]*\b{re.escape(alias)}\b", commands_th_text))
 if missing_alias_docs:
     fail("COMMANDS_TH.md is missing short-alias documentation: " + ", ".join('/' + x for x in missing_alias_docs))
 else:
@@ -254,7 +326,7 @@ if long_help_lines:
     fail(f"Thai /help line exceeds 480 UTF-8 bytes ({longest[0]}): {longest[1]}")
 elif th_lines:
     max_bytes = max(len(line.encode("utf-8")) for line in th_lines)
-    ok(f"Thai /help lines fit one TeamTalk message (max {max_bytes}/480 UTF-8 bytes)")
+    ok(f"Thai help lines fit one TeamTalk message (max {max_bytes}/480 UTF-8 bytes)")
 
 missing_th = thai_untranslated()
 if missing_th:
@@ -345,6 +417,42 @@ if profile_hits:
     fail("legacy multi-profile references remain: " + ", ".join(profile_hits))
 else:
     ok("legacy multi-profile references are absent")
+
+
+# Role-specific default status must clearly identify each bot profile while preserving custom status.
+identity_path = ROOT / "bot" / "bot_identity.py"
+spec = importlib.util.spec_from_file_location("sntalkbot_bot_identity", identity_path)
+identity = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(identity)
+status_cases = {
+    (True, False): "Player Bot | พิมพ์ help เพื่อดูคำสั่ง",
+    (False, True): "Server Manager Bot | พิมพ์ help เพื่อดูคำสั่ง",
+    (True, True): "Full Bot (Player + Server Manager) | พิมพ์ help เพื่อดูคำสั่ง",
+}
+for flags, expected in status_cases.items():
+    actual = identity.role_status_message(*flags)
+    if actual != expected:
+        fail(f"role status mismatch for {flags}: {actual!r}")
+if identity.effective_status_message("SN TalkBot", True, False) != status_cases[(True, False)]:
+    fail("legacy SN TalkBot status does not migrate to Player role status")
+elif identity.effective_status_message("auto", False, True) != status_cases[(False, True)]:
+    fail("auto status does not resolve to Server Manager role status")
+elif identity.effective_status_message("สถานะของฉัน", True, True) != "สถานะของฉัน":
+    fail("custom status is not preserved")
+else:
+    ok("default status identifies Player/Manager/Full modes and preserves custom status")
+
+sntalkbot_status_source = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
+player_status_source = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
+admin_status_source = (ROOT / "bot" / "modules" / "admin.py").read_text(encoding="utf-8")
+if "get_idle_status_message" not in sntalkbot_status_source:
+    fail("runtime role-status resolver is not wired into SNTalkBot")
+elif "status_msg = self.bot.get_idle_status_message()" not in player_status_source:
+    fail("Player does not restore role status after playback")
+elif "ttstr(self.bot.get_idle_status_message())" not in admin_status_source:
+    fail("admin status/gender path does not resolve automatic role status")
+else:
+    ok("role status is restored consistently after login/playback/admin changes")
 
 for required in [
     "Dockerfile", "docker-compose.yml", "docker-entrypoint.sh", "run_linux.sh",

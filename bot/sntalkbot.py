@@ -24,6 +24,7 @@ import threading
 from threading import Thread, Lock
 from concurrent.futures import ThreadPoolExecutor
 from bot.player import Player
+from bot.bot_identity import effective_status_message
 
 
 class SNTalkBot(TeamTalk):
@@ -95,6 +96,14 @@ class SNTalkBot(TeamTalk):
         self.random_tts_messages = []
         self.initialize_connection()
         self._register_cogs()
+
+    def get_idle_status_message(self):
+        """Return the configured custom status or a role-specific automatic default."""
+        return effective_status_message(
+            self.bot_config.get("status_message", ""),
+            self.player_enabled,
+            self.server_management_enabled,
+        )
 
     def _resolve_input_device(self, configured):
         """Resolve TeamTalk input by numeric ID, name substring, or auto."""
@@ -389,10 +398,10 @@ class SNTalkBot(TeamTalk):
             self.doJoinChannelByID(channel_id, ttstr(self.bot_config['channel_password']))
         self.subscribe_user_messages()
         self.subscribe_channel_messages()
-        if self.bot_config["status_message"] is not None:
-            self.doChangeStatus(ttstr(self.bot_config["gender"]), ttstr(self.bot_config["status_message"]))
-        else:
-            self.doChangeStatus(ttstr(self.bot_config["gender"]), ttstr(""))
+        self.doChangeStatus(
+            ttstr(self.bot_config["gender"]),
+            ttstr(self.get_idle_status_message()),
+        )
         self._maybe_start_random_tts_broadcast()
 
     def onCmdMyselfKickedFromChannel(self, channelid, user):
@@ -533,8 +542,10 @@ class SNTalkBot(TeamTalk):
         if self.player_cog is not None and self.player_cog.handle_prefixed_message(textmessage):
             return
 
-        if message_text.startswith(self.command_handler.prefix):
-            self.command_handler.handle_message(textmessage)
+        # Commands may be written with or without the leading slash.  Slashless
+        # commands are accepted only in private messages by CommandHandler, so
+        # ordinary channel chat cannot be mistaken for short commands.
+        if self.command_handler.handle_message(textmessage):
             return
 
         # Auto-play links

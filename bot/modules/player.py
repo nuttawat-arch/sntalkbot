@@ -691,7 +691,7 @@ class PlayerCog:
             self.bot.enableVoiceTransmission(False)
             user_nickname = self._nickname(textmessage.nFromUserID)
             self._send_playback_message(self._("{nickname} stopped the playback and cleared queue").format(nickname=user_nickname))
-            status_msg = self.bot.bot_config.get('status_message', "")
+            status_msg = self.bot.get_idle_status_message()
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
         else:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Nothing is currently playing"))
@@ -737,7 +737,7 @@ class PlayerCog:
             return
 
         self.bot.enableVoiceTransmission(False)
-        status_msg = self.bot.bot_config.get('status_message', "")
+        status_msg = self.bot.get_idle_status_message()
         self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
 
 
@@ -1330,6 +1330,9 @@ class PlayerCog:
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(""))
             self._send_playback_message(self._("Status hidden."))
         else:
-            title = self.player.media_title if self.player.is_playing else ""
-            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(title))
+            if self.player.is_playing:
+                status = self._("Playing: {title}").format(title=self.player.media_title)
+            else:
+                status = self.bot.get_idle_status_message()
+            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status))
             self._send_playback_message(self._("Status shown."))

@@ -1,16 +1,19 @@
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 
+คำสั่งในข้อความส่วนตัวไม่ต้องใส่ `/` นำหน้าอีกต่อไป เช่น `help`, `ap on`, `rs` และคำสั่งแบบเดิม `/help`, `/ap on`, `/rs` ยังใช้ได้เหมือนเดิม ในห้องสาธารณะยังคงใช้ `/` เพื่อป้องกันข้อความธรรมดาชนกับคำสั่งย่อ
+
+
 โปรเจกต์นี้รวม `tt_utilities-nut`, ส่วนที่จำเป็นจาก `tt_utilities-main` และแนวทางที่แข็งแรงจาก `TTMediaBot-th` ไว้ในบอต TeamTalk ตัวเดียว โดยใช้ single-bot config เท่านั้น ไม่มีระบบหลายโปรไฟล์
 
 ## จุดสำคัญของรุ่นนี้
 
 - คำสั่งผู้ใช้ทั้งหมดต้องขึ้นต้นด้วย `/`; ข้อความธรรมดาจะไม่ถูก parser ตีความเป็นคำสั่ง
 - ชื่อคำสั่งที่ลงทะเบียนจริงไม่ซ้ำกัน และระบบจะหยุดทันทีด้วย error หากนักพัฒนาเพิ่มชื่อซ้ำในอนาคต
-- `/help` ส่งหัวข้อก่อนหนึ่งข้อความ แล้วส่งคำสั่งพร้อมคำอธิบายทีละคำสั่ง หนึ่งคำสั่งต่อหนึ่ง TeamTalk private message
-- Player ใช้ `yt-dlp` โดยตรง รองรับ YouTube, YouTube Music, URL/stream, playlist/channel, queue, favorites, autoplay, history, seek, volume/speed, M1/M2/M3, audio filters และ download
+- `help` ส่งหัวข้อก่อนหนึ่งข้อความ แล้วส่งคำสั่งพร้อมคำอธิบายทีละคำสั่ง หนึ่งคำสั่งต่อหนึ่ง TeamTalk private message
+- Player ใช้ `yt-dlp` โดยตรง รองรับ YouTube, YouTube Music, URL/stream, playlistchannel, queue, favorites, autoplay, history, seek, volumespeed, M1/M2/M3, audio filters และ download
 - มี worker prefetch ลิงก์ล่วงหน้าเพื่อไม่ให้การ extract ของ yt-dlp ไปบล็อก TeamTalk event thread
 - มี TTS ประกาศเพลงและคิว พร้อมลดระดับเพลงชั่วคราวระหว่างประกาศ
-- รองรับการ block command เป็นรายคำสั่งด้วย `/blockcmd`
+- รองรับการ block command เป็นรายคำสั่งด้วย `blockcmd`
 - reconnect ทำใน worker แยกและกำหนดจำนวนครั้ง/ช่วงเวลาได้
 - Linux headless ใช้ MPV + PulseAudio virtual sink เพื่อส่งเสียงจริงเข้า TeamTalk
 - รองรับ Docker และ systemd
@@ -24,20 +27,20 @@
 ระบบต้อนรับมี 2 แบบและควบคุมแยกกัน:
 
 1. **Random Welcome Broadcast ตอนผู้ใช้ล็อกอินเข้าเซิร์ฟเวอร์**
-   - เปิดจาก TeamTalk: `/welcomebroadcast on`
-   - ปิดจาก TeamTalk: `/welcomebroadcast off`
-   - ดูสถานะ: `/welcomebroadcast status`
-   - ส่ง `/welcomebroadcast` โดยไม่ใส่อาร์กิวเมนต์เพื่อสลับเปิด/ปิดทันที
+   - เปิดจาก TeamTalk: `welcomebroadcast on`
+   - ปิดจาก TeamTalk: `welcomebroadcast off`
+   - ดูสถานะ: `welcomebroadcast status`
+   - ส่ง `welcomebroadcast` โดยไม่ใส่อาร์กิวเมนต์เพื่อสลับเปิด/ปิดทันที
    - คำสั่งจะบันทึกค่ากลับ `config.ini` จึงยังคงสถานะเดิมหลังรีสตาร์ตบอต
    - แก้ไฟล์โดยตรงได้ที่ `[bot] welcome_broadcast = True` หรือ `False` แล้วรีสตาร์ตบอต
    - ภาษาไทยมีข้อความต้อนรับสุ่ม 94 รูปแบบ เท่ากับชุดข้อความสุ่มภาษาอังกฤษของระบบปัจจุบัน และรองรับ `{nickname}` / `{country}`
 
 2. **Static Welcome ตอนผู้ใช้เข้าห้องที่บอตอยู่**
-   - ใช้ `/welcome` เพื่อสลับเปิด/ปิด
+   - ใช้ `welcome` เพื่อสลับเปิด/ปิด
    - ตั้งใน config ด้วย `[bot] welcome_mode = 1` เพื่อเปิด หรือ `0` เพื่อปิด
    - แก้ข้อความได้ที่ `[bot] welcome_msg` โดยคำว่า `ชื่อ` จะถูกแทนด้วย nickname ของผู้ใช้
 
-การปิด `welcome_broadcast` จะไม่ปิดข้อความต้อนรับแบบ `welcome_mode` และการปิด `/welcome` ก็จะไม่ปิด Random Welcome Broadcast
+การปิด `welcome_broadcast` จะไม่ปิดข้อความต้อนรับแบบ `welcome_mode` และการปิด `welcome` ก็จะไม่ปิด Random Welcome Broadcast
 
 ## ติดตั้งแบบ Native บน Ubuntu/Debian x86_64 — คำสั่งเดียว
 
@@ -222,7 +225,7 @@ backup_count = 3
 console = True
 ```
 
-คำสั่ง `/clearlog` จะล้างไฟล์ log ปัจจุบันที่ตำแหน่งเดียวกัน
+คำสั่ง `clearlog` จะล้างไฟล์ log ปัจจุบันที่ตำแหน่งเดียวกัน
 
 ## คำสั่ง
 
@@ -231,21 +234,21 @@ console = True
 ใน TeamTalk:
 
 ```text
-/help
+help
 ```
 
 จะส่งคำสั่งทุกตัวแยกข้อความ เช่น:
 
 ```text
-/p <query> : ค้นหาและเล่นหรือเพิ่มเพลงจาก YouTube ลงคิว
-/pm <query> : ค้นหาและเล่นหรือเพิ่มเพลงจาก YouTube Music ลงคิว
-/ql : แสดงรายการในคิวปัจจุบัน
+p <query> : ค้นหาและเล่นหรือเพิ่มเพลงจาก YouTube ลงคิว
+pm <query> : ค้นหาและเล่นหรือเพิ่มเพลงจาก YouTube Music ลงคิว
+ql : แสดงรายการในคิวปัจจุบัน
 ```
 
 ดูคำสั่งเดียว:
 
 ```text
-/help p
+help p
 ```
 
 ## ภาษาไทย
@@ -253,13 +256,13 @@ console = True
 source translation:
 
 ```text
-locales/th/LC_MESSAGES/messages.po
+locales/th/LC_MESSAGESmessages.po
 ```
 
 ไฟล์ที่โปรแกรมใช้จริง:
 
 ```text
-locales/th/LC_MESSAGES/messages.mo
+locales/th/LC_MESSAGESmessages.mo
 ```
 
 หลังแก้ source และมีข้อความใหม่ ให้ update catalog ภาษาไทย:
@@ -402,15 +405,15 @@ sudo ttuhelper update
 
 ## การแบ่งหน้าที่ Full / Player / Server Manager
 
-Runtime `/help` แสดงเฉพาะคำสั่งที่ถูก register ในโหมดนั้นจริง ไม่ได้เอาคำสั่งทุกโมดูลมาปนกัน:
+Runtime `help` แสดงเฉพาะคำสั่งที่ถูก register ในโหมดนั้นจริง ไม่ได้เอาคำสั่งทุกโมดูลมาปนกัน:
 
-- **Player Bot**: Player/queue + คำสั่งทั่วไปที่ปลอดภัย + `/dr`; ไม่มี AdminCog, UserManager, Account Request, Translator หรือคำสั่ง TTS ของ Server Manager
-- **Server Manager**: คำสั่งจัดการเซิร์ฟเวอร์ + TTS แบบเดิม (`/say`, `/tts`, `/ttsmode`, `/voice`, `/get_voices` ฯลฯ); ไม่มี Music Player/queue
+- **Player Bot**: Player/queue + คำสั่งทั่วไปที่ปลอดภัย + `dr`; ไม่มี AdminCog, UserManager, Account Request, Translator หรือคำสั่ง TTS ของ Server Manager
+- **Server Manager**: คำสั่งจัดการเซิร์ฟเวอร์ + TTS แบบเดิม (`say`, `tts`, `ttsmode`, `voice`, `get_voices` ฯลฯ); ไม่มี Music Player/queue
 - **Full Bot**: รวมทั้งสองชุด โดย Player TTS ใช้ชื่อคำสั่ง `p...` แยกจาก Manager TTS จึงไม่ชนกัน
 
-`/report <message>` เป็นรายงานไปยังแอดมิน TeamTalk และมีเฉพาะ Manager/Full ส่วน `/dr <message>` ส่งตรงถึงระบบรายงานผู้พัฒนา SNTalkBot ทางการและมีทุกโหมด
+`report <message>` เป็นรายงานไปยังแอดมิน TeamTalk และมีเฉพาะ Manager/Full ส่วน `dr <message>` ส่งตรงถึงระบบรายงานผู้พัฒนา SNTalkBot ทางการและมีทุกโหมด
 
-คำสั่งหลักยังมีชื่อเดียวต่อฟังก์ชัน แต่มีคำสั่งย่อที่ตั้งใจไว้สำหรับพิมพ์เร็ว เช่น `/h` → `/help`, `/rs` → `/restart`, `/sd` → `/shutdown` และคำสั่งย่ออื่น ๆ จะแสดงต่อท้ายใน `/help` โดยไม่ลงทะเบียน handler ซ้ำ
+คำสั่งหลักยังมีชื่อเดียวต่อฟังก์ชัน แต่มีคำสั่งย่อที่ตั้งใจไว้สำหรับพิมพ์เร็ว เช่น `h` → `help`, `rs` → `restart`, `sd` → `shutdown` และคำสั่งย่ออื่น ๆ จะแสดงต่อท้ายใน `help` โดยไม่ลงทะเบียน handler ซ้ำ
 
 ## Player TTS — ประกาศคิว/เพลงแบบไม่พูดซ้อน
 
@@ -419,19 +422,19 @@ Runtime `/help` แสดงเฉพาะคำสั่งที่ถูก 
 คำสั่ง Player TTS:
 
 ```text
-/ptts status
-/ptts on
-/ptts off
-/ptts tracks on|off
-/ptts queue on|off
-/pttsmode microsoft|google
-/pvoices [langcode]
-/pvoice <voice_or_language>
-/pttsrate <-100..100>
-/pttsspeed <0.25..4.0>
+ptts status
+ptts on
+ptts off
+ptts tracks on|off
+ptts queue on|off
+pttsmode microsoft|google
+pvoices [langcode]
+pvoice <voice_or_language>
+pttsrate <-100..100>
+pttsspeed <0.25..4.0>
 ```
 
-`/ptts`, `/pttsmode`, `/pvoice`, `/pttsrate`, `/pttsspeed` เป็นคำสั่งผู้ดูแลเพราะเปลี่ยนค่ารวมของ Player; `/pvoices` เป็นคำสั่งอ่านอย่างเดียว
+`ptts`, `pttsmode`, `pvoice`, `pttsrate`, `pttsspeed` เป็นคำสั่งผู้ดูแลเพราะเปลี่ยนค่ารวมของ Player; `pvoices` เป็นคำสั่งอ่านอย่างเดียว
 
 ### Google Standard TTS (gTTS) — ค่าเริ่มต้นของ Player และ Server Manager
 
@@ -452,47 +455,47 @@ google_speed = 1.0
 Player ใช้:
 
 ```text
-/pttsmode google
-/pvoices th
-/pvoice th
-/pttsspeed 1.0
+pttsmode google
+pvoices th
+pvoice th
+pttsspeed 1.0
 ```
 
-ใน Google mode คำสั่ง `/pvoice` ใช้เลือก **รหัสภาษา** เช่น `th`, `en`, `ja` เพราะ gTTS ไม่มีรายชื่อ named voice แบบ Google Cloud
+ใน Google mode คำสั่ง `pvoice` ใช้เลือก **รหัสภาษา** เช่น `th`, `en`, `ja` เพราะ gTTS ไม่มีรายชื่อ named voice แบบ Google Cloud
 
 Server Manager ใช้:
 
 ```text
-/ttsmode google
-/get_voices th
-/voice th
-/speed 1.0
-/say ข้อความทดสอบ
+ttsmode google
+get_voices th
+voice th
+speed 1.0
+say ข้อความทดสอบ
 ```
 
-ใน Google mode คำสั่ง `/voice` ก็ใช้รหัสภาษาเช่นเดียวกัน และ `/ld` ยังใช้เปิด/ปิดการตรวจจับภาษาอัตโนมัติได้
+ใน Google mode คำสั่ง `voice` ก็ใช้รหัสภาษาเช่นเดียวกัน และ `ld` ยังใช้เปิด/ปิดการตรวจจับภาษาอัตโนมัติได้
 
 Microsoft Edge TTS ยังเก็บไว้เป็นตัวเลือกสำรอง:
 
 ```text
-/pttsmode microsoft
-/pvoices th-TH
-/pvoice th-TH-PremwadeeNeural
-/pttsrate 0
+pttsmode microsoft
+pvoices th-TH
+pvoice th-TH-PremwadeeNeural
+pttsrate 0
 
-/ttsmode microsoft
-/get_voices th-TH
-/voice th-TH-PremwadeeNeural
-/rate 0
+ttsmode microsoft
+get_voices th-TH
+voice th-TH-PremwadeeNeural
+rate 0
 ```
 
 เมื่ออัปเดตจาก r2 หรือต่ำกว่า ระบบจะ migrate ค่า TTS ครั้งเดียว: เอา key ของ Google Cloud เก่าออกและตั้ง Google standard gTTS เป็นค่าเริ่มต้น หลังจาก migration แล้วถ้าผู้ดูแลสลับกลับ Microsoft ระบบจะไม่บังคับกลับ Google ใน restart ถัดไป
 
-## `/dr` — รายงานถึงผู้พัฒนา SNTalkBot โดยตรง
+## `dr` — รายงานถึงผู้พัฒนา SNTalkBot โดยตรง
 
-`/dr <message>` ส่งรายงานปัญหาโดยตรงถึงผู้พัฒนา SNTalkBot
+`dr <message>` ส่งรายงานปัญหาโดยตรงถึงผู้พัฒนา SNTalkBot
 
-ส่วน `/report <message>` ยังคงส่งรายงานหาแอดมิน TeamTalk ที่ออนไลน์อยู่
+ส่วน `report <message>` ยังคงส่งรายงานหาแอดมิน TeamTalk ที่ออนไลน์อยู่
 
 ## อัปเดต Docker image และ instance เดิม
 
@@ -520,8 +523,8 @@ Player announcement ใช้ audio stream แยกจากเพลงแล�
 ## 2026.08.23-r6
 
 - Welcome broadcast ไม่ประกาศย้อนหลังให้ผู้ใช้ที่ออนไลน์อยู่ก่อนบอตเริ่มหรือรีสตาร์ต
-- เพิ่มระบบคำสั่งย่อแบบ alias โดยไม่ลงทะเบียน handler ซ้ำ เช่น `/h`, `/rs`, `/sd`
-- ย้าย `/cc`, `/csize`, `/cm` ไปฝั่ง Player ให้ Server Manager ไม่เห็นคำสั่ง Player
+- เพิ่มระบบคำสั่งย่อแบบ alias โดยไม่ลงทะเบียน handler ซ้ำ เช่น `h`, `rs`, `sd`
+- ย้าย `cc`, `csize`, `cm` ไปฝั่ง Player ให้ Server Manager ไม่เห็นคำสั่ง Player
 - แก้การแบ่งข้อความยาวไม่ให้ข้อความช่วงรอยต่อหาย
 - เพิ่ม guard สำหรับงาน async เมื่อผู้ใช้ออกจาก TeamTalk ระหว่างงาน
-- คง `/dr`, Google standard gTTS, FIFO TTS และ No Music Ducking จากรุ่นก่อน
+- คง `dr`, Google standard gTTS, FIFO TTS และ No Music Ducking จากรุ่นก่อน

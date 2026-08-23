@@ -1,5 +1,8 @@
 # SNTalkBot
 
+Private-message commands no longer require a leading `/` (for example `help`, `ap on`, `rs`). Slash-prefixed commands remain backward compatible. Public-channel slashless parsing is intentionally disabled to avoid collisions with ordinary chat.
+
+
 > **Platform:** Linux/Docker only. Windows GUI support has been removed intentionally.
 
 
@@ -39,7 +42,7 @@ This combined main project is distributed under GPL-2.0 because its TTUtilities 
 
 ## 2026.08.23-r6
 
-Startup/reconnect welcome replays are suppressed, intentional short aliases are resolved without duplicate handlers, Player-only cache/message commands are isolated from Manager-only mode, and long-message/async-user edge cases are hardened. FIFO Player TTS, standard gTTS, no-music-ducking, and `/dr` remain available. See `README_TH.md` and `RELEASE_NOTES_TH.md`.
+Startup/reconnect welcome replays are suppressed, intentional short aliases are resolved without duplicate handlers, Player-only cache/message commands are isolated from Manager-only mode, and long-message/async-user edge cases are hardened. FIFO Player TTS, standard gTTS, no-music-ducking, and `dr` remain available. See `README_TH.md` and `RELEASE_NOTES_TH.md`.
 
 ## Player TTS and music mixing
 
@@ -47,4 +50,4 @@ Player announcements use a separate audio stream mixed with music by PulseAudio.
 
 ## Official developer reports
 
-`/dr <message>` submits an explicit user report to `https://report.nuttawat.ddnsfree.com/api/report`. Telegram credentials are never embedded in the public image.
+`dr <message>` submits an explicit user report to `https:/report.nuttawat.ddnsfree.com/apireport`. Telegram credentials are never embedded in the public image.
