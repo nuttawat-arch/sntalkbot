@@ -1,3 +1,10 @@
+# Release 2026.08.23-r7.2.2
+
+- แก้ Private slashless runtime อีกชั้นโดยตรวจ `TextMessage.nToUserID` เป็นหลัก: ข้อความที่ส่งตรงถึงบอตใช้ `h`, `s`, `p <คำค้นหา>`, `ap on|off` โดยไม่ต้องมี `/` ได้จริง
+- Channel ยังคงบังคับ `/` ทุกคำสั่ง เพราะ TeamTalk กำหนด `nToUserID = 0` สำหรับ channel message
+- รองรับ enum/ctypes หลายรูปแบบด้วยการ normalize ค่า numeric ก่อนเปรียบเทียบ
+- เพิ่ม regression test ให้จำลอง `nToUserID` ของ Private และ Channel ตามโครงสร้าง TeamTalk จริง
+
 # 2026.08.23-r7.2.1
 
 - แก้คำสั่ง Private แบบไม่ใส่ `/` ให้รองรับทั้ง TeamTalk `MSGTYPE_USER` และ `MSGTYPE_CUSTOM` เช่น `h`, `s`, `p <คำค้นหา>`, `ap on|off`

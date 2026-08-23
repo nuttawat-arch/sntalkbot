@@ -59,33 +59,59 @@ class CommandHandler:
         except ValueError:
             return message_text.split()
 
-    def _is_private_message_type(self, msg_type):
-        """Return True for TeamTalk user-to-user text message types.
+    @staticmethod
+    def _numeric(value):
+        """Return an int for plain ints, ctypes scalars, and enum-like values."""
+        if hasattr(value, "value"):
+            value = value.value
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
-        TeamTalk defines MSGTYPE_CUSTOM as a custom user-to-user message which
-        works the same way as MSGTYPE_USER. Some TeamTalk client message dialogs
-        can deliver private text using this type, so slashless private commands
-        must accept both while channel messages still require '/'.
+    def _is_private_message(self, textmessage):
+        """Return True when *textmessage* is addressed directly to this bot.
+
+        TeamTalk's TextMessage structure gives user-to-user messages a non-zero
+        ``nToUserID`` while channel messages use ``nToUserID == 0``.  Prefer this
+        structural destination check because it reflects what the server actually
+        delivered and is robust across Python wrapper enum representations.
+
+        MSGTYPE_USER / MSGTYPE_CUSTOM remain a compatibility fallback for tests
+        or wrappers which do not expose ``nToUserID``.
         """
-        private_types = {TextMsgType.MSGTYPE_USER}
+        to_user_id = self._numeric(getattr(textmessage, "nToUserID", None))
+        if to_user_id is not None:
+            try:
+                my_user_id = self._numeric(self.bot.getMyUserID())
+            except Exception:
+                my_user_id = None
+            if to_user_id > 0:
+                # Incoming direct messages should target this bot.  If the local
+                # user ID is temporarily unavailable during an SDK edge case, a
+                # non-zero destination is still unambiguously not a channel msg.
+                return my_user_id in (None, 0, to_user_id)
+            # A real nToUserID field with zero means channel/broadcast, never a
+            # slashless private command.
+            return False
+
+        msg_type = self._numeric(getattr(textmessage, "nMsgType", None))
+        private_types = {self._numeric(TextMsgType.MSGTYPE_USER)}
         custom_type = getattr(TextMsgType, "MSGTYPE_CUSTOM", None)
         if custom_type is not None:
-            private_types.add(custom_type)
+            private_types.add(self._numeric(custom_type))
         return msg_type in private_types
 
-    def is_slashless_command_candidate(self, message_text, msg_type):
+    def is_slashless_command_candidate(self, message_text, textmessage):
         """Return True only for a known slashless command in a private message.
 
-        Slashless commands are intentionally private-message only. This prevents
-        short names such as ``m``, ``w``, ``h`` and ``l`` from hijacking ordinary
-        channel conversation. Slash-prefixed commands remain valid everywhere
-        they were valid before. TeamTalk MSGTYPE_USER and MSGTYPE_CUSTOM are both
-        treated as private user-to-user messages.
+        Slashless commands are intentionally private-message only. Channel text
+        always requires the leading slash so short aliases cannot hijack chat.
         """
         text = ttstr(message_text).strip()
         if not text or text.startswith(self.prefix):
             return False
-        if not self._is_private_message_type(msg_type):
+        if not self._is_private_message(textmessage):
             return False
         parts = self._split_message(text)
         if not parts:
@@ -101,7 +127,7 @@ class CommandHandler:
         if explicit_prefix:
             command_text = message_text[len(self.prefix):].lstrip()
         else:
-            if not self.is_slashless_command_candidate(message_text, textmessage.nMsgType):
+            if not self.is_slashless_command_candidate(message_text, textmessage):
                 return False
             command_text = message_text
 

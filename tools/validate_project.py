@@ -196,6 +196,7 @@ def validate_slashless_dispatch():
             def privateMessage(self, user_id, message): pass
             def is_authorized_user(self, username): return False
             def getUser(self, user_id): return None
+            def getMyUserID(self): return 99
         bot = Bot()
         handler = module.CommandHandler(bot)
         handler.register_command("help", lambda msg, *args: calls.append(("HELP",) + tuple(args)))
@@ -205,19 +206,39 @@ def validate_slashless_dispatch():
         handler.register_command("s", lambda msg, *args: calls.append(("STOP",) + tuple(args)))
         handler.register_command("p", lambda msg, *args: calls.append(("PLAY",) + tuple(args)))
 
-        def msg(text, msg_type):
-            return types.SimpleNamespace(szMessage=text, nMsgType=msg_type, nFromUserID=10, szFromUsername="user")
+        def msg(text, msg_type, to_user_id=None, channel_id=None):
+            if to_user_id is None:
+                to_user_id = 99 if msg_type in (_MsgType.MSGTYPE_USER, _MsgType.MSGTYPE_CUSTOM) else 0
+            if channel_id is None:
+                channel_id = 0 if to_user_id else 7
+            return types.SimpleNamespace(
+                szMessage=text, nMsgType=msg_type, nFromUserID=10,
+                nToUserID=to_user_id, nChannelID=channel_id, szFromUsername="user"
+            )
 
         assert handler.handle_message(msg("h", _MsgType.MSGTYPE_USER)) is True
         assert calls[-1] == ("HELP",)
         assert handler.handle_message(msg("h", _MsgType.MSGTYPE_CUSTOM)) is True
         assert calls[-1] == ("HELP",)
+        # Destination is authoritative: a direct message remains private even if
+        # a wrapper exposes an unexpected/enum-like message type representation.
+        odd_private = msg("h", 999, to_user_id=99, channel_id=0)
+        assert handler.handle_message(odd_private) is True
+        assert calls[-1] == ("HELP",)
+        class _Scalar:
+            def __init__(self, value): self.value = value
+        scalar_private = msg("s", _Scalar(_MsgType.MSGTYPE_USER), to_user_id=_Scalar(99), channel_id=0)
+        assert handler.handle_message(scalar_private) is True
+        assert calls[-1] == ("STOP",)
         assert handler.handle_message(msg("s", _MsgType.MSGTYPE_CUSTOM)) is True
         assert calls[-1] == ("STOP",)
         assert handler.handle_message(msg("p รักเธอนะ", _MsgType.MSGTYPE_CUSTOM)) is True
         assert calls[-1] == ("PLAY", "รักเธอนะ")
         before = list(calls)
         assert handler.handle_message(msg("h", _MsgType.MSGTYPE_CHANNEL)) is False
+        assert calls == before
+        # nToUserID=0 must keep channel text non-command even if nMsgType is wrong.
+        assert handler.handle_message(msg("h", _MsgType.MSGTYPE_USER, to_user_id=0, channel_id=7)) is False
         assert calls == before
         assert handler.handle_message(msg("/h", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls[-1] == ("HELP",)
@@ -249,7 +270,7 @@ def validate_slashless_dispatch():
             sys.modules["TeamTalk5"] = previous
 
 if validate_slashless_dispatch():
-    ok("private USER/CUSTOM slashless commands work (h/s/p/ap); channel commands require slash; arguments/on-off are preserved")
+    ok("private slashless dispatch follows nToUserID (h/s/p/ap); channel nToUserID=0 requires slash; enum/ctypes values are normalized")
 
 required_player_tts = {"ptts", "pttsmode", "pvoice", "pvoices", "pttsrate", "pttsspeed"}
 if not required_player_tts.issubset(set(names)):

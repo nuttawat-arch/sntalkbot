@@ -56,7 +56,7 @@ class AccountRequestCog:
 
         # Do not interpret a known slashless command such as ``accounts on`` as
         # free-form account-request intent.  CommandHandler will process it next.
-        if self.bot.command_handler.is_slashless_command_candidate(message_text, textmessage.nMsgType):
+        if self.bot.command_handler.is_slashless_command_candidate(message_text, textmessage):
             return False
 
         if self._is_account_intent(message_text):
