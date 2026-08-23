@@ -88,6 +88,14 @@ class TTSCog:
         self.broadcast_queue = queue.Queue()
         self.broadcast_worker = None
         self.broadcast_worker_lock = threading.Lock()
+
+        # Player announcements must be serialized. The previous implementation
+        # submitted each announcement to a shared thread pool, so "added to queue"
+        # and "now playing" could speak over each other. One FIFO worker keeps
+        # announcement order deterministic and prevents overlapping speech.
+        self.player_announcement_queue = queue.Queue()
+        self.player_announcement_worker = None
+        self.player_announcement_worker_lock = threading.Lock()
         
         self._load_google_cache()
         if self._get_tts_mode() == "google":
@@ -95,30 +103,112 @@ class TTSCog:
         self._start_google_refresh_loop()
 
     def announce_player(self, text):
-        """Speak a short player/queue announcement through the configured MPV output."""
+        """Queue a short player/queue announcement for sequential playback."""
         if not text:
             return
-        self.bot.quick_task_pool.submit(self._run_player_announcement, str(text))
+        self.player_announcement_queue.put(str(text))
+        self._ensure_player_announcement_worker()
+
+    def _ensure_player_announcement_worker(self):
+        with self.player_announcement_worker_lock:
+            if self.player_announcement_worker and self.player_announcement_worker.is_alive():
+                return
+            self.player_announcement_worker = threading.Thread(
+                target=self._player_announcement_worker_loop,
+                daemon=True,
+                name="SNTalkBot_PlayerAnnouncements",
+            )
+            self.player_announcement_worker.start()
+
+    def _player_announcement_worker_loop(self):
+        while True:
+            try:
+                text = self.player_announcement_queue.get(timeout=1.0)
+            except queue.Empty:
+                with self.player_announcement_worker_lock:
+                    if self.player_announcement_queue.empty():
+                        self.player_announcement_worker = None
+                        return
+                continue
+            try:
+                self._run_player_announcement(text)
+            finally:
+                self.player_announcement_queue.task_done()
+
+    def get_player_tts_mode(self):
+        mode = str(self.bot.playback_config.get("announcement_tts_mode", "microsoft") or "microsoft").strip().lower()
+        if mode == "google" and not self.google_tts.is_configured():
+            return "microsoft"
+        return mode if mode in ("microsoft", "google") else "microsoft"
+
+    def player_google_ready(self):
+        return self.google_tts.is_configured()
+
+    def list_player_voices(self, user_id, lang_code=None):
+        """List voices for the Player announcement engine without registering Manager TTS commands."""
+        self.bot.quick_task_pool.submit(self._list_player_voices_task, user_id, lang_code)
+
+    def _list_player_voices_task(self, user_id, lang_code=None):
+        try:
+            lang = (lang_code or "").strip().lower()
+            if self.get_player_tts_mode() == "google":
+                voices = self._get_google_voices()
+                if lang:
+                    voices = [v for v in voices if any(str(code).lower().startswith(lang) for code in v.get("languageCodes", []))]
+                if not voices:
+                    self.bot.privateMessage(user_id, self._("No Google Cloud TTS voices available. Check your API key."))
+                    return
+                lines = [self._("Name: {voice_name}").format(voice_name=voice.get("name", "")) for voice in voices]
+                for i in range(0, len(lines), 6):
+                    self.bot.privateMessage(user_id, "\n".join(lines[i:i+6]))
+                return
+
+            voices = asyncio.run(self.speech_engine.get_voices_list())
+            if lang:
+                voices = [v for v in voices if str(v.get("Locale", "")).lower().startswith(lang)]
+            if not voices:
+                self.bot.privateMessage(user_id, self._("No voices found for the specified language code."))
+                return
+            lines = [self._("Name: {voice_name}, ShortName: {short_name}, Locale: {locale}").format(
+                voice_name=voice.get("FriendlyName", ""),
+                short_name=voice.get("ShortName", ""),
+                locale=voice.get("Locale", ""),
+            ) for voice in voices]
+            for i in range(0, len(lines), 4):
+                self.bot.privateMessage(user_id, "\n".join(lines[i:i+4]))
+        except Exception as exc:
+            self.bot.privateMessage(user_id, self._("Error listing voices: {e}").format(e=exc))
 
     def _run_player_announcement(self, text):
         playback = self.bot.playback_config
-        voice = playback.get("announcement_voice") or "th-TH-PremwadeeNeural"
-        rate_value = playback.get("announcement_rate", 0)
+        mode = self.get_player_tts_mode()
         volume_value = playback.get("announcement_volume", 1.0)
-        try:
-            rate = f"{max(-100, min(100, int(rate_value))):+d}%"
-        except (TypeError, ValueError):
-            rate = "+0%"
-        try:
-            vol = max(0.0, min(1.0, float(volume_value)))
-        except (TypeError, ValueError):
-            vol = 1.0
-        volume = f"{int(round((vol - 1.0) * 100)):+d}%"
         temp_path = None
         try:
-            fd, temp_path = tempfile.mkstemp(prefix="ttutil_announce_", suffix=".mp3")
+            fd, temp_path = tempfile.mkstemp(prefix="sntalkbot_announce_", suffix=".mp3")
             os.close(fd)
-            asyncio.run(edge_tts.Communicate(text, voice=voice, rate=rate, volume=volume).save(temp_path))
+
+            if mode == "google":
+                voice = playback.get("announcement_google_voice") or self.bot.tts_config.get("google_voice_name") or "th-TH-Standard-A"
+                try:
+                    speed = max(0.25, min(4.0, float(playback.get("announcement_google_speed", 1.0))))
+                except (TypeError, ValueError):
+                    speed = 1.0
+                self.google_tts.synthesize(text, voice, "standard", temp_path, {"speed": speed})
+            else:
+                voice = playback.get("announcement_microsoft_voice") or playback.get("announcement_voice") or "th-TH-PremwadeeNeural"
+                rate_value = playback.get("announcement_rate", 0)
+                try:
+                    rate = f"{max(-100, min(100, int(rate_value))):+d}%"
+                except (TypeError, ValueError):
+                    rate = "+0%"
+                try:
+                    vol = max(0.0, min(1.0, float(volume_value)))
+                except (TypeError, ValueError):
+                    vol = 1.0
+                volume = f"{int(round((vol - 1.0) * 100)):+d}%"
+                asyncio.run(edge_tts.Communicate(text, voice=voice, rate=rate, volume=volume).save(temp_path))
+
             self._play_local_announcement(temp_path)
         except Exception as exc:
             print(f"Player TTS announcement failed: {exc}")
@@ -534,6 +624,9 @@ class TTSCog:
         mode = args[0].strip().lower()
         if mode not in ("microsoft", "google"):
             self.bot.privateMessage(user_id, self._("Invalid mode. Use microsoft or google."))
+            return
+        if mode == "google" and not self.google_tts.is_configured():
+            self.bot.privateMessage(user_id, self._("Google Cloud TTS is not configured. Set [tts] google_api_key first."))
             return
         self.bot.tts_config["mode"] = mode
         self.bot.config_handler.save_tts_config(self.bot.tts_config)

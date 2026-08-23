@@ -55,8 +55,6 @@ class AdminCog:
         command_handler.register_command('noname', self.handle_noname_toggle_command, admin_only=True)
         command_handler.register_command('cm', self.handle_channel_messages_command, admin_only=True)
         command_handler.register_command('shutdown', self.handle_shutdown_command, admin_only=True)
-        command_handler.register_command('sd', self.handle_shutdown_command, admin_only=True)
-        command_handler.register_command('rs', self.handle_restart_command, admin_only=True)
         command_handler.register_command('blockcmd', self.handle_block_command, admin_only=True)
         command_handler.register_command('language', self.handle_language_command, admin_only=True)
         command_handler.register_command('voicetx', self.handle_voice_tx_command, admin_only=True)

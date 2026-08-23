@@ -6,7 +6,7 @@
 
 - คำสั่งผู้ใช้ทั้งหมดต้องขึ้นต้นด้วย `/`; ข้อความธรรมดาจะไม่ถูก parser ตีความเป็นคำสั่ง
 - ชื่อคำสั่งที่ลงทะเบียนจริงไม่ซ้ำกัน และระบบจะหยุดทันทีด้วย error หากนักพัฒนาเพิ่มชื่อซ้ำในอนาคต
-- `/help` และ `/h` ส่งหัวข้อก่อนหนึ่งข้อความ แล้วส่งคำสั่งพร้อมคำอธิบายทีละคำสั่ง หนึ่งคำสั่งต่อหนึ่ง TeamTalk private message
+- `/help` ส่งหัวข้อก่อนหนึ่งข้อความ แล้วส่งคำสั่งพร้อมคำอธิบายทีละคำสั่ง หนึ่งคำสั่งต่อหนึ่ง TeamTalk private message
 - Player ใช้ `yt-dlp` โดยตรง รองรับ YouTube, YouTube Music, URL/stream, playlist/channel, queue, favorites, autoplay, history, seek, volume/speed, M1/M2/M3, audio filters และ download
 - มี worker prefetch ลิงก์ล่วงหน้าเพื่อไม่ให้การ extract ของ yt-dlp ไปบล็อก TeamTalk event thread
 - มี TTS ประกาศเพลงและคิว พร้อมลดระดับเพลงชั่วคราวระหว่างประกาศ
@@ -78,14 +78,14 @@ sudo useradd --system --home /opt/sntalkbot --shell /usr/sbin/nologin sntalkbot 
 sudo chown -R sntalkbot:sntalkbot /opt/sntalkbot
 sudo cp sntalkbot.service /etc/systemd/system/sntalkbot.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now ttutilities
-sudo systemctl status ttutilities
+sudo systemctl enable --now sntalkbot
+sudo systemctl status sntalkbot
 ```
 
 ดู log:
 
 ```bash
-journalctl -u ttutilities -f
+journalctl -u sntalkbot -f
 ```
 
 ## Build และ Push ขึ้น Docker Hub
@@ -150,8 +150,8 @@ docker compose down
 
 ```text
 MPV (ao=pulse)
- -> PulseAudio null sink: ttutilities
- -> monitor source: ttutilities.monitor
+ -> PulseAudio null sink: sntalkbot (หรือชื่อ instance ที่ TTUHelper กำหนด)
+ -> monitor source: sntalkbot.monitor
  -> TeamTalk input device
  -> Voice Transmission
 ```
@@ -186,7 +186,20 @@ play_mode = 2
 autoplay_enabled = True
 announce_tracks = True
 announce_queue = True
-announcement_voice = th-TH-PremwadeeNeural
+announcement_tts_mode = microsoft
+announcement_microsoft_voice = th-TH-PremwadeeNeural
+announcement_google_voice = th-TH-Standard-A
+announcement_rate = 0
+announcement_google_speed = 1.0
+
+[tts]
+mode = microsoft
+google_api_key =
+google_voice_name = th-TH-Standard-A
+
+[telegram]
+telegram_bot_token =
+report_chat_id =
 ```
 
 `reconnection_attempts = -1` หมายถึงพยายามเชื่อมต่อใหม่ต่อเนื่อง ส่วนค่าตั้งแต่ `0` ขึ้นไปเป็นจำนวนครั้งสูงสุด
@@ -350,7 +363,7 @@ docker login
 หรือระบุ tag เอง:
 
 ```bash
-TTU_IMAGE_REPO=nuttawat0295/sntalkbot TTU_TAG=2026.08.22-mode ./publish.sh
+TTU_IMAGE_REPO=nuttawat0295/sntalkbot TTU_TAG=2026.08.23-r2 ./publish.sh
 ```
 
 ### 2) บนเซิร์ฟเวอร์ที่ใช้ helper
@@ -378,4 +391,111 @@ helper จะอิงจาก `TTU_IMAGE_REPO` และ `TTU_TAG` ใน `/et
 sudo ttuhelper update
 ```
 
-ถ้าต้องการทดสอบ image ใหม่โดยไม่ทับ `latest` แนะนำให้ push เป็น tag ใหม่ก่อน เช่น `2026.08.22-mode` แล้วค่อยสลับ tag ที่ helper ใช้
+ถ้าต้องการทดสอบ image ใหม่โดยไม่ทับ `latest` แนะนำให้ push เป็น tag ใหม่ก่อน เช่น `2026.08.23-r2` แล้วค่อยสลับ tag ที่ helper ใช้
+
+
+## การแบ่งหน้าที่ Full / Player / Server Manager
+
+Runtime `/help` แสดงเฉพาะคำสั่งที่ถูก register ในโหมดนั้นจริง ไม่ได้เอาคำสั่งทุกโมดูลมาปนกัน:
+
+- **Player Bot**: Player/queue + คำสั่งทั่วไปที่ปลอดภัย + `/dr`; ไม่มี AdminCog, UserManager, Account Request, Translator หรือคำสั่ง TTS ของ Server Manager
+- **Server Manager**: คำสั่งจัดการเซิร์ฟเวอร์ + TTS แบบเดิม (`/say`, `/tts`, `/ttsmode`, `/voice`, `/get_voices` ฯลฯ); ไม่มี Music Player/queue
+- **Full Bot**: รวมทั้งสองชุด โดย Player TTS ใช้ชื่อคำสั่ง `p...` แยกจาก Manager TTS จึงไม่ชนกัน
+
+`/report <message>` เป็นรายงานไปยังแอดมิน TeamTalk และมีเฉพาะ Manager/Full ส่วน `/dr <message>` เป็น Direct Report ไป Telegram และมีทุกโหมด
+
+Alias ซ้ำที่เลิกใช้แล้ว: `/h`, `/gl`, `/rs`, `/sd` เหลือคำสั่งหลัก `/help`, `/l`, `/restart`, `/shutdown` อย่างละตัว
+
+## Player TTS — ประกาศคิว/เพลงแบบไม่พูดซ้อน
+
+รุ่น `2026.08.23-r2` เปลี่ยน Player announcement จากการยิงหลาย thread พร้อมกันเป็น **FIFO queue + worker เดียว** ดังนั้นข้อความเช่น “เพิ่มเพลงเข้าคิวแล้ว” และ “กำลังเล่นเพลง...” จะรอพูดต่อกันตามลำดับ ไม่พูดทับกัน
+
+คำสั่ง Player TTS:
+
+```text
+/ptts status
+/ptts on
+/ptts off
+/ptts tracks on|off
+/ptts queue on|off
+/pttsmode microsoft|google
+/pvoices [langcode]
+/pvoice <voice_name>
+/pttsrate <-100..100>
+/pttsspeed <0.25..4.0>
+```
+
+`/ptts`, `/pttsmode`, `/pvoice`, `/pttsrate`, `/pttsspeed` เป็นคำสั่งผู้ดูแลเพราะเปลี่ยนค่ารวมของ Player; `/pvoices` เป็นคำสั่งอ่านอย่างเดียว
+
+### เปลี่ยน Player จาก Microsoft เป็น Google Cloud TTS
+
+Google Cloud TTS ต้องมี API key ก่อน โดยใส่ใน config ของ instance:
+
+```ini
+[tts]
+google_api_key = YOUR_GOOGLE_CLOUD_TTS_API_KEY
+```
+
+แล้ว restart instance และใช้:
+
+```text
+/pttsmode google
+/pvoices th-TH
+/pvoice th-TH-Standard-A
+/pttsspeed 1.0
+```
+
+กลับ Microsoft:
+
+```text
+/pttsmode microsoft
+/pvoices th-TH
+/pvoice th-TH-PremwadeeNeural
+/pttsrate 0
+```
+
+Server Manager ใช้ชุดเดิมแยกต่างหาก:
+
+```text
+/ttsmode google
+/get_voices th-TH
+/voice th-TH-Standard-A
+/speed 1.0
+/say ข้อความทดสอบ
+```
+
+หากยังไม่มี `[tts] google_api_key` การสลับเป็น Google จะถูกปฏิเสธด้วยข้อความอธิบาย แทนการล้มด้วย exception
+
+## `/dr` — Direct Report ไป Telegram
+
+`/report` เดิมยังส่งหาแอดมิน TeamTalk เหมือนเดิม ส่วน `/dr <message>` ส่งไป Telegram destination ที่ตั้งค่าไว้ โดยข้อความประกอบด้วย server, bot/mode, nickname, TeamTalk username, channel และข้อความรายงาน
+
+ถ้ายังไม่ได้ตั้ง token หรือ chat ID `/dr` จะไม่ throw error และจะบอกผู้ใช้ว่ายังไม่ได้ตั้งค่า
+
+**ห้ามใส่ token จริงลง GitHub, Dockerfile หรือ Docker image** สำหรับ Docker/TTUHelper ให้เก็บ secret ที่ `/etc/default/ttuhelper` แล้ว helper จะส่งเข้า container เป็น environment:
+
+```text
+SNTALKBOT_TELEGRAM_BOT_TOKEN
+SNTALKBOT_TELEGRAM_REPORT_CHAT_ID
+```
+
+ค่าจาก environment มีลำดับความสำคัญเหนือ `[telegram]` ใน `config.ini` เพื่อให้ตั้งค่า default กลางหนึ่งครั้งสำหรับทุก instance ได้อย่างปลอดภัยกว่า
+
+## อัปเดต Docker image และ instance เดิม
+
+หลังแก้ source และ push GitHub แล้ว ให้ build/push tag ใหม่ เช่น:
+
+```powershell
+docker build --platform linux/amd64 -t nuttawat0295/sntalkbot:2026.08.23-r2 .
+docker push nuttawat0295/sntalkbot:2026.08.23-r2
+docker tag nuttawat0295/sntalkbot:2026.08.23-r2 nuttawat0295/sntalkbot:latest
+docker push nuttawat0295/sntalkbot:latest
+```
+
+บน server ถ้าใช้ `latest`:
+
+```bash
+sudo ttuhelper update
+```
+
+คำสั่งนี้ pull image ใหม่และ recreate **เฉพาะ instance ที่กำลังรันอยู่** โดยเก็บ `/opt/sntalkbot-bots/<name>/config.ini`, cookies, favorites, cache และข้อมูล persistent เดิมไว้

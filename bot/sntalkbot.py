@@ -161,7 +161,7 @@ class SNTalkBot(TeamTalk):
             )
         except Exception as e:
             logging.error(f"Connection failed during initialization: {e}")
-            print(self._("Error: Connection failed. Check server details or network. See ttutilities.log for details."))
+            print(self._("Error: Connection failed. Check server details or network. See sntalkbot.log for details."))
 
     def shutdown(self):
         """Cleanly shuts down all resources used by the bot instance."""
@@ -368,7 +368,8 @@ class SNTalkBot(TeamTalk):
             self.translator_cog.on_user_parted(user)
         if self.tts_cog is not None:
             self.tts_cog.on_user_parted(user)
-        self.account_request_cog.on_user_parted(user)
+        if self.account_request_cog is not None:
+            self.account_request_cog.on_user_parted(user)
 
     def split_long_message(self, message, chunk_size=500):
         chunks = []

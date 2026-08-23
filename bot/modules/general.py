@@ -2,6 +2,7 @@ from TeamTalk5 import ttstr, UserType
 import wikipedia
 import langdetect
 import requests
+from bot.utils import BotUtils as utils
 
 class GeneralCog:
     """
@@ -12,16 +13,17 @@ class GeneralCog:
         self._ = bot._
 
     def register(self, command_handler):
-        """Registers all the general commands."""
-        command_handler.register_command('weather', self.handle_weather_command)
+        """Register common commands plus server-only utilities for Manager/Full modes."""
         command_handler.register_command('search', self.handle_search_command)
         command_handler.register_command('help', self.handle_help_command)
-        command_handler.register_command('h', self.handle_help_list_command)
         command_handler.register_command('myinfo', self.handle_myinfo_command)
         command_handler.register_command('admins', self.handle_admins_command)
         command_handler.register_command('about', self.handle_about_command)
-        command_handler.register_command('report', self.handle_report_command)
+        command_handler.register_command('dr', self.handle_direct_report_command)
         command_handler.register_command('gcid', self.handle_gcid_command)
+        if self.bot.server_management_enabled:
+            command_handler.register_command('weather', self.handle_weather_command)
+            command_handler.register_command('report', self.handle_report_command)
 
     def handle_weather_command(self, textmessage, *args):
         sender_user_id = textmessage.nFromUserID
@@ -148,9 +150,67 @@ class GeneralCog:
                 sent_to_any = True
         self.bot.privateMessage(sender_id, self._("Your message has been sent to online admins.") if sent_to_any else self._("No admins online to receive your message."))
 
+    def handle_direct_report_command(self, textmessage, *args):
+        """Send a direct problem report to the globally configured Telegram destination."""
+        sender_id = textmessage.nFromUserID
+        if not args:
+            self.bot.privateMessage(sender_id, self._("Usage: /dr <your message>"))
+            return
+        token = str(self.bot.telegram_config.get("telegram_bot_token", "") or "").strip()
+        chat_id = str(self.bot.telegram_config.get("report_chat_id", "") or "").strip()
+        if not token or not chat_id:
+            self.bot.privateMessage(sender_id, self._("Direct Telegram reporting is not configured on this bot."))
+            return
+
+        sender_user = self.bot.getUser(sender_id)
+        nickname = ttstr(sender_user.szNickname) if sender_user else self._("Unknown")
+        username = ttstr(textmessage.szFromUsername) or "-"
+        channel_id = getattr(sender_user, "nChannelID", 0) if sender_user else 0
+        channel_name = "-"
+        try:
+            channel = self.bot.getChannel(channel_id)
+            if channel:
+                channel_name = ttstr(channel.szName) or str(channel_id)
+        except Exception:
+            channel_name = str(channel_id or "-")
+
+        server_address = str(self.bot.server_config.get("address", "") or "-")
+        server_port = str(self.bot.server_config.get("tcp_port", "") or "")
+        server_display = server_address
+        try:
+            props = self.bot.getServerProperties()
+            name = ttstr(getattr(props, "szServerName", ""))
+            if name:
+                server_display = name
+        except Exception:
+            pass
+        if server_port:
+            server_display = f"{server_display} ({server_address}:{server_port})"
+
+        mode = "full" if self.bot.player_enabled and self.bot.server_management_enabled else (
+            "player" if self.bot.player_enabled else "manager"
+        )
+        report_text = (
+            "SN TalkBot - Direct Report\n"
+            f"Server: {server_display}\n"
+            f"Bot: {self.bot.bot_config.get('nickname', 'SN TalkBot')} [{mode}]\n"
+            f"User: {nickname}\n"
+            f"Username: {username}\n"
+            f"Channel: {channel_name} (ID {channel_id})\n"
+            f"Report: {' '.join(args)}"
+        )
+        self.bot.io_pool.submit(self._send_direct_report_task, sender_id, token, chat_id, report_text)
+
+    def _send_direct_report_task(self, sender_id, token, chat_id, report_text):
+        ok = utils.send_telegram_notification(token, chat_id, report_text)
+        if ok:
+            self.bot.privateMessage(sender_id, self._("Your direct report was sent to Telegram."))
+        else:
+            self.bot.privateMessage(sender_id, self._("Could not send the direct report to Telegram. Please contact an admin."))
+
     def handle_about_command(self, textmessage, *args):
         import platform
-        self.bot.privateMessage(textmessage.nFromUserID, f"SN TalkBot 2026.08.22 | Python {platform.python_version()} | Linux/Docker ready | yt-dlp + MPV + TeamTalk")
+        self.bot.privateMessage(textmessage.nFromUserID, f"SN TalkBot 2026.08.23-r2 | Python {platform.python_version()} | Linux/Docker ready | yt-dlp + MPV + TeamTalk")
 
     def handle_gcid_command(self, textmessage, *args):
         if args:

@@ -70,12 +70,12 @@ MPV ใช้สำหรับเล่นเสียงจริง ส่ว
 sudo apt install -y pulseaudio pulseaudio-utils
 ```
 
-โปรเจกต์ใช้ `tools/setup_pulse_bridge.sh` สร้าง null sink ชื่อ `ttutilities` และตั้ง `ttutilities.monitor` เป็น input เริ่มต้นของ TeamTalk
+โปรเจกต์ใช้ `tools/setup_pulse_bridge.sh` สร้าง null sink ชื่อ `sntalkbot` (หรือชื่อ instance จาก TTUHelper) และตั้ง monitor source ของ sink นั้น เป็น input เริ่มต้นของ TeamTalk
 
 เส้นทางเสียงคือ:
 
 ```text
-MPV -> PulseAudio sink ttutilities -> ttutilities.monitor -> TeamTalk microphone/input -> ห้อง TeamTalk
+MPV -> PulseAudio instance sink -> instance.monitor -> TeamTalk microphone/input -> ห้อง TeamTalk
 ```
 
 ห้ามเปลี่ยน MPV เป็น `ao=null` หากต้องการส่งเสียงเข้า TeamTalk เพราะ null audio output จะทิ้งเสียงทั้งหมด
@@ -130,3 +130,8 @@ python tools/validate_project.py
 ## GUI / Windows
 
 ไม่มี dependency GUI และไม่ใช้ wxPython โปรเจกต์นี้เป็น Linux/Docker only
+
+
+## Google Cloud TTS
+
+Google Cloud TTS ใช้ REST API ผ่าน `requests` และต้องเปิด Text-to-Speech API พร้อม API key ใน `[tts] google_api_key`. Microsoft/Edge TTS ยังเป็นค่าเริ่มต้นและไม่ต้องใช้ Google key.

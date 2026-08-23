@@ -52,7 +52,6 @@ class PlayerCog:
         command_handler.register_command('b', self.handle_previous_track_command)
         command_handler.register_command('v', self.handle_change_volume_command)
         command_handler.register_command('l', self.handle_get_current_link_command) # ขอลิ้งค์เพลงที่กำลังเล่น
-        command_handler.register_command('gl', self.handle_get_current_link_command) # Alias for /l
         command_handler.register_command('pg', self.handle_playing_info_command) # ดูข้อมูลเพลงที่กำลังเล่นอยู่
         command_handler.register_command('d', self.handle_get_duration_command) # Alias for /pg or specific duration info
         command_handler.register_command('r', self.handle_history_command)
@@ -87,6 +86,112 @@ class PlayerCog:
         command_handler.register_command('select', self.handle_select_command)
         command_handler.register_command('favorites', self.handle_favorites_list_command)
         command_handler.register_command('shuffle', self.handle_shuffle_command)
+        command_handler.register_command('ptts', self.handle_player_tts_command, admin_only=True)
+        command_handler.register_command('pttsmode', self.handle_player_tts_mode_command, admin_only=True)
+        command_handler.register_command('pvoice', self.handle_player_voice_command, admin_only=True)
+        command_handler.register_command('pvoices', self.handle_player_voices_command)
+        command_handler.register_command('pttsrate', self.handle_player_tts_rate_command, admin_only=True)
+        command_handler.register_command('pttsspeed', self.handle_player_tts_speed_command, admin_only=True)
+
+    def handle_player_tts_command(self, textmessage, *args):
+        """Control Player track/queue speech independently from Manager chat TTS."""
+        user_id = textmessage.nFromUserID
+        playback = self.bot.playback_config
+        if not args or args[0].lower() == "status":
+            tracks = "ON" if playback.get("announce_tracks", True) else "OFF"
+            queue_state = "ON" if playback.get("announce_queue", True) else "OFF"
+            mode = self.bot.tts_cog.get_player_tts_mode()
+            self.bot.privateMessage(user_id, self._("Player TTS: tracks={tracks}, queue={queue}, mode={mode}").format(
+                tracks=tracks, queue=queue_state, mode=mode))
+            return
+
+        target = "all"
+        value_index = 0
+        first = args[0].lower()
+        if first in ("tracks", "track", "queue"):
+            target = "tracks" if first in ("tracks", "track") else "queue"
+            value_index = 1
+        if len(args) <= value_index or args[value_index].lower() not in ("on", "off"):
+            self.bot.privateMessage(user_id, self._("Usage: /ptts on|off|status or /ptts tracks on|off or /ptts queue on|off"))
+            return
+        enabled = args[value_index].lower() == "on"
+        updates = {}
+        if target in ("all", "tracks"):
+            updates["announce_tracks"] = enabled
+            playback["announce_tracks"] = enabled
+        if target in ("all", "queue"):
+            updates["announce_queue"] = enabled
+            playback["announce_queue"] = enabled
+        self.bot.config_handler.update_playback_settings(updates)
+        state = "ON" if enabled else "OFF"
+        self.bot.privateMessage(user_id, self._("Player TTS {target}: {state}").format(target=target, state=state))
+
+    def handle_player_tts_mode_command(self, textmessage, *args):
+        user_id = textmessage.nFromUserID
+        if not args or args[0].lower() not in ("microsoft", "google"):
+            self.bot.privateMessage(user_id, self._("Usage: /pttsmode microsoft|google"))
+            return
+        mode = args[0].lower()
+        if mode == "google" and not self.bot.tts_cog.player_google_ready():
+            self.bot.privateMessage(user_id, self._("Google Cloud TTS is not configured. Set [tts] google_api_key first."))
+            return
+        self.bot.playback_config["announcement_tts_mode"] = mode
+        self.bot.config_handler.update_playback_settings({"announcement_tts_mode": mode})
+        self.bot.privateMessage(user_id, self._("Player TTS mode set to {mode}.").format(mode=mode))
+
+    def handle_player_voice_command(self, textmessage, *args):
+        user_id = textmessage.nFromUserID
+        if not args:
+            self.bot.privateMessage(user_id, self._("Usage: /pvoice <voice_name>"))
+            return
+        voice = " ".join(args).strip()
+        mode = self.bot.tts_cog.get_player_tts_mode()
+        key = "announcement_google_voice" if mode == "google" else "announcement_microsoft_voice"
+        self.bot.playback_config[key] = voice
+        self.bot.config_handler.update_playback_settings({key: voice})
+        self.bot.privateMessage(user_id, self._("Player {mode} voice set to {voice}.").format(mode=mode, voice=voice))
+
+    def handle_player_voices_command(self, textmessage, *args):
+        lang_code = args[0] if args else None
+        self.bot.tts_cog.list_player_voices(textmessage.nFromUserID, lang_code)
+
+    def handle_player_tts_rate_command(self, textmessage, *args):
+        user_id = textmessage.nFromUserID
+        if self.bot.tts_cog.get_player_tts_mode() != "microsoft":
+            self.bot.privateMessage(user_id, self._("Player TTS rate is available in Microsoft mode. For Google use /pttsspeed."))
+            return
+        if not args:
+            self.bot.privateMessage(user_id, self._("Usage: /pttsrate <-100..100>"))
+            return
+        try:
+            value = int(args[0])
+        except ValueError:
+            value = 999
+        if not -100 <= value <= 100:
+            self.bot.privateMessage(user_id, self._("Player TTS rate must be between -100 and 100."))
+            return
+        self.bot.playback_config["announcement_rate"] = value
+        self.bot.config_handler.update_playback_settings({"announcement_rate": value})
+        self.bot.privateMessage(user_id, self._("Player TTS rate set to {value}.").format(value=value))
+
+    def handle_player_tts_speed_command(self, textmessage, *args):
+        user_id = textmessage.nFromUserID
+        if self.bot.tts_cog.get_player_tts_mode() != "google":
+            self.bot.privateMessage(user_id, self._("Player TTS speed is available in Google mode. For Microsoft use /pttsrate."))
+            return
+        if not args:
+            self.bot.privateMessage(user_id, self._("Usage: /pttsspeed <0.25..4.0>"))
+            return
+        try:
+            value = float(args[0])
+        except ValueError:
+            value = -1.0
+        if not 0.25 <= value <= 4.0:
+            self.bot.privateMessage(user_id, self._("Player Google TTS speed must be between 0.25 and 4.0."))
+            return
+        self.bot.playback_config["announcement_google_speed"] = value
+        self.bot.config_handler.update_playback_settings({"announcement_google_speed": value})
+        self.bot.privateMessage(user_id, self._("Player Google TTS speed set to {value}.").format(value=value))
 
     def handle_prefixed_message(self, textmessage):
         """

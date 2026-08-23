@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-SINK_NAME="${TTUTIL_PULSE_SINK:-ttutilities}"
+SINK_NAME="${TTUTIL_PULSE_SINK:-sntalkbot}"
 SINK_DESC="${TTUTIL_PULSE_DESC:-SNTalkBot_Virtual_Output}"
 
 if ! command -v pulseaudio >/dev/null 2>&1 || ! command -v pactl >/dev/null 2>&1; then
@@ -8,7 +8,7 @@ if ! command -v pulseaudio >/dev/null 2>&1 || ! command -v pactl >/dev/null 2>&1
   exit 1
 fi
 
-export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/ttutilities-runtime-${UID}}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/sntalkbot-runtime-${UID}}"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 

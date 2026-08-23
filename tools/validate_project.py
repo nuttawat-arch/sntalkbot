@@ -107,6 +107,75 @@ if duplicates:
 else:
     ok(f"registered command names are unique ({len(names)})")
 
+# Avoid keeping multiple public aliases that execute exactly the same handler in the
+# same command module. This catches regressions such as /l + /gl or /restart + /rs.
+same_handler = []
+for path in sorted((ROOT / "bot").rglob("*.py")):
+    if "__pycache__" in path.parts:
+        continue
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for cls in [n for n in tree.body if isinstance(n, ast.ClassDef)]:
+        groups = {}
+        for node in ast.walk(cls):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) or node.func.attr != "register_command":
+                continue
+            if len(node.args) < 2 or not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
+                continue
+            handler = ast.unparse(node.args[1])
+            name = node.args[0].value.strip().lstrip("/").lower()
+            groups.setdefault(handler, []).append(name)
+        for handler, aliases in groups.items():
+            if len(aliases) > 1:
+                same_handler.append((path.relative_to(ROOT).as_posix(), cls.name, handler, aliases))
+if same_handler:
+    fail("multiple command aliases use the same handler: " + "; ".join(
+        f"{path}:{cls}:{handler} -> {','.join('/'+x for x in aliases)}"
+        for path, cls, handler, aliases in same_handler
+    ))
+else:
+    ok("no same-handler command aliases remain")
+
+forbidden_aliases = {"h", "gl", "rs", "sd"}
+remaining_aliases = sorted(forbidden_aliases.intersection(names))
+if remaining_aliases:
+    fail("retired duplicate aliases still registered: " + ", ".join('/' + x for x in remaining_aliases))
+else:
+    ok("retired duplicate aliases are absent")
+
+required_player_tts = {"ptts", "pttsmode", "pvoice", "pvoices", "pttsrate", "pttsspeed"}
+if not required_player_tts.issubset(set(names)):
+    fail("Player TTS control commands missing: " + ", ".join('/' + x for x in sorted(required_player_tts - set(names))))
+else:
+    ok("Player TTS controls are registered with distinct command names")
+
+if "dr" not in names:
+    fail("/dr direct Telegram report command is missing")
+else:
+    ok("/dr direct Telegram report command is registered")
+
+# Static role map: Player-only must not expose Manager TTS/admin commands and
+# Manager-only must not expose Player commands. General /dr remains common.
+def commands_in_class(class_name):
+    result = set()
+    for path in sorted((ROOT / "bot").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for cls in [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == class_name]:
+            for node in ast.walk(cls):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "register_command" and node.args:
+                    if isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                        result.add(node.args[0].value.strip().lstrip("/").lower())
+    return result
+
+player_only = commands_in_class("PlayerCog")
+manager_only = set().union(*(commands_in_class(name) for name in (
+    "AdminCog", "JailCog", "TTSCog", "TranslatorCog", "AccountRequestCog", "UserManager"
+)))
+role_collision = sorted(player_only.intersection(manager_only))
+if role_collision:
+    fail("Player/Manager role-specific command collision: " + ", ".join('/' + x for x in role_collision))
+else:
+    ok(f"Player/Manager role-specific commands are disjoint (Player={len(player_only)}, Manager modules={len(manager_only)})")
+
 help_entries = help_catalog()
 help_names = []
 for syntax, _ in help_entries:

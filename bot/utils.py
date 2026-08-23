@@ -137,16 +137,25 @@ class BotUtils:
 
     @staticmethod
     def send_telegram_notification(token, chat_id, message):
-        """Sends a notification to a specified Telegram chat ID."""
+        """Send a Telegram message. Returns True on success and never raises for missing config/network errors."""
         if not token or not chat_id:
-            return
+            return False
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         data = {"chat_id": chat_id, "text": message}
         try:
             response = requests.post(url, json=data, timeout=10)
             response.raise_for_status()
+            payload = response.json() if response.content else {}
+            return bool(payload.get("ok", True))
         except requests.exceptions.RequestException as e:
-            print(f"Error sending Telegram notification: {e}")
+            # Do not print the exception URL because Telegram Bot API URLs contain the secret token.
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            detail = f"HTTP {status}" if status else type(e).__name__
+            print(f"Error sending Telegram notification: {detail}")
+            return False
+        except ValueError:
+            print("Error sending Telegram notification: invalid JSON response")
+            return False
 
 
 class LoggingThreadPoolExecutor(ThreadPoolExecutor):

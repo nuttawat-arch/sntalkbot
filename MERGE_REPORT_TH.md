@@ -16,7 +16,7 @@
 - ชื่อคำสั่งไม่ซ้ำกัน: 116/116
 - ทุกคำสั่งต้องขึ้นต้นด้วย `/`
 - ข้อความธรรมดาที่ไม่ขึ้นต้น `/` จะไม่ถูกตีความเป็นคำสั่ง
-- `/help` และ `/h` ส่งหัวข้อก่อน 1 ข้อความ จากนั้นส่งหนึ่งคำสั่งพร้อมคำอธิบายต่อหนึ่ง TeamTalk private message
+- `/help` ส่งหัวข้อก่อน 1 ข้อความ จากนั้นส่งหนึ่งคำสั่งพร้อมคำอธิบายต่อหนึ่ง TeamTalk private message
 - `COMMANDS_TH.md` ตรงกับคำสั่งที่ลงทะเบียนจริง 116/116
 - บรรทัดภาษาไทยที่ยาวที่สุด 429 UTF-8 bytes ต่ำกว่าขีดแบ่งข้อความภายใน 480 bytes
 
@@ -36,7 +36,7 @@
 
 เส้นทางเสียงที่ออกแบบไว้คือ:
 
-`MPV -> PulseAudio null sink (ttutilities) -> monitor source -> TeamTalk input`
+`MPV -> PulseAudio null sink (SNTalkBot/instance) -> monitor source -> TeamTalk input`
 
 จึงไม่ใช้ audio output แบบ null ที่ทิ้งเสียง เพราะบอตต้องส่งเสียงเพลงจริงเข้าสู่ TeamTalk
 
