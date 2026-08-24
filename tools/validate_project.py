@@ -1108,10 +1108,48 @@ elif '127.0.0.1' not in api_source or 'Authorization' not in api_source or 'Bear
     fail("local bot API is not clearly loopback/token protected")
 elif 'LocalStatusApi(self)' not in sntalk_source or '.local_status_api.start()' not in sntalk_source:
     fail("SNTalkBot does not start the optional local realtime API")
-elif 'user_id == my_user_id' not in bridge_source or 'admins_online' not in bridge_source:
-    fail("dashboard state does not explicitly exclude the bot itself from online Administrator results")
+elif 'bot_username' not in bridge_source or 'username == bot_username' not in bridge_source or 'room_users_online' not in bridge_source or 'server_users_online' not in bridge_source:
+    fail("dashboard state does not separate room/server counts or exclude the bot TeamTalk username from Administrator results")
 else:
-    ok("secret-free JSON fallback + read-only token-protected loopback HTTP API expose realtime state and exclude the bot itself from Administrator results")
+    ok("secret-free JSON fallback + read-only token-protected loopback HTTP API expose room/server realtime state and exclude the bot ID/username from Administrator results")
+
+# Exercise room-scoped dashboard semantics with fake TeamTalk users.
+try:
+    from types import SimpleNamespace as _NS
+    _spec_state = importlib.util.spec_from_file_location("_snt_dashboard_state_validation", ROOT / "bot" / "dashboard_state.py")
+    _state_mod = importlib.util.module_from_spec(_spec_state); _spec_state.loader.exec_module(_state_mod)
+    class _Activity:
+        def recent(self, _n): return []
+    class _FakeBot:
+        player_enabled=False; server_management_enabled=True; started_at=0; activity=_Activity()
+        server_config={"address":"example","tcp_port":10333,"udp_port":10333,"encrypted":False,"username":"bot-account"}
+        bot_config={"nickname":"Bot","status_message":"auto","client_name":"SNTalkBot","channel_input_enabled":True,"intercept_channel_messages":True}
+        profanity_filter_enabled=False; commands_locked=False; welcome_mode=0; welcome_broadcast=False
+        def getMyUserID(self): return 10
+        def getMyChannelID(self): return 7
+        def getChannel(self, cid): return _NS(szName="Room A") if cid==7 else None
+        def _state_flag(self, name): return {"USERSTATE_VOICE":1,"USERSTATE_MEDIAFILE_AUDIO":2,"USERSTATE_MEDIAFILE_VIDEO":4,"USERSTATE_VIDEOCAPTURE":8,"USERSTATE_DESKTOP":16}.get(name,0)
+        def get_idle_status_message(self): return "auto"
+        def getServerUsers(self):
+            return [
+                _NS(nUserID=10,nChannelID=7,uUserType=2,uUserState=0,szUsername="bot-account",szNickname="Bot",szStatusMsg=""),
+                _NS(nUserID=11,nChannelID=7,uUserType=2,uUserState=1,nStatusMode=3,szUsername="human-admin",szNickname="Admin",szStatusMsg="ready",szClientName="TeamTalk"),
+                _NS(nUserID=12,nChannelID=7,uUserType=1,uUserState=8,nStatusMode=0,szUsername="listener",szNickname="Listener",szStatusMsg="hello",szClientName="WebClient"),
+                _NS(nUserID=13,nChannelID=9,uUserType=2,uUserState=16,szUsername="other-admin",szNickname="Other",szStatusMsg=""),
+                _NS(nUserID=14,nChannelID=7,uUserType=2,uUserState=0,szUsername="BOT-ACCOUNT",szNickname="Duplicate bot session",szStatusMsg=""),
+            ]
+    _snap=_state_mod.RuntimeStateWriter(_FakeBot()).build_snapshot()
+    assert _snap["users_online"]==2 and _snap["room_users_online"]==2, _snap
+    assert _snap["server_users_online"]==3, _snap
+    assert _snap["admins_online_count"]==2 and _snap["admins_in_room_count"]==1, _snap
+    assert [x["username"] for x in _snap["admins_online"]]==["human-admin","other-admin"], _snap
+    assert [x["username"] for x in _snap["room_users"]]==["human-admin","listener"], _snap
+    assert _snap["room_users"][0]["status_mode"]==3 and _snap["room_users"][0]["client_name"]=="TeamTalk", _snap
+    assert _snap["teamtalk_activity"]=={"speaking":1,"media":0,"video":1,"desktop":0}, _snap
+    assert _snap["server_teamtalk_activity"]["desktop"]==1, _snap
+    ok("realtime dashboard counts people in the bot room, keeps server totals separate, excludes every bot-username session, and exposes safe room-user detail")
+except Exception as exc:
+    fail(f"room-scoped realtime dashboard runtime test failed: {exc!r}")
 
 # Exercise the standalone HTTP transport with a real loopback socket.
 try:

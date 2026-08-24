@@ -1,6 +1,6 @@
 # SNTalkBot
 
-> **SNTalkBot 5.1.1:** role-isolated Full/Player/Manager operation, queue provenance and playlist sessions, Related Radio, bundled default YouTube cookies, a role-aware `status` dashboard, bounded Manager/Full `events`, and event-driven moderation for user/channel metadata updates.
+> **SNTalkBot 5.1.2:** role-isolated Full/Player/Manager operation, queue provenance and playlist sessions, Related Radio, bundled default YouTube cookies, a role-aware `status` dashboard, bounded Manager/Full `events`, and event-driven moderation for user/channel metadata updates.
 
 
 Registered commands are prefix-free in both private and channel/broadcast messages (for example `h`, `p song`, `ap on`). A leading `/` remains accepted only for backward compatibility. Admins can disable normal channel-text reactions with `ci off`; an enabled `filter` still moderates received text before the channel-input gate, and `cm on|off|status` independently controls Player announcements sent to the channel.

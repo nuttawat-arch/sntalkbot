@@ -95,21 +95,6 @@ class RuntimeStateWriter:
             users = list(bot.getServerUsers() or [])
         except Exception:
             users = []
-        users_online = sum(1 for user in users if int(getattr(user, "nUserID", 0) or 0) != my_user_id)
-        # TeamTalk UserType.USERTYPE_ADMIN is 2.  Exclude this bot's own user ID
-        # so the dashboard never counts the bot itself as a human/server admin.
-        admins_online = []
-        for user in users:
-            user_id = int(getattr(user, "nUserID", 0) or 0)
-            if not user_id or user_id == my_user_id:
-                continue
-            if int(getattr(user, "uUserType", 0) or 0) != 2:
-                continue
-            admins_online.append({
-                "user_id": user_id,
-                "username": utils.ensure_text(getattr(user, "szUsername", "")),
-                "nickname": utils.ensure_text(getattr(user, "szNickname", "")),
-            })
 
         channel_id = 0
         channel_name = ""
@@ -122,11 +107,83 @@ class RuntimeStateWriter:
         except Exception:
             pass
 
-        state_counts = {}
+        bot_username = str((getattr(bot, "server_config", {}) or {}).get("username") or "").strip().casefold()
+
+        def is_bot_session(user):
+            user_id = int(getattr(user, "nUserID", 0) or 0)
+            username = utils.ensure_text(getattr(user, "szUsername", "")).strip().casefold()
+            # User ID is the primary identity. Username exclusion is deliberate too:
+            # TeamTalk can expose another session using the same bot account, and the
+            # dashboard must never present the bot account itself as a human admin.
+            return bool((my_user_id and user_id == my_user_id) or (bot_username and username == bot_username))
+
+        human_users = [user for user in users if not is_bot_session(user)]
+        room_users = [
+            user for user in human_users
+            if channel_id and int(getattr(user, "nChannelID", 0) or 0) == channel_id
+        ]
+        server_users_online = len(human_users)
+        room_users_online = len(room_users)
+
         try:
-            state_counts = bot.runtime_state_counts()
+            flags = {
+                "voice": int(bot._state_flag("USERSTATE_VOICE") or 0),
+                "media_audio": int(bot._state_flag("USERSTATE_MEDIAFILE_AUDIO") or 0),
+                "media_video": int(bot._state_flag("USERSTATE_MEDIAFILE_VIDEO") or 0),
+                "video": int(bot._state_flag("USERSTATE_VIDEOCAPTURE") or 0),
+                "desktop": int(bot._state_flag("USERSTATE_DESKTOP") or 0),
+            }
         except Exception:
-            state_counts = {"voice": 0, "media": 0, "video": 0, "desktop": 0}
+            flags = {"voice": 0, "media_audio": 0, "media_video": 0, "video": 0, "desktop": 0}
+
+        def state_row(user):
+            state = int(getattr(user, "uUserState", 0) or 0)
+            return {
+                "speaking": bool(flags["voice"] and state & flags["voice"]),
+                "media": bool((flags["media_audio"] and state & flags["media_audio"]) or
+                              (flags["media_video"] and state & flags["media_video"])),
+                "video": bool(flags["video"] and state & flags["video"]),
+                "desktop": bool(flags["desktop"] and state & flags["desktop"]),
+            }
+
+        def activity_counts(rows):
+            result = {"speaking": 0, "media": 0, "video": 0, "desktop": 0}
+            for user in rows:
+                state = state_row(user)
+                for key in result:
+                    result[key] += int(bool(state[key]))
+            return result
+
+        room_user_rows = []
+        for user in room_users:
+            user_type = int(getattr(user, "uUserType", 0) or 0)
+            row = {
+                "user_id": int(getattr(user, "nUserID", 0) or 0),
+                "username": utils.ensure_text(getattr(user, "szUsername", "")),
+                "nickname": utils.ensure_text(getattr(user, "szNickname", "")),
+                "status_message": utils.ensure_text(getattr(user, "szStatusMsg", "")),
+                "status_mode": int(getattr(user, "nStatusMode", 0) or 0),
+                "client_name": utils.ensure_text(getattr(user, "szClientName", "")),
+                "account_type": "administrator" if user_type == 2 else "user",
+                "state": state_row(user),
+            }
+            room_user_rows.append(row)
+
+        admins_online = []
+        for user in human_users:
+            if int(getattr(user, "uUserType", 0) or 0) != 2:
+                continue
+            user_channel_id = int(getattr(user, "nChannelID", 0) or 0)
+            admins_online.append({
+                "user_id": int(getattr(user, "nUserID", 0) or 0),
+                "username": utils.ensure_text(getattr(user, "szUsername", "")),
+                "nickname": utils.ensure_text(getattr(user, "szNickname", "")),
+                "channel_id": user_channel_id,
+                "in_bot_channel": bool(channel_id and user_channel_id == channel_id),
+            })
+
+        room_activity = activity_counts(room_users)
+        server_activity = activity_counts(human_users)
 
         snapshot = {
             "schema": 1,
@@ -149,15 +206,17 @@ class RuntimeStateWriter:
                 "client_name": str(bot.bot_config.get("client_name") or ""),
             },
             "channel": {"id": channel_id, "name": channel_name},
-            "users_online": users_online,
+            # Backward-compatible users_online now means people in the bot's room,
+            # not everyone connected to the TeamTalk server.
+            "users_online": room_users_online,
+            "room_users_online": room_users_online,
+            "server_users_online": server_users_online,
+            "room_users": room_user_rows,
             "admins_online_count": len(admins_online),
+            "admins_in_room_count": sum(1 for item in admins_online if item.get("in_bot_channel")),
             "admins_online": admins_online,
-            "teamtalk_activity": {
-                "speaking": int(state_counts.get("voice", 0) or 0),
-                "media": int(state_counts.get("media", 0) or 0),
-                "video": int(state_counts.get("video", 0) or 0),
-                "desktop": int(state_counts.get("desktop", 0) or 0),
-            },
+            "teamtalk_activity": room_activity,
+            "server_teamtalk_activity": server_activity,
         }
 
         if bot.player_enabled and getattr(bot, "player", None) is not None:

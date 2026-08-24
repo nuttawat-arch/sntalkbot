@@ -1,3 +1,12 @@
+# SNTalkBot 5.1.2 — Room-scoped Realtime Dashboard
+
+- แก้ Realtime API/Runtime Bridge ให้ `users_online` หมายถึงจำนวนผู้ใช้จริงใน **ห้องที่บอตอยู่** โดยไม่นับตัวบอตเอง แทนการใช้ยอดรวมทั้งเซิร์ฟเวอร์
+- เพิ่ม `room_users_online`, `server_users_online`, `room_users`, `admins_in_room_count` และ `server_teamtalk_activity` เพื่อให้ Web Manager แสดงรายละเอียดห้องและภาพรวมเซิร์ฟเวอร์แยกกันได้โดยไม่สับสน
+- รายชื่อ Administrator ตัดทั้ง User ID ของบอตและทุก session ที่ใช้ TeamTalk username เดียวกับบัญชีบอต จึงไม่เอาบอตมานับเป็น Administrator มนุษย์
+- `teamtalk_activity` เปลี่ยนเป็น Voice/Media/Video/Desktop ของห้องปัจจุบัน; ค่าทั้งเซิร์ฟเวอร์ยังมีแยกใน `server_teamtalk_activity`
+- จำนวน canonical commands ยังคง **124 คำสั่ง**: `. [queue_position]` และ `, [queue_position]` เป็น syntax ที่ขยายจากคำสั่ง `.` และ `,` เดิม ไม่ใช่ command name ใหม่อีก 2 รายการ จึงไม่ควรนับเป็น 126
+- เพิ่ม regression test จำลองห้อง, ผู้ใช้ทั้งเซิร์ฟเวอร์, Administrator และ duplicate session ของ username บอต เพื่อกันการนับผิดกลับมาอีก
+
 # SNTalkBot 5.1.1 — Queue Search Isolation / Linux Hardening
 
 ## การเปลี่ยนแปลง

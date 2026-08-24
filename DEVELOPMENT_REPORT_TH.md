@@ -1,3 +1,22 @@
+# DEVELOPMENT REPORT — SNTalkBot 5.1.2
+
+## ปัญหาจากรอบก่อน
+- Web Manager เห็น `users_online` เป็นจำนวนรวมทั้ง TeamTalk server ทั้งที่ข้อความบนการ์ดสื่อว่าคือคนในห้องปัจจุบัน
+- การตัดบอตออกจาก Administrator อาศัย User ID เป็นหลัก จึงยังไม่ชัดเจนสำหรับ session อื่นที่ใช้ TeamTalk username เดียวกับบอต
+
+## แก้ไข/เพิ่ม
+- เปลี่ยน realtime snapshot ให้ room-scoped และคง server totals แยกต่างหาก
+- เพิ่มรายชื่อผู้ใช้ในห้องพร้อม username/nickname/status/account type และ Voice/Media/Video/Desktop state
+- ตัด bot TeamTalk username จาก human/admin metrics ทุก session
+
+## ผลตรวจ
+- `python3 tools/validate_project.py` ผ่านทั้งชุด: Python compile, 124-command/help parity, queue targeting, moderation, Linux LF, realtime HTTP API และ room/server/admin regression
+- canonical commands = 124; `. [queue_position]` และ `, [queue_position]` ถูกตรวจเป็น syntax extension ของ 2 commands เดิม ไม่เพิ่ม command count
+- realtime regression ยืนยันว่าคนในห้อง/ทั้งเซิร์ฟเวอร์แยกกัน และทุก session ที่ใช้ TeamTalk username ของบอตไม่ถูกนับเป็น human/Administrator
+
+## คงเหลือ
+- source/local validator พร้อม publish; ต้อง build/push Docker image 5.1.2, update running containers และผ่าน strict Linux production verification
+
 # DEVELOPMENT REPORT — SNTalkBot 5.1.1
 
 วันที่: 2026-08-24

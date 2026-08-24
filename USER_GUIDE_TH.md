@@ -23,7 +23,7 @@ SNTalkBot เป็นบอต TeamTalk สำหรับเล่นสื่
 
 `status` ใช้ได้ทุกประเภทบอตและส่งผลทาง Private เป็นหลายบรรทัดสั้นเพื่อให้ screen reader อ่านง่าย โดยข้อมูลจะไม่ปนข้ามหน้าที่:
 
-- ทุกโหมด: ประเภทบอต, uptime, ห้องปัจจุบัน, จำนวนผู้ใช้ออนไลน์ และจำนวนผู้ใช้ที่กำลังพูด/stream media/เปิดวิดีโอ/แชร์ desktop ณ ตอนนั้น
+- ทุกโหมด: ประเภทบอต, uptime, ห้องปัจจุบัน, จำนวนคนในห้องปัจจุบันและจำนวนผู้ใช้ทั้งเซิร์ฟเวอร์แยกกัน รวม Voice/Media/Video/Desktop ของห้องและทั้งเซิร์ฟเวอร์
 - Player/Full: เพลงปัจจุบัน, จำนวนคิว, Queue Mode, M1/M2/M3, Autoplay และแหล่ง Cookies ที่กำลังใช้
 - Manager/Full สำหรับผู้ดูแล: สถานะ `filter`, `ci`, `ic`, command lock และ welcome
 
@@ -215,4 +215,4 @@ sudo ttuhelper update
 
 ## ใช้ร่วมกับ SNTalkBot Web Manager
 
-ตั้งแต่ 5.0.1 บอตมี `runtime_status.json` เป็น fallback ใน data directory และใน 5.1.0 เพิ่ม read-only realtime HTTP API ที่ bind loopback พร้อม Bearer token ต่อ instance Web Manager 1.1.0 จะใช้ API ก่อนเพื่อความ realtime สูงสุด แล้ว fallback ไป JSON หาก API ยังไม่พร้อม ทั้งสองทางแสดงห้องปัจจุบัน, ผู้ใช้ออนไลน์, activity, เพลง/คิว/ผู้เพิ่มคิว และสถานะ Manager โดยไม่เปลี่ยนคำสั่งหรือ playback core
+ตั้งแต่ 5.0.1 บอตมี `runtime_status.json` เป็น fallback ใน data directory และใน 5.1.0 เพิ่ม read-only realtime HTTP API ที่ bind loopback พร้อม Bearer token ต่อ instance Web Manager 1.1.0 จะใช้ API ก่อนเพื่อความ realtime สูงสุด แล้ว fallback ไป JSON หาก API ยังไม่พร้อม ใน 5.1.2 ทั้งสองทางแสดงห้องปัจจุบัน, จำนวนคนในห้องและทั้งเซิร์ฟเวอร์แยกกัน, รายชื่อคนในห้อง, Administrator โดยตัดทุก session ที่ใช้ username ของบอต, activity ห้อง/เซิร์ฟเวอร์, เพลง/คิว/ผู้เพิ่มคิว และสถานะ Manager โดยไม่เปลี่ยนคำสั่งหรือ playback core
