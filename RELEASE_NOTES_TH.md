@@ -1,3 +1,26 @@
+# SNTalkBot 5.1.1 — Queue Search Isolation / Linux Hardening
+
+## การเปลี่ยนแปลง
+
+- แก้ Queue Mode ที่เดิมใช้ผลค้นหากลางชุดเดียวและ `.`/`,` ไปแก้รายการท้ายคิว ทำให้เมื่อหลายคนค้นหาต่อกัน ผู้ใช้คนก่อนอาจเลื่อนไปเป็นผลค้นหาของผู้ใช้คนล่าสุด
+- แต่ละ queue item ที่เพิ่มจาก `p <คำค้น>` หรือ `pm <คำค้น>` เก็บ search-session ของตัวเองแล้ว โดย metadata นี้ไม่ถูกเปิดออกใน Realtime API/Dashboard
+- `.` และ `,` แบบเดิมยังใช้กับรายการค้นหาล่าสุดได้เหมือนเดิม และเพิ่ม `. <queue_position>` / `, <queue_position>` เช่น `. 34` และ `, 34` เพื่อเปลี่ยนผลค้นหาของคิวที่ระบุโดยตรง
+- ถ้าระบุคิวที่ไม่ได้มาจากการค้นหา เช่น URL/playlist ระบบจะแจ้งชัดเจนและไม่เปลี่ยนรายการอื่น
+- เพิ่ม regression test สำหรับหลายผู้ใช้/หลาย search-session, queue position targeting, provenance และการไม่เล่นเพลงที่ไม่ใช่ current queue โดยไม่ตั้งใจ
+- เพิ่มการตรวจ line ending สำหรับไฟล์ Linux/Python สำคัญเพื่อป้องกัน CRLF regression ก่อนสร้าง Docker/release
+
+## ปัญหาที่ตรวจพบจากรุ่นก่อน
+
+- 5.1.0 ผ่าน validator เดิม 124 คำสั่ง แต่ validator เดิมยังไม่จำลองกรณีผู้ใช้หลายคนมี pending search ใน Queue Mode พร้อมกัน จึงไม่พบ shared-search-state bug นี้
+- พบไฟล์ Python/ข้อความเก่าบางไฟล์ยังมี CRLF แม้ `.gitattributes` กำหนด LF แล้ว; รุ่นนี้ normalize source ที่ Linux ใช้งานเป็น LF และให้ validator ตรวจซ้ำ
+
+## สถานะการตรวจ
+
+- ต้องผ่าน Python compile, command/help parity, Queue/Radio regression, Linux line-ending checks และ Docker/release validation ก่อน publish
+- ขั้น production หลัง publish ยังต้อง `ttuhelper update` เพื่อ recreate container ที่กำลังรันด้วย image ใหม่ แล้วรัน server verification แบบ strict
+
+---
+
 # SNTalkBot 5.1.0 — Realtime API สำหรับ Web Manager
 
 ## สิ่งที่ผู้ใช้ควรรู้

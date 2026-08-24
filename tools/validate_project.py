@@ -280,6 +280,8 @@ def validate_prefix_free_dispatch():
         handler.register_command("p", lambda msg, *args: calls.append(("PLAY",) + tuple(args)))
         handler.register_command("select", lambda msg, *args: calls.append(("SELECT",) + tuple(args)))
         handler.register_alias("c", "select")
+        handler.register_command(".", lambda msg, *args: calls.append(("NEXTSEARCH",) + tuple(args)))
+        handler.register_command(",", lambda msg, *args: calls.append(("PREVSEARCH",) + tuple(args)))
 
         def msg(text, msg_type, to_user_id=None, channel_id=None):
             if to_user_id is None:
@@ -309,6 +311,10 @@ def validate_prefix_free_dispatch():
         assert calls[-1] == ("AP", "off")
         assert handler.handle_message(msg("c 56", _MsgType.MSGTYPE_USER)) is True
         assert calls[-1] == ("SELECT", "56")
+        assert handler.handle_message(msg(". 34", _MsgType.MSGTYPE_USER)) is True
+        assert calls[-1] == ("NEXTSEARCH", "34")
+        assert handler.handle_message(msg(", 34", _MsgType.MSGTYPE_USER)) is True
+        assert calls[-1] == ("PREVSEARCH", "34")
 
         # Explicit USER/CUSTOM stays private even with an odd non-zero channel id.
         odd_private = msg("h", _MsgType.MSGTYPE_USER, to_user_id=0, channel_id=7)
@@ -334,6 +340,10 @@ def validate_prefix_free_dispatch():
         assert calls[-1] == ("HELP",)
         assert handler.handle_message(msg("/h", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls[-1] == ("HELP",)
+        assert handler.handle_message(msg(". 34", _MsgType.MSGTYPE_CHANNEL)) is True
+        assert calls[-1] == ("NEXTSEARCH", "34")
+        assert handler.handle_message(msg(", 34", _MsgType.MSGTYPE_CHANNEL)) is True
+        assert calls[-1] == ("PREVSEARCH", "34")
         assert handler.handle_message(msg("\u200b/\ufeffh", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls[-1] == ("HELP",)
 
@@ -893,6 +903,9 @@ def validate_player_queue_and_radio_regressions():
         search_moves = []
         cog._play_search_result_at = lambda index, user_id: (search_moves.append(index) or True)
         msg = types.SimpleNamespace(nFromUserID=7)
+        # Earlier queue/end tests intentionally clear global search state; restore
+        # a normal-mode search fixture before proving legacy ,/. navigation.
+        player.search_results = [{"title":"S1","link":"s1"},{"title":"S2","link":"s2"}]
         player.current_search_index = 0
         cog.handle_next_search_result_selection(msg)
         assert search_moves[-1] == 1, search_moves
@@ -900,9 +913,59 @@ def validate_player_queue_and_radio_regressions():
         cog.handle_prev_search_result_selection(msg)
         assert search_moves[-1] == 0, search_moves
 
+        # Queue search navigation must be isolated per queued search item.  This
+        # reproduces the multi-user bug where a later user's search overwrote the
+        # global result buffer and ,/. then replaced queue[-1] regardless of whose
+        # item the caller intended to change.
+        player.queue_mode = True
+        first_results = [
+            {"title":"A v1","link":"a1","source":"youtube"},
+            {"title":"A v2","link":"a2","source":"youtube"},
+            {"title":"A v3","link":"a3","source":"youtube"},
+        ]
+        second_results = [
+            {"title":"B v1","link":"b1","source":"youtube"},
+            {"title":"B v2","link":"b2","source":"youtube"},
+        ]
+        player.queue = [
+            {"title":"plain","link":"plain","added_by":"Other"},
+            {"title":"A v1","link":"a1","added_by":"Alice","added_by_user_id":11,"added_at":100,
+             "_search_results":first_results,"_search_index":0,"_search_source":"youtube"},
+            {"title":"B v1","link":"b1","added_by":"Bob","added_by_user_id":12,"added_at":200,
+             "_search_results":second_results,"_search_index":0,"_search_source":"youtube"},
+        ]
+        player.queue_index = 0
+        queue_replays = []
+        cog._play_from_queue = lambda index: queue_replays.append(index)
+        alice_msg = types.SimpleNamespace(nFromUserID=11)
+        bob_msg = types.SimpleNamespace(nFromUserID=12)
+
+        # Explicit . 2 changes Alice's queued search even though Bob added later.
+        cog.handle_next_search_result_selection(alice_msg, "2")
+        assert player.queue[1]["title"] == "A v2" and player.queue[1]["link"] == "a2", player.queue
+        assert player.queue[2]["title"] == "B v1", player.queue
+        assert player.queue[1]["added_by"] == "Alice" and player.queue[1]["added_at"] == 100, player.queue[1]
+        assert queue_replays == [], "changing a pending queue item unexpectedly interrupted playback"
+
+        # Explicit , 2 goes back inside the same private search session.
+        cog.handle_prev_search_result_selection(alice_msg, "2")
+        assert player.queue[1]["title"] == "A v1", player.queue[1]
+
+        # No-argument legacy behavior targets the newest search-backed queue item.
+        cog.handle_next_search_result_selection(bob_msg)
+        assert player.queue[2]["title"] == "B v2", player.queue[2]
+        assert player.queue[1]["title"] == "A v1", player.queue[1]
+
+        # A queue position that came from a URL/playlist has no alternate search
+        # result and must not mutate any other item.
+        before = [dict(item) for item in player.queue]
+        cog.handle_next_search_result_selection(alice_msg, "1")
+        assert player.queue == before, (before, player.queue)
+
         # n/b remain Related Radio controls even while an explicit playlist is
         # loaded. Playlist position jumps use select <index>; automatic playback
         # still walks the authored collection until its final item.
+        player.queue_mode = False
         player.collection_results = [{"title":"P1","link":"p1"},{"title":"P2","link":"p2"}]
         related_cmd = []; list_cmd = []
         cog._play_next_related = lambda **kwargs: (related_cmd.append("n") or True)
@@ -976,7 +1039,30 @@ def validate_player_queue_and_radio_regressions():
             sys.path.remove(root_str)
 
 if validate_player_queue_and_radio_regressions():
-    ok("queue FIFO/ownership/range announcements, pp playlist append, select 56, and normal n/b Related Radio are regression-tested separately from ,/. search navigation")
+    ok("queue FIFO/ownership/range announcements, pp playlist append, select 56, per-item ,/. queue-search targeting, and normal n/b Related Radio are regression-tested")
+
+# Linux/source line endings are release-critical.  Windows checkouts must not
+# re-introduce CRLF into Python/shell/config sources that are copied into Docker.
+lf_suffixes = {".py", ".sh", ".ini", ".yml", ".yaml", ".md", ".txt"}
+crlf_files = []
+for path in ROOT.rglob("*"):
+    if not path.is_file() or ".git" in path.parts or "__pycache__" in path.parts:
+        continue
+    if path.suffix.lower() not in lf_suffixes and path.name not in {"Dockerfile", "VERSION"}:
+        continue
+    # Netscape cookie exports are accepted from Windows at runtime and TTUHelper
+    # normalizes user cookies; the bundled default is data, not an executable.
+    if path == ROOT / "defaults" / "cookies.txt":
+        continue
+    try:
+        if b"\r\n" in path.read_bytes():
+            crlf_files.append(str(path.relative_to(ROOT)))
+    except OSError:
+        pass
+if crlf_files:
+    fail("CRLF found in Linux/source files: " + ", ".join(crlf_files[:12]))
+else:
+    ok("Linux/Python source line endings are LF-only")
 
 # The mpv idle callback must raise the queue/end transition guard before it
 # exposes is_playing=False. This closes the real cross-thread enqueue window,

@@ -870,9 +870,13 @@ class PlayerCog:
             results = self.player.search_youtube(query)
             
         if results:
-            self.player.search_results = results
-            self.player.current_search_index = 0
-            video = results[0]
+            # Keep this result set attached to the queue item instead of only in
+            # the Player-global search buffer.  Multiple users can therefore have
+            # independent pending searches in the same FIFO queue.
+            video = dict(results[0])
+            video["_search_results"] = [dict(item) for item in results]
+            video["_search_index"] = 0
+            video["_search_source"] = source
             queue_range = self._enqueue_queue_items([video], user_id=user_id)
             start, _end = queue_range or (None, None)
             user_nickname = self._nickname(user_id)
@@ -1564,21 +1568,100 @@ class PlayerCog:
         finally:
             self.loading_new_track = False
 
+    def _change_queue_search_selection(self, textmessage, delta, args):
+        """Change the search candidate attached to one queued search item.
+
+        Queue searches are intentionally stored on the queue entry itself.  A
+        later search from another user must not overwrite the earlier user's
+        result set.  With no position argument we preserve the old convenience
+        behavior by targeting the newest search-backed queue item.  Supplying a
+        1-based queue position (for example `. 34` or `, 34`) targets that item
+        explicitly even when other users have appended more tracks afterwards.
+        """
+        user_id = textmessage.nFromUserID
+        if len(args) > 1:
+            self.bot.privateMessage(user_id, self._("Usage: . [queue_position] or , [queue_position]"))
+            return
+
+        explicit_position = None
+        if args:
+            try:
+                explicit_position = int(str(args[0]).strip())
+            except (TypeError, ValueError):
+                self.bot.privateMessage(user_id, self._("Queue position must be a number."))
+                return
+            if explicit_position < 1:
+                self.bot.privateMessage(user_id, self._("Queue position is out of range."))
+                return
+
+        with self.player.queue_lock:
+            if not self.player.queue:
+                self.bot.privateMessage(user_id, self._("The queue is empty."))
+                return
+
+            if explicit_position is not None:
+                target_index = explicit_position - 1
+                if target_index >= len(self.player.queue):
+                    self.bot.privateMessage(user_id, self._("Queue position is out of range."))
+                    return
+            else:
+                target_index = next(
+                    (idx for idx in range(len(self.player.queue) - 1, -1, -1)
+                     if self.player.queue[idx].get("_search_results")),
+                    -1,
+                )
+                if target_index < 0:
+                    self.bot.privateMessage(user_id, self._("No queued search item is available to change."))
+                    return
+
+            current_entry = dict(self.player.queue[target_index])
+            results = current_entry.get("_search_results") or []
+            if not results:
+                self.bot.privateMessage(
+                    user_id,
+                    self._("Queue {position} was not added from a search, so it has no alternate search results.").format(
+                        position=target_index + 1
+                    ),
+                )
+                return
+
+            try:
+                current_index = int(current_entry.get("_search_index", 0) or 0)
+            except (TypeError, ValueError):
+                current_index = 0
+            new_index = (current_index + delta) % len(results)
+            video = dict(results[new_index])
+
+            # Keep queue provenance and the private search session while replacing
+            # only the selected media fields.  Dashboard snapshots never expose the
+            # underscore-prefixed search metadata.
+            for key in ("added_by", "added_by_user_id", "added_at"):
+                if key in current_entry:
+                    video[key] = current_entry[key]
+            video["_search_results"] = results
+            video["_search_index"] = new_index
+            video["_search_source"] = current_entry.get("_search_source") or video.get("source") or "youtube"
+            self.player.queue[target_index] = video
+            is_current = self.player.queue_index == target_index
+
+        self.bot.privateMessage(
+            user_id,
+            self._("Queue {position} selection changed to: {title}").format(
+                position=target_index + 1, title=video.get("title", self._("Unknown"))
+            ),
+        )
+        if is_current:
+            self._play_from_queue(target_index)
+
     def handle_next_search_result_selection(self, textmessage, *args):
+        if self.player.queue_mode:
+            self._change_queue_search_selection(textmessage, 1, args)
+            return
+        if args:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Queue position can be used with . only while Queue Mode is enabled."))
+            return
         if not self.player.search_results:
             self.bot.privateMessage(textmessage.nFromUserID, self._("No search results are available."))
-            return
-        if self.player.queue_mode:
-            if not self.player.queue:
-                return
-            self.player.current_search_index = (self.player.current_search_index + 1) % len(self.player.search_results)
-            video = self.player.search_results[self.player.current_search_index]
-            with self.player.queue_lock:
-                self.player.queue[-1] = video
-                is_current = self.player.queue_index == len(self.player.queue) - 1
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Selection changed to: {title}").format(title=video['title']))
-            if is_current:
-                self._play_from_queue(self.player.queue_index)
             return
         target = self.player.current_search_index + 1
         if target >= len(self.player.search_results):
@@ -1587,20 +1670,14 @@ class PlayerCog:
         self._play_search_result_at(target, textmessage.nFromUserID)
 
     def handle_prev_search_result_selection(self, textmessage, *args):
+        if self.player.queue_mode:
+            self._change_queue_search_selection(textmessage, -1, args)
+            return
+        if args:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Queue position can be used with , only while Queue Mode is enabled."))
+            return
         if not self.player.search_results:
             self.bot.privateMessage(textmessage.nFromUserID, self._("No search results are available."))
-            return
-        if self.player.queue_mode:
-            if not self.player.queue:
-                return
-            self.player.current_search_index = (self.player.current_search_index - 1) % len(self.player.search_results)
-            video = self.player.search_results[self.player.current_search_index]
-            with self.player.queue_lock:
-                self.player.queue[-1] = video
-                is_current = self.player.queue_index == len(self.player.queue) - 1
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Selection changed to: {title}").format(title=video['title']))
-            if is_current:
-                self._play_from_queue(self.player.queue_index)
             return
         target = self.player.current_search_index - 1
         if target < 0:

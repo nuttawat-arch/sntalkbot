@@ -71,7 +71,7 @@ msgstr "การจัดการเมื่อพบคำต้องห้
 msgid "Action for Long Nicknames"
 msgstr "การดำเนินการสำหรับชื่อเล่นที่ยาวเกินไป"
 
-#: bot/modules/player.py:1623
+#: bot/modules/player.py:1700
 msgid "Added to favorites: {title}"
 msgstr "เพิ่มในรายการโปรดแล้ว: {title}"
 
@@ -275,7 +275,7 @@ msgstr "สำหรับผู้ดูแลเท่านั้น: บั�
 msgid "Ahoy there, {nickname} from {country}! Welcome aboard!"
 msgstr "มาแล้วหนึ่ง! ยินดีต้อนรับ {nickname} จาก {country} เข้ามาสนุกด้วยกันครับ!"
 
-#: bot/sntalkbot.py:281
+#: bot/sntalkbot.py:291
 msgid "All command modules have been registered."
 msgstr "ลงทะเบียนโมดูลคำสั่งทั้งหมดเรียบร้อยแล้ว"
 
@@ -287,7 +287,7 @@ msgstr "การดักข้อความทุก Channel ขณะนี
 msgid "All-channel interception is now {state}."
 msgstr "การดักข้อความทุก Channel ตอนนี้ {state}"
 
-#: bot/modules/player.py:1625
+#: bot/modules/player.py:1702
 msgid "Already in favorites."
 msgstr "เพลงนี้อยู่ในรายการโปรดแล้ว"
 
@@ -327,7 +327,7 @@ msgstr "โปรดทราบ, เซิร์ฟเวอร์กำลั�
 msgid "Audio and Playback Settings"
 msgstr "การตั้งค่าเสียงและการเล่นสื่อ"
 
-#: bot/sntalkbot.py:171
+#: bot/sntalkbot.py:177
 msgid "Audio devices Initialized."
 msgstr "เริ่มต้นอุปกรณ์เสียงเรียบร้อยแล้ว"
 
@@ -351,7 +351,7 @@ msgstr "เปิดการแปลอัตโนมัติจาก {sour
 msgid "Automatically kick users who log in with the default 'NoName' nickname."
 msgstr "เตะผู้ใช้ที่เข้าสู่ระบบด้วยชื่อเริ่มต้น 'NoName' โดยอัตโนมัติ"
 
-#: bot/modules/player.py:1160
+#: bot/modules/player.py:1164
 msgid "Autoplay is {state}."
 msgstr "เล่นอัตโนมัติ: {state}"
 
@@ -359,7 +359,7 @@ msgstr "เล่นอัตโนมัติ: {state}"
 msgid "Autoplaying related track: {title}"
 msgstr "กำลังเล่นเพลงใกล้เคียงอัตโนมัติ: {title}"
 
-#: bot/modules/player.py:1221
+#: bot/modules/player.py:1225
 msgid "Autoplaying: {title}"
 msgstr "กำลังเล่นอัตโนมัติ: {title}"
 
@@ -375,7 +375,7 @@ msgstr "โหมดที่ใช้ได้คือ: m สำหรับ�
 msgid "Banned Countries"
 msgstr "ประเทศที่ถูกแบน"
 
-#: bot/modules/player.py:1707
+#: bot/modules/player.py:1784
 msgid "Bass Boost: {state}"
 msgstr "เพิ่มเสียงเบส: {state}"
 
@@ -539,19 +539,19 @@ msgstr "ล็อกคำสั่งแล้ว เฉพาะผู้ด�
 msgid "Commands unlocked. Commands available to everyone."
 msgstr "ปลดล็อกคำสั่งแล้ว ทุกคนสามารถใช้คำสั่งได้"
 
-#: bot/sntalkbot.py:374
+#: bot/sntalkbot.py:384
 msgid "Connected successfully!"
 msgstr "เชื่อมต่อสำเร็จ!"
 
-#: bot/sntalkbot.py:176
+#: bot/sntalkbot.py:182
 msgid "Connecting to {address}:{port}..."
 msgstr "กำลังเชื่อมต่อไปยัง {address}:{port}..."
 
-#: bot/sntalkbot.py:409
+#: bot/sntalkbot.py:419
 msgid "Connection lost. Attempting reconnect #{attempt} in {seconds} seconds..."
 msgstr "การเชื่อมต่อขาด กำลังพยายามเชื่อมต่อใหม่ครั้งที่ {attempt} ในอีก {seconds} วินาที..."
 
-#: bot/sntalkbot.py:391
+#: bot/sntalkbot.py:401
 msgid "Connection lost. Trying to reconnect..."
 msgstr "การเชื่อมต่อขาดหาย กำลังพยายามเชื่อมต่อใหม่..."
 
@@ -567,7 +567,7 @@ msgstr "หมายเลขโทรศัพท์: {phone}"
 msgid "Cookies File Path"
 msgstr "พาธไฟล์คุกกี้"
 
-#: bot/sntalkbot.py:385
+#: bot/sntalkbot.py:395
 msgid "Could not connect to server {server_address} port={port}"
 msgstr "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ {server_address} พอร์ต={port}"
 
@@ -579,7 +579,7 @@ msgstr "ไม่พบอุปกรณ์ประเภท {type} คุณ�
 msgid "Could not retrieve location information."
 msgstr "ไม่สามารถดึงข้อมูลตำแหน่งได้"
 
-#: bot/modules/player.py:1410
+#: bot/modules/player.py:1414
 msgid "Current Queue:"
 msgstr "คิวปัจจุบัน:"
 
@@ -591,11 +591,11 @@ msgstr "Channel ID ปัจจุบัน: {channel_id}"
 msgid "Current language: {language}"
 msgstr "ภาษาปัจจุบัน: {language}"
 
-#: bot/modules/player.py:1732
+#: bot/modules/player.py:1809
 msgid "Current mode: M{mode} - {txt}"
 msgstr "โหมดปัจจุบัน: M{mode} - {txt}"
 
-#: bot/modules/player.py:1712
+#: bot/modules/player.py:1789
 msgid "Current speed: {speed}x"
 msgstr "ความเร็วปัจจุบัน: {speed}x"
 
@@ -603,7 +603,7 @@ msgstr "ความเร็วปัจจุบัน: {speed}x"
 msgid "Current track"
 msgstr "เพลงปัจจุบัน"
 
-#: bot/modules/player.py:1521
+#: bot/modules/player.py:1525
 msgid "Currently playing: {title} [{elapsed}/{total}]"
 msgstr "กำลังเล่น: {title} [{elapsed}/{total}]"
 
@@ -639,7 +639,7 @@ msgstr "ลบรายการในคิวเพียงหนึ่งร
 msgid "Developer: {name} from {organization}"
 msgstr "ผู้พัฒนา: {name} จาก {organization}"
 
-#: bot/modules/player.py:1311
+#: bot/modules/player.py:1315
 msgid "Download already in progress. Please wait."
 msgstr "กำลังดาวน์โหลดอยู่แล้ว กรุณารอสักครู่"
 
@@ -647,7 +647,7 @@ msgstr "กำลังดาวน์โหลดอยู่แล้ว ก�
 msgid "Download audio with yt-dlp and upload it to the current TeamTalk channel."
 msgstr "ดาวน์โหลดเสียงด้วย yt-dlp แล้วอัปโหลดไปยังห้อง TeamTalk ปัจจุบัน"
 
-#: bot/modules/player.py:1325
+#: bot/modules/player.py:1329
 msgid "Downloading audio. Please wait..."
 msgstr "กำลังดาวน์โหลดเสียง กรุณารอสักครู่..."
 
@@ -683,11 +683,11 @@ msgstr "เปิดโหมดแปลแบบกระซิบ: แปล�
 msgid "Error adding to queue: {e}"
 msgstr "เพิ่มเข้าคิวไม่สำเร็จ: {e}"
 
-#: bot/modules/player.py:1374
+#: bot/modules/player.py:1378
 msgid "Error deleting file: {e}"
 msgstr "เกิดข้อผิดพลาดในการลบไฟล์: {e}"
 
-#: bot/modules/player.py:1360
+#: bot/modules/player.py:1364
 msgid "Error downloading or uploading: {e}"
 msgstr "เกิดข้อผิดพลาดในการดาวน์โหลดหรืออัปโหลด: {e}"
 
@@ -711,27 +711,27 @@ msgstr "เกิดข้อผิดพลาดขณะแสดงราย
 msgid "Error playing stream: {e}"
 msgstr "เล่นสตรีมไม่สำเร็จ: {e}"
 
-#: bot/modules/player.py:1562 bot/modules/player.py:1786
+#: bot/modules/player.py:1566 bot/modules/player.py:1863
 msgid "Error playing track: {error}"
 msgstr "เกิดข้อผิดพลาดขณะเล่นเพลง: {error}"
 
-#: bot/modules/player.py:1666
+#: bot/modules/player.py:1743
 msgid "Error playing {title}: {e}"
 msgstr "เล่น {title} ไม่สำเร็จ: {e}"
 
-#: bot/modules/player.py:184 bot/modules/player.py:678 bot/modules/player.py:910 bot/modules/player.py:1128 bot/modules/player.py:1227 bot/modules/player.py:1262 bot/modules/player.py:854
+#: bot/modules/player.py:184 bot/modules/player.py:678 bot/modules/player.py:914 bot/modules/player.py:1132 bot/modules/player.py:1231 bot/modules/player.py:1266 bot/modules/player.py:854
 msgid "Error playing {title}: {e}. Skipping..."
 msgstr "เล่น {title} ไม่สำเร็จ: {e} กำลังข้าม..."
 
-#: bot/sntalkbot.py:173
+#: bot/sntalkbot.py:179
 msgid "Error while initializing audio devices: {e}"
 msgstr "เกิดข้อผิดพลาดขณะเริ่มต้นอุปกรณ์เสียง: {e}"
 
-#: bot/sntalkbot.py:188
+#: bot/sntalkbot.py:194
 msgid "Error: Connection failed. Check server details or network. See sntalkbot.log for details."
 msgstr "ข้อผิดพลาด: เชื่อมต่อไม่สำเร็จ ตรวจสอบข้อมูลเซิร์ฟเวอร์หรือเครือข่าย และดูรายละเอียดใน sntalkbot.log"
 
-#: bot/sntalkbot.py:499
+#: bot/sntalkbot.py:509
 msgid "Error: Could not get channel ID for default channel."
 msgstr "ข้อผิดพลาด: ไม่สามารถอ่าน Channel ID ของห้องเริ่มต้นได้"
 
@@ -763,7 +763,7 @@ msgstr "รันคำสั่งบนเซิร์ฟเวอร์ผ่
 msgid "Fade audio when seeking or changing volume. Set to 0 to disable."
 msgstr "ค่อย ๆ ปรับเสียงเมื่อเลื่อนตำแหน่งหรือเปลี่ยนระดับเสียง ตั้งเป็น 0 เพื่อปิด"
 
-#: bot/modules/player.py:1727
+#: bot/modules/player.py:1804
 msgid "Fade effect: {state}"
 msgstr "เอฟเฟ็กต์เฟดเสียง: {state}"
 
@@ -775,15 +775,15 @@ msgstr "โหลดแท็บที่เลือกไม่สำเร็
 msgid "Failed to send verification email. Please try again later."
 msgstr "ส่งอีเมลยืนยันไม่สำเร็จ กรุณาลองใหม่ภายหลัง"
 
-#: bot/modules/player.py:1643
+#: bot/modules/player.py:1720
 msgid "Favorites"
 msgstr "รายการโปรด"
 
-#: bot/modules/player.py:1677
+#: bot/modules/player.py:1754
 msgid "Favorites list cleared."
 msgstr "ล้างรายการโปรดแล้ว"
 
-#: bot/modules/player.py:1349
+#: bot/modules/player.py:1353
 msgid "File {filename} downloaded. Uploading..."
 msgstr "ดาวน์โหลดไฟล์ {filename} แล้ว กำลังอัปโหลด..."
 
@@ -1047,7 +1047,7 @@ msgstr "ระบบจะถามข้อมูลบางอย่างเ
 msgid "I'll ask you for the required values now."
 msgstr "ระบบจะถามค่าที่จำเป็นในตอนนี้"
 
-#: bot/sntalkbot.py:514
+#: bot/sntalkbot.py:524
 msgid "I've been kicked from the channel. Scheduling reconnect..."
 msgstr "บอตถูกเตะออกจากห้อง กำลังเตรียมเชื่อมต่อใหม่..."
 
@@ -1059,15 +1059,15 @@ msgstr "เมื่อปิดการประกาศ ให้ส่ง�
 msgid "If you chose option 3 above, enter the specific username to watch for here."
 msgstr "หากเลือกตัวเลือก 3 ด้านบน ให้กรอกชื่อผู้ใช้ที่ต้องการเฝ้าติดตาม"
 
-#: bot/modules/player.py:1766
+#: bot/modules/player.py:1843
 msgid "Index must be a number."
 msgstr "ลำดับต้องเป็นตัวเลข"
 
-#: bot/sntalkbot.py:433
+#: bot/sntalkbot.py:443
 msgid "Initial TeamTalk user synchronization complete; live login welcomes are enabled."
 msgstr "ซิงก์รายชื่อผู้ใช้ TeamTalk เริ่มต้นเสร็จแล้ว ระบบต้อนรับจะทำงานเฉพาะการเข้าสู่ระบบใหม่หลังจากนี้"
 
-#: bot/sntalkbot.py:167
+#: bot/sntalkbot.py:173
 msgid "Initializing audio devices..."
 msgstr "กำลังเริ่มต้นอุปกรณ์เสียง..."
 
@@ -1099,11 +1099,11 @@ msgstr "รหัสไม่ถูกต้อง กรุณากรอก�
 msgid "Invalid command format. Usage: new <username> <password> [rights separated by space]"
 msgstr "ไม่ถูกต้อง: command format. Usage: new <username> <password> [rights separated by space]"
 
-#: bot/modules/player.py:1144
+#: bot/modules/player.py:1148
 msgid "Invalid command. Usage: autoplay [on|off]"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: autoplay [on|off]"
 
-#: bot/modules/player.py:1317
+#: bot/modules/player.py:1321
 msgid "Invalid command. Usage: dl <youtube_link> or play a track first."
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: dl <youtube_link> or play a track first."
 
@@ -1127,11 +1127,11 @@ msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: 
 msgid "Invalid command. Usage: private <second_name>"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: private <ชื่อคนที่สอง>"
 
-#: bot/modules/player.py:1395
+#: bot/modules/player.py:1399
 msgid "Invalid command. Usage: q [on|off]"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: q [on|off]"
 
-#: bot/modules/player.py:1304
+#: bot/modules/player.py:1308
 msgid "Invalid command. Usage: r <index>"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: r <ลำดับ>"
 
@@ -1151,7 +1151,7 @@ msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: 
 msgid "Invalid command. Usage: unotify <username> <telegram_chat_id>"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: unotify <ชื่อผู้ใช้> <ID แชท Telegram>"
 
-#: bot/modules/player.py:1069
+#: bot/modules/player.py:1073
 msgid "Invalid command. Usage: v [volume_level]"
 msgstr "คำสั่งไม่ถูกต้อง วิธีใช้: v [volume_level]"
 
@@ -1207,7 +1207,7 @@ msgstr "ค่าความเร็วไม่ถูกต้อง คว�
 msgid "Invalid selection. Choose a number from the list."
 msgstr "ตัวเลือกไม่ถูกต้อง กรุณาเลือกหมายเลขจากรายการ"
 
-#: bot/modules/player.py:1721
+#: bot/modules/player.py:1798
 msgid "Invalid speed value."
 msgstr "ค่าความเร็วไม่ถูกต้อง"
 
@@ -1215,7 +1215,7 @@ msgstr "ค่าความเร็วไม่ถูกต้อง"
 msgid "Invalid speed value. Use a number between 0.25 and 4.0."
 msgstr "ค่าความเร็วไม่ถูกต้อง ใช้ตัวเลขระหว่าง 0.25 ถึง 4.0"
 
-#: bot/modules/player.py:997
+#: bot/modules/player.py:1001
 msgid "Invalid time format. Use seconds or M:S or H:M:S."
 msgstr "รูปแบบเวลาไม่ถูกต้อง ใช้จำนวนวินาที หรือ M:S หรือ H:M:S"
 
@@ -1371,7 +1371,7 @@ msgstr "ล้างล็อกแล้ว"
 msgid "Log file not found."
 msgstr "ไม่พบไฟล์ล็อก"
 
-#: bot/sntalkbot.py:493
+#: bot/sntalkbot.py:503
 msgid "Logged in successfully"
 msgstr "เข้าสู่ระบบสำเร็จ"
 
@@ -1399,7 +1399,7 @@ msgstr "ระดับเสียงเล่นสูงสุด"
 msgid "Maximum allowed characters in a user's nickname. Set to 0 to disable."
 msgstr "จำนวนตัวอักษรสูงสุดของชื่อเล่นผู้ใช้ ตั้งเป็น 0 เพื่อปิดข้อจำกัด"
 
-#: bot/modules/player.py:1063
+#: bot/modules/player.py:1067
 msgid "Maximum allowed volume is {max_volume}"
 msgstr "ความดังสูงสุดที่อนุญาตคือ {max_volume}"
 
@@ -1411,7 +1411,7 @@ msgstr "ข้อความสำหรับผู้ใช้ NoName"
 msgid "Message from administrators: {message}"
 msgstr "ข้อความจากผู้ดูแลระบบ: {message}"
 
-#: bot/sntalkbot.py:719
+#: bot/sntalkbot.py:729
 msgid "Message received: {message} from {username}"
 msgstr "ได้รับข้อความ: {message} จาก {username}"
 
@@ -1419,15 +1419,15 @@ msgstr "ได้รับข้อความ: {message} จาก {username}"
 msgid "Microsoft voice"
 msgstr "เสียง Microsoft"
 
-#: bot/modules/player.py:1746
+#: bot/modules/player.py:1823
 msgid "Mode set to: M1 (Single)"
 msgstr "ตั้งโหมดเป็น M1 (เล่นรายการเดียว)"
 
-#: bot/modules/player.py:1750
+#: bot/modules/player.py:1827
 msgid "Mode set to: M2 (Auto/Next)"
 msgstr "ตั้งโหมดเป็น M2 (อัตโนมัติ/เพลงถัดไป)"
 
-#: bot/modules/player.py:1755
+#: bot/modules/player.py:1832
 msgid "Mode set to: M3 (Repeat)"
 msgstr "ตั้งโหมดเป็น M3 (เล่นซ้ำ)"
 
@@ -1456,8 +1456,8 @@ msgid "New account created via bot.\nUsername: {username}\nEmail: {email}\nIP: {
 msgstr "มีการสร้างบัญชีใหม่ผ่านบอท\nชื่อผู้ใช้: {username}\nอีเมล: {email}\nIP: {ip}\nตำแหน่ง: {location}\nชื่อเล่น: {nickname}"
 
 #: bot/help.py:99
-msgid "Next search result. In queue mode, change the newest queued search item."
-msgstr "ไปผลการค้นหาถัดไป; ในโหมดคิวใช้เปลี่ยนผลค้นหาของรายการล่าสุดที่เพิ่มเข้าคิว"
+msgid "Next search result. In Queue Mode, optionally change the search result of the specified 1-based queue position; without a number, change the newest queued search item."
+msgstr "ผลค้นหาถัดไป ใน Queue Mode สามารถระบุตำแหน่งคิวแบบเริ่มจาก 1 เพื่อเปลี่ยนผลค้นหาของคิวนั้นได้; ถ้าไม่ใส่เลขจะเปลี่ยนรายการค้นหาล่าสุดในคิว"
 
 #: bot/user_manager.py:105
 msgid "Nice to have you here, {nickname} from {country}!"
@@ -1507,7 +1507,7 @@ msgstr "ไม่มีข้อมูลประเทศสำหรับผ
 msgid "No help text is available for this command."
 msgstr "ยังไม่มีคำอธิบายสำหรับคำสั่งนี้"
 
-#: bot/modules/player.py:1199 bot/modules/player.py:1237
+#: bot/modules/player.py:1203 bot/modules/player.py:1241
 msgid "No list to play from."
 msgstr "ไม่มีรายการสำหรับเล่น"
 
@@ -1519,6 +1519,10 @@ msgstr "ไม่พบเพลย์ลิสต์ในช่องนี้
 msgid "No previous related track."
 msgstr "ไม่มีเพลงใกล้เคียงก่อนหน้านี้"
 
+#: bot/modules/player.py:1614
+msgid "No queued search item is available to change."
+msgstr "ไม่มีรายการในคิวที่เพิ่มจากการค้นหาให้เปลี่ยนผล"
+
 #: bot/modules/general.py:148
 msgid "No recent runtime events."
 msgstr "ยังไม่มีเหตุการณ์ล่าสุดในรอบการทำงานนี้"
@@ -1527,11 +1531,11 @@ msgstr "ยังไม่มีเหตุการณ์ล่าสุดใ
 msgid "No related track is available."
 msgstr "ไม่พบเพลงใกล้เคียงที่เล่นต่อได้"
 
-#: bot/modules/player.py:863 bot/modules/player.py:883
+#: bot/modules/player.py:863 bot/modules/player.py:887
 msgid "No results found for '{query}'."
 msgstr "ไม่พบผลลัพธ์สำหรับ '{query}'"
 
-#: bot/modules/player.py:1569 bot/modules/player.py:1591
+#: bot/modules/player.py:1664 bot/modules/player.py:1680
 msgid "No search results are available."
 msgstr "ไม่มีผลการค้นหาให้เลือก"
 
@@ -1567,15 +1571,15 @@ msgstr "ไม่ได้รับอนุญาต"
 msgid "Not authorized for this IP address."
 msgstr "IP นี้ไม่ได้รับอนุญาต"
 
-#: bot/modules/player.py:696 bot/modules/player.py:950 bot/modules/player.py:963 bot/modules/player.py:976 bot/modules/player.py:1049 bot/modules/player.py:1525
+#: bot/modules/player.py:696 bot/modules/player.py:954 bot/modules/player.py:967 bot/modules/player.py:980 bot/modules/player.py:1053 bot/modules/player.py:1529
 msgid "Nothing is currently playing"
 msgstr "ขณะนี้ไม่มีอะไรกำลังเล่นอยู่"
 
-#: bot/modules/player.py:936
+#: bot/modules/player.py:940
 msgid "Nothing is currently playing to pause or resume."
 msgstr "ขณะนี้ไม่มีสื่อกำลังเล่นให้พักหรือเล่นต่อ"
 
-#: bot/modules/player.py:1515 bot/modules/player.py:1542 bot/modules/player.py:1613
+#: bot/modules/player.py:1519 bot/modules/player.py:1546 bot/modules/player.py:1690
 msgid "Nothing is currently playing."
 msgstr "ขณะนี้ไม่มีอะไรกำลังเล่นอยู่"
 
@@ -1619,7 +1623,7 @@ msgstr "รหัสผ่านสั้นเกินไป กรุณา�
 msgid "Pause or resume playback."
 msgstr "พักหรือเล่นต่อ"
 
-#: bot/modules/player.py:930
+#: bot/modules/player.py:934
 msgid "Paused: {title}"
 msgstr "หยุดชั่วคราว: {title}"
 
@@ -1647,7 +1651,7 @@ msgstr "เล่นหรือเพิ่มเพลงโปรดทั้
 msgid "Playback channel messages are now {state}."
 msgstr "ข้อความสถานะเครื่องเล่นในห้องขณะนี้ {state}"
 
-#: bot/modules/player.py:1719
+#: bot/modules/player.py:1796
 msgid "Playback speed set to: {speed}x"
 msgstr "ตั้งความเร็วการเล่นเป็น {speed}x แล้ว"
 
@@ -1699,19 +1703,19 @@ msgstr "Player | {title} | คิว {queue} | q {queue_mode} | {mode} | autopla
 msgid "Player/Full: append another YouTube or YouTube Music playlist without interrupting the current track. In Queue Mode, append the whole playlist to FIFO queue."
 msgstr "Player/Full: ต่อ YouTube หรือ YouTube Music playlist ชุดถัดไปโดยไม่หยุดเพลงปัจจุบัน; ใน Queue Mode จะเพิ่มทั้งเพลย์ลิสต์ต่อท้ายคิว FIFO"
 
-#: bot/modules/player.py:1663
+#: bot/modules/player.py:1740
 msgid "Playing from favorites: {title}"
 msgstr "กำลังเล่นจากรายการโปรด: {title}"
 
-#: bot/modules/player.py:1557
+#: bot/modules/player.py:1561
 msgid "Playing search result: {title}"
 msgstr "กำลังเล่นผลการค้นหา: {title}"
 
-#: bot/modules/player.py:1441
+#: bot/modules/player.py:1445
 msgid "Playing: {current} / {total}"
 msgstr "กำลังเล่น: {current} / {total}"
 
-#: bot/modules/player.py:565 bot/modules/player.py:688 bot/modules/player.py:1782 bot/modules/player.py:1819 bot/modules/player.py:177 bot/modules/player.py:180 bot/modules/player.py:860 bot/modules/player.py:906 bot/modules/player.py:1125 bot/modules/player.py:1219 bot/modules/player.py:1222 bot/modules/player.py:1257 bot/modules/player.py:1258 bot/modules/player.py:1558 bot/modules/player.py:934 bot/modules/player.py:1300
+#: bot/modules/player.py:565 bot/modules/player.py:688 bot/modules/player.py:1859 bot/modules/player.py:1896 bot/modules/player.py:177 bot/modules/player.py:180 bot/modules/player.py:860 bot/modules/player.py:910 bot/modules/player.py:1129 bot/modules/player.py:1223 bot/modules/player.py:1226 bot/modules/player.py:1261 bot/modules/player.py:1262 bot/modules/player.py:1562 bot/modules/player.py:938 bot/modules/player.py:1304
 msgid "Playing: {title}"
 msgstr "กำลังเล่น: {title}"
 
@@ -1724,8 +1728,8 @@ msgid "Please provide some text to speak."
 msgstr "กรุณาป้อนข้อความที่จะให้พูด"
 
 #: bot/help.py:100
-msgid "Previous search result. In queue mode, change the newest queued search item."
-msgstr "ไปผลการค้นหาก่อนหน้า; ในโหมดคิวใช้เปลี่ยนผลค้นหาของรายการล่าสุดที่เพิ่มเข้าคิว"
+msgid "Previous search result. In Queue Mode, optionally change the search result of the specified 1-based queue position; without a number, change the newest queued search item."
+msgstr "ผลค้นหาก่อนหน้า ใน Queue Mode สามารถระบุตำแหน่งคิวแบบเริ่มจาก 1 เพื่อเปลี่ยนผลค้นหาของคิวนั้นได้; ถ้าไม่ใส่เลขจะเปลี่ยนรายการค้นหาล่าสุดในคิว"
 
 #: bot/modules/translator.py:115
 msgid "Private translate mode disabled as you are no longer in the same channel as the bot."
@@ -1739,11 +1743,11 @@ msgstr "ปิดใช้งานโหมดแปลส่วนตัวแ
 msgid "Private translate mode enabled from {source} to {target}."
 msgstr "เปิดโหมดแปลข้อความส่วนตัวจาก {source} เป็น {target} แล้ว"
 
-#: bot/modules/player.py:1511
+#: bot/modules/player.py:1515
 msgid "Queue cleared."
 msgstr "ล้างคิวแล้ว"
 
-#: bot/modules/player.py:1482
+#: bot/modules/player.py:1486
 msgid "Queue item not found."
 msgstr "ไม่พบรายการนั้นในคิว"
 
@@ -1755,9 +1759,33 @@ msgstr "โหมดคิวเล่นรายการถัดไปใน
 msgid "Queue mode: play the previous queued-history item. Normal mode: go back in related Radio history."
 msgstr "โหมดคิวย้อนกลับเพลงจากประวัติคิว; โหมดปกติย้อนกลับในประวัติเพลงใกล้เคียง"
 
-#: bot/modules/player.py:1403
+#: bot/modules/player.py:1677
+msgid "Queue position can be used with , only while Queue Mode is enabled."
+msgstr "ระบุตำแหน่งคิวกับ , ได้เฉพาะเมื่อเปิด Queue Mode"
+
+#: bot/modules/player.py:1661
+msgid "Queue position can be used with . only while Queue Mode is enabled."
+msgstr "ระบุตำแหน่งคิวกับ . ได้เฉพาะเมื่อเปิด Queue Mode"
+
+#: bot/modules/player.py:1594 bot/modules/player.py:1605
+msgid "Queue position is out of range."
+msgstr "ตำแหน่งคิวอยู่นอกช่วง"
+
+#: bot/modules/player.py:1591
+msgid "Queue position must be a number."
+msgstr "ตำแหน่งคิวต้องเป็นตัวเลข"
+
+#: bot/modules/player.py:1407
 msgid "Queue system is {state}."
 msgstr "ระบบคิว: {state}"
+
+#: bot/modules/player.py:1649
+msgid "Queue {position} selection changed to: {title}"
+msgstr "เปลี่ยนผลค้นหาของคิว {position} เป็น: {title}"
+
+#: bot/modules/player.py:1622
+msgid "Queue {position} was not added from a search, so it has no alternate search results."
+msgstr "คิว {position} ไม่ได้เพิ่มมาจากการค้นหา จึงไม่มีผลค้นหาอื่นให้เปลี่ยน"
 
 #: bot/config_handler.py:58
 msgid "Random Message Interval (minutes)"
@@ -1787,11 +1815,11 @@ msgstr "รีบูตเซิร์ฟเวอร์ (ต้องได้�
 msgid "Recent events (newest first):"
 msgstr "เหตุการณ์ล่าสุด (ใหม่สุดก่อน):"
 
-#: bot/sntalkbot.py:398
+#: bot/sntalkbot.py:408
 msgid "Reconnect limit reached; waiting for a manual restart."
 msgstr "ครบจำนวนครั้งที่อนุญาตให้เชื่อมต่อใหม่แล้ว รอการรีสตาร์ตด้วยตนเอง"
 
-#: bot/modules/player.py:1484
+#: bot/modules/player.py:1488
 msgid "Removed from queue: {title}"
 msgstr "นำออกจากคิวแล้ว: {title}"
 
@@ -1886,10 +1914,6 @@ msgstr "เลือกและเล่นรายการตามลำด
 #: bot/config_handler.py:498
 msgid "Select {type} Device"
 msgstr "เลือกอุปกรณ์ {type}"
-
-#: bot/modules/player.py:1579 bot/modules/player.py:1601
-msgid "Selection changed to: {title}"
-msgstr "เปลี่ยนรายการที่เลือกเป็น: {title}"
 
 #: bot/config_handler.py:66
 msgid "Send Playback Messages to Channel?"
@@ -2071,19 +2095,19 @@ msgstr "เริ่มขั้นตอนขอสร้างบัญชี
 msgid "Status Message"
 msgstr "ข้อความสถานะ"
 
-#: bot/modules/player.py:1816
+#: bot/modules/player.py:1893
 msgid "Status hidden."
 msgstr "ซ่อนสถานะแล้ว"
 
-#: bot/modules/player.py:1823
+#: bot/modules/player.py:1900
 msgid "Status shown."
 msgstr "แสดงสถานะแล้ว"
 
-#: bot/modules/player.py:1687
+#: bot/modules/player.py:1764
 msgid "Stereo 3D 1: {state}"
 msgstr "Stereo 3D แบบ 1: {state}"
 
-#: bot/modules/player.py:1697
+#: bot/modules/player.py:1774
 msgid "Stereo 3D 2 (Echo): {state}"
 msgstr "Stereo 3D แบบ 2 (Echo): {state}"
 
@@ -2091,7 +2115,7 @@ msgstr "Stereo 3D แบบ 2 (Echo): {state}"
 msgid "Stop playback and clear queue."
 msgstr "หยุดเล่นและล้างคิว"
 
-#: bot/sntalkbot.py:553
+#: bot/sntalkbot.py:563
 msgid "Subscribed to channel messages"
 msgstr "สมัครรับข้อความในช่องแล้ว"
 
@@ -2187,7 +2211,7 @@ msgstr "อุปกรณ์เสียงสำหรับส่งเสี
 msgid "The client name shown in the user info (e.g., 'SN TalkBot v2.3')."
 msgstr "ชื่อไคลเอนต์ที่แสดงในข้อมูลผู้ใช้ เช่น 'SN TalkBot v2.3'"
 
-#: bot/modules/player.py:1057
+#: bot/modules/player.py:1061
 msgid "The current volume is {volume}"
 msgstr "ความดังปัจจุบันคือ {volume}"
 
@@ -2239,7 +2263,7 @@ msgstr "รหัสผ่านของห้องเริ่มต้น �
 msgid "The private message sent to a user before they are kicked for having no name."
 msgstr "ข้อความส่วนตัวที่จะส่งก่อนเตะผู้ใช้ที่ไม่มีชื่อ"
 
-#: bot/modules/player.py:140 bot/modules/player.py:1407 bot/modules/player.py:1438 bot/modules/player.py:1802
+#: bot/modules/player.py:140 bot/modules/player.py:1411 bot/modules/player.py:1442 bot/modules/player.py:1879 bot/modules/player.py:1599
 msgid "The queue is empty."
 msgstr "คิวว่าง"
 
@@ -2247,7 +2271,7 @@ msgstr "คิวว่าง"
 msgid "The time window in seconds to monitor a jailed user for spamming join attempts."
 msgstr "ช่วงเวลาเป็นวินาทีสำหรับตรวจการพยายามเข้าห้องซ้ำของผู้ใช้ในห้องกักกัน"
 
-#: bot/modules/player.py:1808
+#: bot/modules/player.py:1885
 msgid "The unplayed queue has been shuffled."
 msgstr "สุ่มลำดับเพลงที่ยังไม่ได้เล่นในคิวแล้ว"
 
@@ -2331,11 +2355,11 @@ msgstr "พยายามกรอกผิดเกินจำนวนที
 msgid "Too many reports were sent recently. Please wait a little and try again."
 msgstr "มีการส่งรายงานมากเกินไปในช่วงนี้ กรุณารอสักครู่แล้วลองใหม่"
 
-#: bot/modules/player.py:1533
+#: bot/modules/player.py:1537
 msgid "Total duration: {total_duration}. Elapsed time: {elapsed_time}. Remaining time: {remaining_time}"
 msgstr "ความยาวทั้งหมด: {total_duration} เวลาที่เล่นไปแล้ว: {elapsed_time} เวลาที่เหลือ: {remaining_time}"
 
-#: bot/modules/player.py:1772
+#: bot/modules/player.py:1849
 msgid "Track index is out of range."
 msgstr "ลำดับเพลงอยู่นอกช่วงที่มี"
 
@@ -2343,7 +2367,7 @@ msgstr "ลำดับเพลงอยู่นอกช่วงที่ม
 msgid "Translation error: {e}"
 msgstr "เกิดข้อผิดพลาดในการแปล: {e}"
 
-#: bot/sntalkbot.py:386
+#: bot/sntalkbot.py:396
 msgid "Trying to reconnect."
 msgstr "กำลังพยายามเชื่อมต่อใหม่"
 
@@ -2351,7 +2375,7 @@ msgstr "กำลังพยายามเชื่อมต่อใหม่
 msgid "Unable to determine the channel for the current video."
 msgstr "ไม่สามารถระบุช่องของวิดีโอปัจจุบันได้"
 
-#: bot/modules/general.py:335 bot/modules/general.py:357 bot/modules/player.py:486 bot/modules/player.py:1518 bot/modules/player.py:507 bot/modules/player.py:60 bot/modules/player.py:483 bot/modules/player.py:1414 bot/modules/player.py:1428 bot/modules/player.py:520 bot/modules/player.py:525
+#: bot/modules/general.py:335 bot/modules/general.py:357 bot/modules/player.py:486 bot/modules/player.py:1522 bot/modules/player.py:507 bot/modules/player.py:60 bot/modules/player.py:483 bot/modules/player.py:1418 bot/modules/player.py:1432 bot/modules/player.py:1650 bot/modules/player.py:520 bot/modules/player.py:525
 msgid "Unknown"
 msgstr "ไม่ทราบ"
 
@@ -2371,13 +2395,17 @@ msgstr "ไม่รู้จักคำสั่งนี้"
 msgid "Unknown command. Use help to see all commands."
 msgstr "ไม่รู้จักคำสั่งนี้ ใช้ help เพื่อดูคำสั่งทั้งหมด"
 
-#: bot/sntalkbot.py:752
+#: bot/sntalkbot.py:762
 msgid "Unknown or invalid command. Send h for help."
 msgstr "ไม่รู้จักคำสั่งหรือคำสั่งไม่ถูกต้อง กรุณาพิมพ์ h เพื่อดูวิธีใช้"
 
 #: bot/config_handler.py:81
 msgid "Uploaded Video Deletion Timer (minutes)"
 msgstr "เวลาลบวิดีโอที่อัปโหลด (นาที)"
+
+#: bot/modules/player.py:1583
+msgid "Usage: . [queue_position] or , [queue_position]"
+msgstr "วิธีใช้: . [ตำแหน่งคิว] หรือ , [ตำแหน่งคิว]"
 
 #: bot/modules/admin.py:78
 msgid "Usage: blockcmd +command or blockcmd -command"
@@ -2407,7 +2435,7 @@ msgstr "วิธีใช้: cn <new_name>"
 msgid "Usage: cs <new_status>"
 msgstr "วิธีใช้: cs <new_status>"
 
-#: bot/modules/player.py:1451
+#: bot/modules/player.py:1455
 msgid "Usage: dq <index|title>"
 msgstr "วิธีใช้: dq <ลำดับ|ชื่อเพลง>"
 
@@ -2487,11 +2515,11 @@ msgstr "วิธีใช้: report <ข้อความของคุณ>"
 msgid "Usage: search <query>"
 msgstr "วิธีใช้: search <query>"
 
-#: bot/modules/player.py:1761
+#: bot/modules/player.py:1838
 msgid "Usage: select <index>"
 msgstr "วิธีใช้: select <ลำดับ>"
 
-#: bot/modules/player.py:979
+#: bot/modules/player.py:983
 msgid "Usage: t <time> (e.g., 1:30 or 90)"
 msgstr "วิธีใช้: t <time> (e.g., 1:30 or 90)"
 
@@ -2527,7 +2555,7 @@ msgstr "ไม่พบผู้ใช้ '{nickname}' ระบบจะเต�
 msgid "User '{user}' not found."
 msgstr "ไม่พบผู้ใช้ '{user}'"
 
-#: bot/sntalkbot.py:851
+#: bot/sntalkbot.py:861
 msgid "User Info:\n Nickname: {nickname}\n Username: {username}\n Password: {password}\n  IP Address: {ip_address}\n Status Message: {status_message}"
 msgstr "ข้อมูลผู้ใช้:\n ชื่อเล่น: {nickname}\n ชื่อผู้ใช้: {username}\n รหัสผ่าน: {password}\n  ที่อยู่ IP: {ip_address}\n ข้อความสถานะ: {status_message}"
 
@@ -2543,7 +2571,7 @@ msgstr "เตะผู้ใช้ชื่อ '{username}' เป็นเว�
 msgid "User with username '{username}' not found. They will be kicked when they log in for {duration}."
 msgstr "ไม่พบผู้ใช้ชื่อ '{username}' ระบบจะเตะเมื่อเข้าสู่ระบบเป็นเวลา {duration}"
 
-#: bot/sntalkbot.py:580
+#: bot/sntalkbot.py:590
 msgid "User {nickname} is excluded, skipping checks."
 msgstr "ผู้ใช้ {nickname} อยู่ในรายการยกเว้น จึงข้ามการตรวจสอบ"
 
@@ -2759,11 +2787,11 @@ msgstr "ตัวกรองคำทุกภาษา: {state}"
 msgid "You already have an active account request. Please continue in private messages."
 msgstr "คุณมีคำขอสร้างบัญชีที่กำลังดำเนินการอยู่ กรุณาทำต่อในข้อความส่วนตัว"
 
-#: bot/modules/player.py:156 bot/modules/player.py:1243
+#: bot/modules/player.py:156 bot/modules/player.py:1247
 msgid "You are at the beginning of the list."
 msgstr "คุณอยู่ที่ต้นรายการแล้ว"
 
-#: bot/modules/player.py:1607
+#: bot/modules/player.py:1684
 msgid "You are at the beginning of the search results."
 msgstr "คุณอยู่ที่ผลการค้นหาแรกแล้ว"
 
@@ -2787,11 +2815,11 @@ msgstr "คุณถูกเตะเนื่องจากชื่อผู
 msgid "You have no pending messages."
 msgstr "คุณไม่มีข้อความที่รอส่ง"
 
-#: bot/modules/player.py:131 bot/modules/player.py:1205
+#: bot/modules/player.py:131 bot/modules/player.py:1209
 msgid "You've reached the end of the list."
 msgstr "คุณมาถึงท้ายรายการแล้ว"
 
-#: bot/modules/player.py:1585
+#: bot/modules/player.py:1668
 msgid "You've reached the end of the search results."
 msgstr "คุณอยู่ที่ผลการค้นหาสุดท้ายแล้ว"
 
@@ -2803,7 +2831,7 @@ msgstr "License Key ของ TeamTalk SDK"
 msgid "Your TeamTalk SDK license name, if you have one."
 msgstr "ชื่อ License ของ TeamTalk SDK หากมี"
 
-#: bot/modules/player.py:1631 bot/modules/player.py:1792
+#: bot/modules/player.py:1708 bot/modules/player.py:1869
 msgid "Your favorites list is empty."
 msgstr "รายการโปรดของคุณว่าง"
 
@@ -2827,11 +2855,11 @@ msgstr "รหัสยืนยันของคุณ"
 msgid "bundled default"
 msgstr "ค่าเริ่มต้นที่มากับโปรเจกต์"
 
-#: bot/modules/account_requests.py:100 bot/modules/account_requests.py:83 bot/modules/admin.py:688 bot/modules/general.py:179 bot/modules/general.py:208 bot/modules/general.py:166 bot/modules/general.py:193 bot/modules/player.py:332 bot/modules/player.py:1159 bot/modules/player.py:1402 bot/modules/player.py:319 bot/modules/tts.py:573 bot/modules/tts.py:589 bot/modules/tts.py:564 bot/modules/tts.py:579
+#: bot/modules/account_requests.py:100 bot/modules/account_requests.py:83 bot/modules/admin.py:688 bot/modules/general.py:179 bot/modules/general.py:208 bot/modules/general.py:166 bot/modules/general.py:193 bot/modules/player.py:332 bot/modules/player.py:1163 bot/modules/player.py:1406 bot/modules/player.py:319 bot/modules/tts.py:573 bot/modules/tts.py:589 bot/modules/tts.py:564 bot/modules/tts.py:579
 msgid "disabled"
 msgstr "ปิดใช้งาน"
 
-#: bot/modules/account_requests.py:100 bot/modules/account_requests.py:83 bot/modules/admin.py:688 bot/modules/general.py:179 bot/modules/general.py:208 bot/modules/general.py:166 bot/modules/general.py:193 bot/modules/player.py:332 bot/modules/player.py:1159 bot/modules/player.py:1402 bot/modules/player.py:319 bot/modules/tts.py:573 bot/modules/tts.py:589 bot/modules/tts.py:564 bot/modules/tts.py:579
+#: bot/modules/account_requests.py:100 bot/modules/account_requests.py:83 bot/modules/admin.py:688 bot/modules/general.py:179 bot/modules/general.py:208 bot/modules/general.py:166 bot/modules/general.py:193 bot/modules/player.py:332 bot/modules/player.py:1163 bot/modules/player.py:1406 bot/modules/player.py:319 bot/modules/tts.py:573 bot/modules/tts.py:589 bot/modules/tts.py:564 bot/modules/tts.py:579
 msgid "enabled"
 msgstr "เปิดใช้งาน"
 
@@ -2839,11 +2867,11 @@ msgstr "เปิดใช้งาน"
 msgid "idle"
 msgstr "ว่าง"
 
-#: bot/sntalkbot.py:523
+#: bot/sntalkbot.py:533
 msgid "intercepting channel messages for user {user}"
 msgstr "กำลังดักจับข้อความในช่องสำหรับผู้ใช้ {user}"
 
-#: bot/modules/player.py:1420
+#: bot/modules/player.py:1424
 msgid "just now"
 msgstr "เมื่อสักครู่"
 
@@ -2875,7 +2903,7 @@ msgstr "pp รับเฉพาะลิงก์เพลย์ลิสต์
 msgid "pp accepts playlists only."
 msgstr "pp ใช้สำหรับเพลย์ลิสต์เท่านั้น"
 
-#: bot/sntalkbot.py:547
+#: bot/sntalkbot.py:557
 msgid "subscribed to user messages"
 msgstr "สมัครรับข้อความจากผู้ใช้แล้ว"
 
@@ -2883,19 +2911,19 @@ msgstr "สมัครรับข้อความจากผู้ใช้
 msgid "weatherapi.com API Key"
 msgstr "API Key ของ weatherapi.com"
 
-#: bot/modules/player.py:1426
+#: bot/modules/player.py:1430
 msgid "{days} d ago"
 msgstr "เมื่อ {days} วันที่แล้ว"
 
-#: bot/modules/player.py:1424
+#: bot/modules/player.py:1428
 msgid "{hours} h ago"
 msgstr "เมื่อ {hours} ชั่วโมงที่แล้ว"
 
-#: bot/modules/player.py:1422
+#: bot/modules/player.py:1426
 msgid "{minutes} min ago"
 msgstr "เมื่อ {minutes} นาทีที่แล้ว"
 
-#: bot/modules/player.py:1067
+#: bot/modules/player.py:1071
 msgid "{name} has changed the volume to {volume}"
 msgstr "{name} ได้เปลี่ยนความดังเป็น {volume}"
 
@@ -2907,7 +2935,7 @@ msgstr "{nickname} (แบน IP) ถูกปลดแบนแล้ว"
 msgid "{nickname} (Username ban) has been unbanned."
 msgstr "{nickname} (แบนชื่อผู้ใช้) ถูกปลดแบนแล้ว"
 
-#: bot/modules/player.py:511 bot/modules/player.py:1639
+#: bot/modules/player.py:511 bot/modules/player.py:1716
 msgid "{nickname} added all favorites to queue {start}-{end}."
 msgstr "{nickname} ได้เพิ่มรายการโปรดทั้งหมดลงในคิวตั้งแต่ {start} ถึง {end}"
 
@@ -2915,7 +2943,7 @@ msgstr "{nickname} ได้เพิ่มรายการโปรดทั�
 msgid "{nickname} added playlist {title} to queue {start}-{end}."
 msgstr "{nickname} ได้เพิ่มเพลย์ลิสต์ {title} ลงในคิวตั้งแต่ {start} ถึง {end}"
 
-#: bot/modules/player.py:584 bot/modules/player.py:879 bot/modules/player.py:519
+#: bot/modules/player.py:584 bot/modules/player.py:883 bot/modules/player.py:519
 msgid "{nickname} added to queue {position}: {title}"
 msgstr "{nickname} ได้เพิ่ม {title} ลงในคิวที่ {position}"
 
@@ -2971,7 +2999,7 @@ msgstr "{nickname} ได้เข้าร่วมเซิร์ฟเวอ�
 msgid "{nickname} just dropped in from {country}. Say hello!"
 msgstr "{nickname} แวะมาหาเราจาก {country} แล้วครับ ทักทายกันได้เลย!"
 
-#: bot/modules/player.py:929
+#: bot/modules/player.py:933
 msgid "{nickname} paused the playback"
 msgstr "{nickname} หยุดเล่นชั่วคราว"
 
@@ -2983,7 +3011,7 @@ msgstr "{nickname} ขอเล่นไฟล์จาก URL"
 msgid "{nickname} requested to play from a {collection_type}"
 msgstr "{nickname} ขอเล่นรายการจาก {collection_type}"
 
-#: bot/modules/player.py:1299
+#: bot/modules/player.py:1303
 msgid "{nickname} requested to play {title} from history"
 msgstr "{nickname} ขอเล่น {title} จากประวัติการเล่น"
 
@@ -2995,7 +3023,7 @@ msgstr "{nickname} ขอเล่น: {title}"
 msgid "{nickname} says: {translated}"
 msgstr "{nickname} พูดว่า: {translated}"
 
-#: bot/modules/player.py:1045
+#: bot/modules/player.py:1049
 msgid "{nickname} stopped the playback and cleared queue"
 msgstr "{nickname} หยุดเล่นและล้างคิวแล้ว"
 
@@ -3003,6 +3031,6 @@ msgstr "{nickname} หยุดเล่นและล้างคิวแล�
 msgid "{role} | uptime {uptime} | channel {channel} | users {users}"
 msgstr "{role} | uptime {uptime} | ห้อง {channel} | ผู้ใช้ {users}"
 
-#: bot/modules/player.py:1427
+#: bot/modules/player.py:1431
 msgid "{title} | added by {nickname} | {age}"
 msgstr "{title} | เพิ่มโดย {nickname} | {age}"
