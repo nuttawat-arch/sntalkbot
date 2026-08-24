@@ -1064,6 +1064,65 @@ if crlf_files:
 else:
     ok("Linux/Python source line endings are LF-only")
 
+# Official TeamTalk SDK text arrives with Windows line endings. The Linux build
+# must normalize the copied wrapper/license so strict validation of the deployed
+# image remains meaningful instead of permanently failing on vendor CRLF.
+sdk_downloader = (ROOT / "tools" / "download_teamtalk_sdk.py").read_text(encoding="utf-8")
+if all(token in sdk_downloader for token in ("def normalize_text_lf", "normalize_text_lf(wrapper_target)", "normalize_text_lf(license_target)")):
+    ok("Linux TeamTalk SDK wrapper/license are normalized to LF at image build time")
+else:
+    fail("Linux TeamTalk SDK text normalization is missing")
+
+# Customer ownership verification is a one-shot TeamTalk login performed inside
+# the SNTalkBot image. Keep the password off argv and make the account-type check
+# executable in the source validator without the native SDK.
+admin_verify_path = ROOT / "tools" / "verify_teamtalk_admin.py"
+if not admin_verify_path.is_file():
+    fail("one-shot TeamTalk Administrator credential verifier is missing")
+else:
+    admin_verify_source = admin_verify_path.read_text(encoding="utf-8")
+    required = (
+        "sys.stdin.buffer.read", "onCmdMyselfLoggedIn", "UserType.USERTYPE_ADMIN",
+        "self.doLogin", "probe.doLogout()", "probe.disconnect()", "probe.closeTeamTalk()",
+    )
+    if all(token in admin_verify_source for token in required) and "argparse" not in admin_verify_source:
+        ok("TeamTalk Administrator verifier reads secret JSON from stdin and checks authenticated UserType")
+    else:
+        fail("TeamTalk Administrator verifier lost stdin/account-type/cleanup safety")
+    try:
+        fake = types.ModuleType("TeamTalk5")
+        class _FakeTeamTalk:
+            def __init__(self): pass
+            def doLogin(self,*a,**k): return 1
+            def connect(self,*a,**k): return True
+            def runEventLoop(self): return None
+            def doLogout(self): return 1
+            def disconnect(self): return True
+            def closeTeamTalk(self): return None
+        class _FakeUserType:
+            USERTYPE_ADMIN = 2
+        fake.TeamTalk = _FakeTeamTalk
+        fake.UserType = _FakeUserType
+        fake.ttstr = lambda value: value.decode() if isinstance(value,(bytes,bytearray)) else str(value or "")
+        old_tt = sys.modules.get("TeamTalk5")
+        sys.modules["TeamTalk5"] = fake
+        try:
+            spec = importlib.util.spec_from_file_location("_verify_teamtalk_admin_test", admin_verify_path)
+            mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+            p1 = mod.AdminProbe("owneradmin","secret")
+            p1.onCmdMyselfLoggedIn(7, types.SimpleNamespace(uUserType=2, szUsername="owneradmin"))
+            p2 = mod.AdminProbe("normaluser","secret")
+            p2.onCmdMyselfLoggedIn(8, types.SimpleNamespace(uUserType=1, szUsername="normaluser"))
+            if p1.result and p1.result.get("administrator") is True and p2.result and p2.result.get("administrator") is False:
+                ok("TeamTalk credential verifier accepts Administrator and rejects valid non-Administrator accounts")
+            else:
+                fail("TeamTalk credential verifier account-type regression")
+        finally:
+            if old_tt is None: sys.modules.pop("TeamTalk5",None)
+            else: sys.modules["TeamTalk5"] = old_tt
+    except Exception as exc:
+        fail(f"TeamTalk credential verifier regression test failed: {exc}")
+
 # The mpv idle callback must raise the queue/end transition guard before it
 # exposes is_playing=False. This closes the real cross-thread enqueue window,
 # not just the callback-body case reproduced above.

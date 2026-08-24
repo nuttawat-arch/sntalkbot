@@ -39,6 +39,15 @@ def find_one(root: Path, name: str) -> Path | None:
     return matches[0] if matches else None
 
 
+
+def normalize_text_lf(path: Path) -> None:
+    """Normalize vendor text copied into a Linux image to LF without changing text."""
+    data = path.read_bytes()
+    normalized = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    if normalized != data:
+        path.write_bytes(normalized)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--platform", choices=sorted(URLS), default=None)
@@ -69,10 +78,16 @@ def main() -> int:
         if not wrapper or not native:
             raise SystemExit(f"The downloaded SDK did not contain TeamTalk5.py and {native_name}")
 
-        shutil.copy2(wrapper, project / "TeamTalk5.py")
+        wrapper_target = project / "TeamTalk5.py"
+        shutil.copy2(wrapper, wrapper_target)
         shutil.copy2(native, project / native_name)
+        license_target = project / "TTSDK_license.txt"
         if license_file:
-            shutil.copy2(license_file, project / "TTSDK_license.txt")
+            shutil.copy2(license_file, license_target)
+        if target_platform.startswith("linux"):
+            normalize_text_lf(wrapper_target)
+            if license_file:
+                normalize_text_lf(license_target)
         if args.keep_archive:
             shutil.copy2(archive, project / f"teamtalk-sdk-{VERSION}.7z")
 

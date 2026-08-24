@@ -215,4 +215,4 @@ sudo ttuhelper update
 
 ## ใช้ร่วมกับ SNTalkBot Web Manager
 
-ตั้งแต่ 5.0.1 บอตมี `runtime_status.json` เป็น fallback ใน data directory และใน 5.1.0 เพิ่ม read-only realtime HTTP API ที่ bind loopback พร้อม Bearer token ต่อ instance Web Manager 1.1.0 จะใช้ API ก่อนเพื่อความ realtime สูงสุด แล้ว fallback ไป JSON หาก API ยังไม่พร้อม ใน 5.1.2 ทั้งสองทางแสดงห้องปัจจุบัน, จำนวนคนในห้องและทั้งเซิร์ฟเวอร์แยกกัน, รายชื่อคนในห้อง, Administrator โดยตัดทุก session ที่ใช้ username ของบอต, activity ห้อง/เซิร์ฟเวอร์, เพลง/คิว/ผู้เพิ่มคิว และสถานะ Manager โดยไม่เปลี่ยนคำสั่งหรือ playback core
+ตั้งแต่ 5.0.1 บอตมี `runtime_status.json` เป็น fallback ใน data directory และใน 5.1.0 เพิ่ม read-only realtime HTTP API ที่ bind loopback พร้อม Bearer token ต่อ instance Web Manager 1.1.0 จะใช้ API ก่อนเพื่อความ realtime สูงสุด แล้ว fallback ไป JSON หาก API ยังไม่พร้อม ใน 5.1.4 ทั้งสองทางแสดงห้องปัจจุบัน, จำนวนคนในห้องและทั้งเซิร์ฟเวอร์แยกกัน, รายชื่อคนในห้อง, Administrator โดยตัดทุก session ที่ใช้ username ของบอต, activity ห้อง/เซิร์ฟเวอร์, เพลง/คิว/ผู้เพิ่มคิว และสถานะ Manager โดยไม่เปลี่ยนคำสั่งหรือ playback core

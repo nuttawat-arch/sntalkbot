@@ -1,4 +1,12 @@
-# SNTalkBot 5.1.2 — Room-scoped Realtime Dashboard
+# SNTalkBot 5.1.4 — TeamTalk Admin Credential Proof / Linux SDK LF
+
+- เพิ่ม `tools/verify_teamtalk_admin.py` สำหรับ Web Manager: รับ JSON ทาง stdin เท่านั้น, login ชั่วคราวด้วย TeamTalk SDK, ตรวจ `UserType.USERTYPE_ADMIN`, คืนผลแบบไม่มี secret และ disconnect/close ทันที
+- ไม่ส่ง TeamTalk password ผ่าน argv และไม่บันทึก password ใน config/database/job log; Web Manager ใช้ verifier นี้เป็น owner proof ก่อนสร้าง persistent instance
+- รวม Linux SDK LF fix: หลังดาวน์โหลด official TeamTalk SDK จะ normalize `TeamTalk5.py` และ `TTSDK_license.txt` เป็น LF เพื่อให้ strict production verifier ไม่ fail จาก vendor CRLF
+- จำนวน canonical commands ยังคง 124; `. <queue_position>` / `, <queue_position>` ยังเป็น syntax extension ของคำสั่งเดิม
+- validator เพิ่ม regression ของ AdminProbe: Administrator ผ่าน, account ปกติถูกปฏิเสธ และ verifier ต้องคง stdin/account-type/cleanup safety
+
+# SNTalkBot 5.1.3 — Room-scoped Realtime Dashboard
 
 - แก้ Realtime API/Runtime Bridge ให้ `users_online` หมายถึงจำนวนผู้ใช้จริงใน **ห้องที่บอตอยู่** โดยไม่นับตัวบอตเอง แทนการใช้ยอดรวมทั้งเซิร์ฟเวอร์
 - เพิ่ม `room_users_online`, `server_users_online`, `room_users`, `admins_in_room_count` และ `server_teamtalk_activity` เพื่อให้ Web Manager แสดงรายละเอียดห้องและภาพรวมเซิร์ฟเวอร์แยกกันได้โดยไม่สับสน

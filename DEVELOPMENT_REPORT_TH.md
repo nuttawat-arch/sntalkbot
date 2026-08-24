@@ -1,4 +1,25 @@
-# DEVELOPMENT REPORT — SNTalkBot 5.1.2
+# Development Report — SNTalkBot 5.1.4 (Admin Credential Verifier / LF Closure)
+
+## 2026-08-25
+- เพิ่ม one-shot TeamTalk Administrator verifier ใน Docker image เพื่อให้ Web Manager พิสูจน์ credentials ของลูกค้าโดย login จริง ไม่อาศัยเพียงรายชื่อ admin ที่ออนไลน์
+- password รับทาง stdin และอยู่ใน memory ชั่วคราวเท่านั้น; output/error ไม่ echo password
+- callback `onCmdMyselfLoggedIn` ตรวจ `UserAccount.uUserType == USERTYPE_ADMIN`; account ที่ login ได้แต่ไม่ใช่ Admin ถูกปฏิเสธ
+- คง/ตรวจ Linux SDK LF normalization เพื่อแก้ strict production failure ที่พบจริงใน `TeamTalk5.py` และ `TTSDK_license.txt`
+- validator ผ่าน 124 commands, queue/moderation/realtime และ verifier regression
+
+---
+
+# Development Report — SNTalkBot 5.1.3 (Linux SDK LF Fix)
+
+## 2026-08-25
+- strict production verifier พบ CRLF ใน `TeamTalk5.py` และ `TTSDK_license.txt` ที่ official TeamTalk SDK นำเข้าระหว่าง Docker build
+- แก้ที่ต้นทาง build: Linux SDK installer normalize text สองไฟล์เป็น LF หลัง copy โดยไม่แก้ native library หรือ semantics
+- เพิ่ม validator gate ตรวจว่ากลไก normalize ยังอยู่ เพื่อไม่ให้ strict verifier กลับมาพังใน release ถัดไป
+- ไม่มีการเปลี่ยน command catalog: canonical commands ยังคง 124
+
+---
+
+# DEVELOPMENT REPORT — SNTalkBot 5.1.3
 
 ## ปัญหาจากรอบก่อน
 - Web Manager เห็น `users_online` เป็นจำนวนรวมทั้ง TeamTalk server ทั้งที่ข้อความบนการ์ดสื่อว่าคือคนในห้องปัจจุบัน
@@ -15,7 +36,7 @@
 - realtime regression ยืนยันว่าคนในห้อง/ทั้งเซิร์ฟเวอร์แยกกัน และทุก session ที่ใช้ TeamTalk username ของบอตไม่ถูกนับเป็น human/Administrator
 
 ## คงเหลือ
-- source/local validator พร้อม publish; ต้อง build/push Docker image 5.1.2, update running containers และผ่าน strict Linux production verification
+- source/local validator พร้อม publish; ต้อง build/push Docker image 5.1.3, update running containers และผ่าน strict Linux production verification
 
 # DEVELOPMENT REPORT — SNTalkBot 5.1.1
 
