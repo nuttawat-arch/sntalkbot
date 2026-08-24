@@ -1,6 +1,6 @@
 # SNTalkBot
 
-> **r7.3.1:** Existing Docker configs automatically receive new optional defaults; detached containers no longer fall into the interactive setup wizard during upgrades.
+> **SNTalkBot 5.1.0:** role-isolated Full/Player/Manager operation, queue provenance and playlist sessions, Related Radio, bundled default YouTube cookies, a role-aware `status` dashboard, bounded Manager/Full `events`, and event-driven moderation for user/channel metadata updates.
 
 
 Registered commands are prefix-free in both private and channel/broadcast messages (for example `h`, `p song`, `ap on`). A leading `/` remains accepted only for backward compatibility. Admins can disable normal channel-text reactions with `ci off`; an enabled `filter` still moderates received text before the channel-input gate, and `cm on|off|status` independently controls Player announcements sent to the channel.
@@ -16,6 +16,8 @@ The project can run in three instance modes:
 - **Full Bot** — player + server management
 - **Player Bot** — media/player features without server-management commands
 - **Server Manager** — server-management features without the music player
+
+Runtime event integration uses TeamTalk user/channel/server/file/state callbacks rather than polling. `status` is available in every role; `events [1-25]` is registered only in Manager/Full and stores a bounded in-memory audit trail without raw command arguments or secrets.
 
 For the complete Thai documentation, see [`README_TH.md`](README_TH.md).
 
@@ -53,4 +55,4 @@ Player announcements use a separate audio stream mixed with music by PulseAudio.
 
 ## Official developer reports
 
-`dr <message>` submits an explicit user report to `https://report.nuttawat.ddnsfree.com/api/report`. Telegram credentials are never embedded in the public image.
+`dr <message>` sends an explicit bug report, problem report, feature request, or suggestion through the official developer relay. The public bot does not expose relay credentials or require users to open a separate support URL.

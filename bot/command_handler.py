@@ -119,6 +119,21 @@ class CommandHandler:
         """Private input is always allowed; channel input follows the admin toggle."""
         return bool(enabled) or not self.is_channel_message(textmessage)
 
+    def should_reply_unknown(self, textmessage, my_user_id):
+        """Return True only for an unknown direct USER message from someone else.
+
+        Legacy TTMediaBot emitted its unknown-command hint for direct user text,
+        not ordinary channel conversation.  Keep that behavior so prefix-free
+        channel commands remain convenient without turning normal chat into
+        a stream of command-error replies. TeamTalk CUSTOM events (e.g. typing)
+        are also excluded.
+        """
+        msg_type = self._numeric(getattr(textmessage, "nMsgType", None))
+        user_type = self._numeric(getattr(TextMsgType, "MSGTYPE_USER", None))
+        from_user_id = self._numeric(getattr(textmessage, "nFromUserID", None))
+        my_user_id = self._numeric(my_user_id)
+        return user_type is not None and msg_type == user_type and from_user_id != my_user_id
+
     def _command_parts(self, message_text, textmessage=None):
         """Parse registered commands prefix-free in both private and channel text.
 
@@ -174,6 +189,20 @@ class CommandHandler:
         if command.admin_only and not is_authorized:
             self.bot.privateMessage(textmessage.nFromUserID, self.bot._("Not authorized"))
             return True
+
+        # Record only the canonical admin action name, never raw arguments. This
+        # gives Manager/Full an audit trail without leaking passwords, messages,
+        # tokens, or other command payloads into memory.
+        if command.admin_only and is_authorized and getattr(self.bot, "server_management_enabled", False):
+            try:
+                nickname = self._incoming_text(getattr(user, "szNickname", "")) if user else sender_username
+                self.bot.record_activity(
+                    "admin", "command",
+                    f"{nickname or sender_username or 'admin'} used {command_name}",
+                    user_id=int(getattr(textmessage, "nFromUserID", 0) or 0),
+                )
+            except Exception:
+                pass
 
         command.handler(textmessage, *args)
         return True

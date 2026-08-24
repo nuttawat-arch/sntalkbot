@@ -1,0 +1,22 @@
+SNTalkBot 2026.08.23-r7.4.4 overlay patch จาก r7.4.3
+คัดลอกทับ root ของ repo sntalkbot เดิม โดยไม่มีการลบไฟล์เดิม
+
+ไฟล์ที่เปลี่ยน/เพิ่ม:
+- COMMANDS_TH.md
+- LEGACY_AUDIT_TH.md
+- README.md
+- README_TH.md
+- RELEASE_NOTES_TH.md
+- USER_GUIDE_TH.md
+- VERSION
+- bot/bot_identity.py
+- bot/command_aliases.py
+- bot/command_handler.py
+- bot/help.py
+- bot/modules/general.py
+- bot/sntalkbot.py
+- bot/utils.py
+- locales/messages.pot
+- locales/th/LC_MESSAGES/messages.mo
+- locales/th/LC_MESSAGES/messages.po
+- tools/validate_project.py

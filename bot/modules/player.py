@@ -44,9 +44,216 @@ class PlayerCog:
         except Exception as e:
             print(f"Error saving favorites: {e}")
 
+    # ---------------- Queue state machine ----------------
+    # Do not use mpv's is_playing flag alone to decide whether a newly-added
+    # item should start. mpv flips it to False before playback-end callbacks,
+    # which used to let a last-second enqueue jump ahead of older pending items.
+    def _enqueue_queue_items(self, items, *, user_id=None, nickname=None):
+        """Append items atomically and return their 1-based inclusive queue range.
+
+        Every queued item keeps lightweight audit metadata (`added_by`,
+        `added_by_user_id`, `added_at`) so ql can tell users who added what and
+        when without changing FIFO semantics. Returning the range lets channel
+        text and Player TTS announce exact positions without re-reading a queue
+        that may already have changed on a worker thread.
+        """
+        queued_by = (nickname or (self._nickname(user_id) if user_id else None) or self._("Unknown")).strip()
+        queued_at = int(time.time())
+        normalized = []
+        for item in (items or []):
+            if not item or not item.get("link"):
+                continue
+            entry = dict(item)
+            entry["added_by"] = queued_by
+            if user_id is not None:
+                entry["added_by_user_id"] = int(user_id)
+            entry["added_at"] = queued_at
+            normalized.append(entry)
+        items = normalized
+        if not items:
+            return None
+        with self.player.queue_lock:
+            start_position = len(self.player.queue) + 1
+            self.player.queue.extend(items)
+            end_position = len(self.player.queue)
+            should_start = (
+                self.player.queue_mode
+                and self.player.queue_index < 0
+                and not self.player.queue_transition
+                and not self.player.playback_end_transition
+                and not self.player.is_playing
+            )
+            if should_start:
+                self.player.queue_index = 0
+                self.player.queue_transition = True
+        if should_start:
+            self._play_from_queue(0)
+        return start_position, end_position
+
+    def _advance_queue_after_current(self, *, remember=True):
+        """Consume only the current queue item and continue with the oldest pending item."""
+        next_index = None
+        with self.player.queue_lock:
+            if self.player.queue_index >= 0 and self.player.queue:
+                idx = min(self.player.queue_index, len(self.player.queue) - 1)
+                finished = self.player.queue.pop(idx)
+                if remember:
+                    self.player.queue_history.append(dict(finished))
+                    if len(self.player.queue_history) > 64:
+                        del self.player.queue_history[:-64]
+                self.player.queue_index = -1
+            if self.player.queue_mode and self.player.queue:
+                next_index = 0
+                self.player.queue_index = 0
+                self.player.queue_transition = True
+            else:
+                self.player.queue_transition = False
+        if next_index is not None:
+            self.bot.io_pool.submit(self._play_from_queue, next_index)
+            return True
+        return False
+
+    def _play_next_queue_manual(self, user_id=None):
+        with self.player.queue_lock:
+            has_current = self.player.queue_index >= 0 and bool(self.player.queue)
+            has_pending = bool(self.player.queue)
+        if has_current:
+            if self._advance_queue_after_current(remember=True):
+                return
+            self.loading_new_track = True
+            try:
+                self.player.stop()
+                self.player.current_link = None
+                self.bot.enableVoiceTransmission(False)
+            finally:
+                self.loading_new_track = False
+            if user_id:
+                self.bot.privateMessage(user_id, self._("You've reached the end of the list."))
+            return
+        if has_pending:
+            with self.player.queue_lock:
+                self.player.queue_index = 0
+                self.player.queue_transition = True
+            self._play_from_queue(0)
+            return
+        if user_id:
+            self.bot.privateMessage(user_id, self._("The queue is empty."))
+
+    def _play_previous_queue_manual(self, user_id=None):
+        with self.player.queue_lock:
+            if not self.player.queue_history:
+                previous = None
+            else:
+                previous = self.player.queue_history.pop()
+                # Preserve the current/pending queue exactly; replaying a previous
+                # item inserts it temporarily at the front instead of deleting or
+                # reordering anything that has not yet played.
+                self.player.queue.insert(0, dict(previous))
+                self.player.queue_index = 0
+                self.player.queue_transition = True
+        if previous is None:
+            if user_id:
+                self.bot.privateMessage(user_id, self._("You are at the beginning of the list."))
+            return
+        self._play_from_queue(0)
+
+    # ---------------- Normal discovery/radio navigation ----------------
+    def _normal_discovery_available(self):
+        return not self.player.queue_mode and not self.player.collection_results
+
+    def _play_radio_item(self, item, user_id=None, announce_private=False, autoplay=False):
+        if not item or not item.get("link"):
+            return False
+        # Related Radio is a separate normal-mode history. Once it begins, an
+        # exhausted or manually-abandoned playlist must not resume behind it.
+        self.player.clear_collection()
+        self.loading_new_track = True
+        try:
+            self.player.stop()
+            self.player.current_link = item["link"]
+            self.bot.enableVoiceTransmission(True)
+            self.player.play_stream(item["link"])
+            if announce_private and user_id:
+                self.bot.privateMessage(user_id, self._("Playing: {title}").format(title=item.get("title", self.player.media_title)))
+            elif autoplay:
+                self._send_playback_message(self._("Autoplaying related track: {title}").format(title=item.get("title", self.player.media_title)))
+            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
+            self._announce_track(self.player.media_title)
+            return True
+        except Exception as exc:
+            self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=item.get('title', 'Unknown'), e=str(exc)))
+            return False
+        finally:
+            self.loading_new_track = False
+
+    def _ensure_radio_seed(self):
+        if self.player.radio_history and 0 <= self.player.radio_index < len(self.player.radio_history):
+            return True
+        if not self.player.current_link:
+            return False
+        source = "ytmusic" if "music.youtube.com" in str(self.player.current_link) else "youtube"
+        self.player.reset_radio_history({
+            "title": self.player.media_title or "Unknown title",
+            "link": self.player.current_link,
+            "source": source,
+        }, source)
+        return True
+
+    def _play_next_related(self, user_id=None, announce_private=False, autoplay=False):
+        if not self._ensure_radio_seed():
+            if user_id:
+                self.bot.privateMessage(user_id, self._("No related track is available."))
+            return False
+
+        # If the user previously moved backward with b, n first walks forward
+        # through already-played radio history without asking YouTube again.
+        if self.player.radio_index < len(self.player.radio_history) - 1:
+            self.player.radio_index += 1
+            return self._play_radio_item(
+                self.player.radio_history[self.player.radio_index],
+                user_id=user_id, announce_private=announce_private, autoplay=autoplay,
+            )
+
+        current = self.player.radio_history[self.player.radio_index]
+        used = {str(item.get("link") or "") for item in self.player.radio_history}
+        while self.player.radio_candidates and str(self.player.radio_candidates[0].get("link") or "") in used:
+            self.player.radio_candidates.pop(0)
+        if not self.player.radio_candidates:
+            self.player.radio_candidates = self.player.related_radio(current, self.player.radio_source, limit=30)
+            self.player.radio_candidates = [
+                item for item in self.player.radio_candidates
+                if str(item.get("link") or "") not in used
+            ]
+        if not self.player.radio_candidates:
+            if user_id:
+                self.bot.privateMessage(user_id, self._("No related track is available."))
+            return False
+
+        next_item = self.player.radio_candidates.pop(0)
+        self.player.radio_history.append(dict(next_item))
+        self.player.radio_index = len(self.player.radio_history) - 1
+        if self._play_radio_item(next_item, user_id=user_id, announce_private=announce_private, autoplay=autoplay):
+            return True
+        # A broken recommendation should not poison navigation history.
+        self.player.radio_history.pop()
+        self.player.radio_index = len(self.player.radio_history) - 1
+        return self._play_next_related(user_id=user_id, announce_private=announce_private, autoplay=autoplay) if self.player.radio_candidates else False
+
+    def _play_previous_related(self, user_id=None, announce_private=False):
+        if not self._ensure_radio_seed() or self.player.radio_index <= 0:
+            if user_id:
+                self.bot.privateMessage(user_id, self._("No previous related track."))
+            return False
+        self.player.radio_index -= 1
+        return self._play_radio_item(
+            self.player.radio_history[self.player.radio_index],
+            user_id=user_id, announce_private=announce_private, autoplay=False,
+        )
+
     def register(self, command_handler):
         """Registers all the player commands with the command handler."""
         command_handler.register_command('u', self.handle_play_url_command)
+        command_handler.register_command('pp', self.handle_append_playlist_command)
         command_handler.register_command('p', self.handle_play_search_or_pause_command)
         command_handler.register_command('pm', self.handle_ytmusic_search_command)
         command_handler.register_command('n', self.handle_next_track_command)
@@ -273,7 +480,7 @@ class PlayerCog:
         try:
             user = self.bot.getUser(user_id)
             if user:
-                return ttstr(user.szNickname) or self._("Unknown")
+                return utils.ensure_text(ttstr(user.szNickname)).strip() or self._("Unknown")
         except Exception:
             pass
         return self._("Unknown")
@@ -293,14 +500,29 @@ class PlayerCog:
         except Exception as exc:
             print(f"Track announcement failed: {exc}")
 
-    def _announce_queue(self, title=None, count=None):
+    def _announce_queue(self, title=None, count=None, start=None, end=None, collection_title=None, nickname=None, collection_kind="playlist"):
         if not self.bot.playback_config.get("announce_queue", True):
             return
         try:
-            if count is not None:
-                text = self._("Added {count} tracks to the queue.").format(count=count)
+            who = nickname or self._("Unknown")
+            if count is not None and start is not None and end is not None:
+                name = collection_title or self._("playlist")
+                if collection_kind == "favorites":
+                    text = self._("{nickname} added all favorites to queue {start}-{end}.").format(
+                        nickname=who, start=start, end=end
+                    )
+                else:
+                    text = self._("{nickname} added playlist {title} to queue {start}-{end}.").format(
+                        nickname=who, title=name, start=start, end=end
+                    )
+            elif start is not None:
+                text = self._("{nickname} added to queue {position}: {title}").format(
+                    nickname=who, position=start, title=title or self._("Unknown")
+                )
+            elif count is not None:
+                text = self._("{nickname} added {count} tracks to the queue.").format(nickname=who, count=count)
             else:
-                text = self._("Added to queue: {title}").format(title=title or self._("Unknown"))
+                text = self._("{nickname} added to queue: {title}").format(nickname=who, title=title or self._("Unknown"))
             self.bot.tts_cog.announce_player(text)
         except Exception as exc:
             print(f"Queue announcement failed: {exc}")
@@ -326,17 +548,27 @@ class PlayerCog:
             return
 
         self.player.clear_collection()
-        self.player.current_link = link
-        self.bot.enableVoiceTransmission(True)
+        self.loading_new_track = True
         try:
+            if self.player.is_playing:
+                self.player.stop()
+            self.player.current_link = link
+            self.bot.enableVoiceTransmission(True)
             self.player.play_stream(link)
         except Exception as e:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Error playing stream: {e}").format(e=str(e)))
             return
+        finally:
+            self.loading_new_track = False
         user_nickname = self._nickname(textmessage.nFromUserID)
         self._send_playback_message(self._("{nickname} requested playing from a URL").format(nickname=user_nickname))
         self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
         self._announce_track(self.player.media_title)
+        if "youtube.com" in str(link) or "youtu.be" in str(link):
+            source = "ytmusic" if "music.youtube.com" in str(link) else "youtube"
+            self.player.reset_radio_history({"title": self.player.media_title, "link": link, "source": source}, source)
+        else:
+            self.player.clear_radio_history()
 
     def _enqueue_url_task(self, link, user_id):
         try:
@@ -346,53 +578,113 @@ class PlayerCog:
                 'title': info.get('title') or "Unknown title",
                 'link': link
             }
-            self.player.queue.append(video)
+            queue_range = self._enqueue_queue_items([video], user_id=user_id)
+            start, _end = queue_range or (None, None)
             user_nickname = self._nickname(user_id)
-            self._send_playback_message(self._("{nickname} added to queue: {title}").format(nickname=user_nickname, title=video['title']))
-            self._announce_queue(title=video['title'])
-            if not self.player.is_playing:
-                self.player.queue_index = len(self.player.queue) - 1
-                self._play_from_queue(self.player.queue_index)
+            self._send_playback_message(self._("{nickname} added to queue {position}: {title}").format(
+                nickname=user_nickname, position=start or "?", title=video['title']))
+            self._announce_queue(title=video['title'], start=start, nickname=user_nickname)
         except Exception as e:
             self.bot.privateMessage(user_id, self._("Error adding to queue: {e}").format(e=str(e)))
 
-    def _play_collection_task(self, link, user_id):
-        collection_type, results = self.player.fetch_collection(link)
+    def handle_append_playlist_command(self, textmessage, *args):
+        """Append a YouTube/YouTube Music playlist without replacing playback."""
+        if not self._is_in_same_channel(textmessage.nFromUserID):
+            return
+        if not args:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: pp <playlist_link>"))
+            return
+        link = " ".join(args).strip()
+        if self.player.classify_collection_link(link) != "playlist":
+            self.bot.privateMessage(textmessage.nFromUserID, self._("pp accepts a YouTube or YouTube Music playlist link."))
+            return
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Appending playlist..."))
+        self.bot.io_pool.submit(self._play_collection_task, link, textmessage.nFromUserID, True)
+
+    def _play_collection_task(self, link, user_id, append=False):
+        collection_type, collection_title, results = self.player.fetch_collection_details(link)
         if not results:
-            self.bot.privateMessage(user_id, self._("No videos found in the {collection_type}.").format(collection_type=collection_type or "playlistchannel"))
+            self.bot.privateMessage(user_id, self._("No videos found in the {collection_type}.").format(collection_type=collection_type or "playlist/channel"))
             return
-        
+
+        if append and collection_type != "playlist":
+            self.bot.privateMessage(user_id, self._("pp accepts playlists only."))
+            return
+
         if self.player.queue_mode:
-            self.player.queue.extend(results)
-            self._send_playback_message(self._("{nickname} added {count} items from {collection_type} to queue.").format(
-                nickname=self._nickname(user_id),
-                count=len(results),
-                collection_type=collection_type or "playlistchannel"
+            queue_range = self._enqueue_queue_items(results, user_id=user_id)
+            start, end = queue_range or (None, None)
+            title = collection_title or collection_type or self._("playlist")
+            self._send_playback_message(self._("{nickname} added playlist {title} to queue {start}-{end}.").format(
+                nickname=self._nickname(user_id), title=title, start=start or "?", end=end or "?"
             ))
-            self._announce_queue(count=len(results))
-            if not self.player.is_playing:
-                self.player.queue_index = len(self.player.queue) - len(results)
-                self._play_from_queue(self.player.queue_index)
+            self._announce_queue(
+                count=len(results), start=start, end=end, collection_title=title, nickname=self._nickname(user_id)
+            )
             return
+
+        if append:
+            # pp never interrupts the currently playing track.  If a collection is
+            # already active, simply extend it.  If a normal single track is active,
+            # make that track the synthetic first item so the appended playlist starts
+            # only after it ends.  With nothing playing, pp is tolerant and starts the
+            # playlist immediately.
+            if self.player.collection_results:
+                start_position = len(self.player.collection_results) + 1
+                self.player.collection_results.extend(results)
+                end_position = len(self.player.collection_results)
+                self._prefetch_next_for_current()
+                self._send_playback_message(self._("{nickname} appended playlist {title} as items {start}-{end}.").format(
+                    nickname=self._nickname(user_id), title=collection_title or self._("playlist"),
+                    start=start_position, end=end_position
+                ))
+                return
+
+            if self.player.is_playing and self.player.current_link:
+                current = {
+                    "title": self.player.media_title or self._("Current track"),
+                    "link": self.player.current_link,
+                    "source": "ytmusic" if "music.youtube.com" in str(self.player.current_link) else "youtube",
+                }
+                self.player.search_results = []
+                self.player.current_search_index = 0
+                self.player.collection_results = [current] + results
+                self.player.current_collection_index = 0
+                self.player.collection_source = "playlist_session"
+                self._prefetch_next_for_current()
+                self._send_playback_message(self._("{nickname} appended playlist {title}; it will play next.").format(
+                    nickname=self._nickname(user_id), title=collection_title or self._("playlist")
+                ))
+                return
+            # Nothing is playing: pp may serve as the first playlist for convenience.
 
         self.player.search_results = []
         self.player.current_search_index = 0
         self.player.collection_results = results
         self.player.current_collection_index = 0
         self.player.collection_source = collection_type
+        self.player.clear_radio_history()
         first_video = results[0]
-        self.player.current_link = first_video["link"]
-        self.bot.enableVoiceTransmission(True)
+        play_error = None
+        self.loading_new_track = True
         try:
+            if self.player.is_playing:
+                self.player.stop()
+            self.player.current_link = first_video["link"]
+            self.bot.enableVoiceTransmission(True)
             self.player.play_stream(first_video["link"])
         except Exception as e:
+            play_error = e
             self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=first_video['title'], e=str(e)))
+        finally:
+            self.loading_new_track = False
+        if play_error is not None:
             self.on_playback_end()
             return
         self._prefetch_next_for_current()
         user_nickname = self._nickname(user_id)
         self._send_playback_message(self._("{nickname} requested to play from a {collection_type}").format(
-            nickname=user_nickname, collection_type=collection_type or "playlistchannel"))
+            nickname=user_nickname, collection_type=collection_type or "playlist/channel"))
         self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
         self._announce_track(self.player.media_title)
 
@@ -506,8 +798,12 @@ class PlayerCog:
                 self.bot.io_pool.submit(self._search_and_enqueue_task, query, textmessage.nFromUserID)
             else:
                 if self.player.is_playing:
-                    self.player.fade_out_and_stop()
-                    self.bot.enableVoiceTransmission(False)
+                    self.loading_new_track = True
+                    try:
+                        self.player.fade_out_and_stop()
+                        self.bot.enableVoiceTransmission(False)
+                    finally:
+                        self.loading_new_track = False
                 self.player.clear_collection()
                 self.bot.privateMessage(textmessage.nFromUserID, self._("Searching..."))
                 self.bot.io_pool.submit(self._search_and_play_task, query, textmessage.nFromUserID)
@@ -528,8 +824,12 @@ class PlayerCog:
             self.bot.io_pool.submit(self._search_and_enqueue_task, query, textmessage.nFromUserID, source='ytmusic')
         else:
             if self.player.is_playing:
-                self.player.fade_out_and_stop()
-                self.bot.enableVoiceTransmission(False)
+                self.loading_new_track = True
+                try:
+                    self.player.fade_out_and_stop()
+                    self.bot.enableVoiceTransmission(False)
+                finally:
+                    self.loading_new_track = False
             self.player.clear_collection()
             self.bot.privateMessage(textmessage.nFromUserID, self._("Searching YouTube Music..."))
             self.bot.io_pool.submit(self._search_and_play_task, query, textmessage.nFromUserID, source='ytmusic')
@@ -545,6 +845,7 @@ class PlayerCog:
             self.player.search_results = results
             self.player.current_search_index = 0
             first_video = results[0]
+            self.player.reset_radio_history(first_video, source)
             self.player.current_link = first_video['link']
             self.bot.enableVoiceTransmission(True)
             try:
@@ -572,23 +873,32 @@ class PlayerCog:
             self.player.search_results = results
             self.player.current_search_index = 0
             video = results[0]
-            self.player.queue.append(video)
+            queue_range = self._enqueue_queue_items([video], user_id=user_id)
+            start, _end = queue_range or (None, None)
             user_nickname = self._nickname(user_id)
-            self._send_playback_message(self._("{nickname} added to queue: {title}").format(nickname=user_nickname, title=video['title']))
-            self._announce_queue(title=video['title'])
-            if not self.player.is_playing:
-                self.player.queue_index = len(self.player.queue) - 1
-                self._play_from_queue(self.player.queue_index)
+            self._send_playback_message(self._("{nickname} added to queue {position}: {title}").format(
+                nickname=user_nickname, position=start or "?", title=video['title']))
+            self._announce_queue(title=video['title'], start=start, nickname=user_nickname)
         else:
             self._send_playback_message(self._("No results found for '{query}'.").format(query=query))
 
     def _play_from_queue(self, index):
-        if index < 0 or index >= len(self.player.queue):
-            return
-        
-        video = self.player.queue[index]
+        with self.player.queue_lock:
+            if index < 0 or index >= len(self.player.queue):
+                self.player.queue_index = -1
+                self.player.queue_transition = False
+                return
+            self.player.queue_index = index
+            self.player.queue_transition = True
+            video = dict(self.player.queue[index])
+
         self.loading_new_track = True
+        error = None
         try:
+            # Queue playback is its own state machine. Do not leave a stale
+            # playlist/channel/radio behind that could resume after cq/q off.
+            self.player.clear_collection()
+            self.player.clear_radio_history()
             self.player.stop()
             self.player.current_link = video['link']
             self.bot.enableVoiceTransmission(True)
@@ -596,10 +906,16 @@ class PlayerCog:
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
             self._announce_track(self.player.media_title)
         except Exception as e:
+            error = e
             self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=video.get('title', 'Unknown'), e=str(e)))
-            self.on_playback_end() # Trigger next track
         finally:
             self.loading_new_track = False
+            with self.player.queue_lock:
+                self.player.queue_transition = False
+        if error is not None:
+            # Failed queue items are removed one-at-a-time, exactly like completed
+            # items, so one bad URL cannot stall or wipe the rest of the queue.
+            self._advance_queue_after_current(remember=False)
 
     def handle_pause_resume_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -685,8 +1001,10 @@ class PlayerCog:
             return
 
         def play_next_track():
-            self._play_next_from_active_list(user_id=textmessage.nFromUserID, announce_private=True)
-        
+            if self.player.queue_mode:
+                self._play_next_queue_manual(user_id=textmessage.nFromUserID)
+            else:
+                self._play_next_related(user_id=textmessage.nFromUserID, announce_private=True)
         self.bot.io_pool.submit(play_next_track)
 
     def handle_previous_track_command(self, textmessage, *args):
@@ -694,8 +1012,10 @@ class PlayerCog:
             return
 
         def play_previous_track():
-            self._play_previous_from_active_list(user_id=textmessage.nFromUserID, announce_private=True)
-
+            if self.player.queue_mode:
+                self._play_previous_queue_manual(user_id=textmessage.nFromUserID)
+            else:
+                self._play_previous_related(user_id=textmessage.nFromUserID, announce_private=True)
         self.bot.io_pool.submit(play_previous_track)
         
     def handle_stop_command(self, textmessage, *args):
@@ -703,21 +1023,31 @@ class PlayerCog:
             return
 
         if self.player.is_playing or self.player.queue:
-            self.player.stop()
-            self.player.current_link = None
-            self.player.search_results = []
-            self.player.current_search_index = 0
-            self.player.clear_collection()
-            self.player.queue = []
-            self.player.queue_index = -1
-            self.bot.enableVoiceTransmission(False)
+            # Explicit stop is the one operation that clears the entire pending
+            # queue. Suppress mpv's end callback so it cannot start another item.
+            self.loading_new_track = True
+            try:
+                self.player.stop()
+                self.player.current_link = None
+                self.player.search_results = []
+                self.player.current_search_index = 0
+                self.player.clear_collection()
+                with self.player.queue_lock:
+                    self.player.queue = []
+                    self.player.queue_index = -1
+                    self.player.queue_transition = False
+                    self.player.queue_history = []
+                self.player.clear_radio_history()
+                self.bot.enableVoiceTransmission(False)
+            finally:
+                self.loading_new_track = False
             user_nickname = self._nickname(textmessage.nFromUserID)
             self._send_playback_message(self._("{nickname} stopped the playback and cleared queue").format(nickname=user_nickname))
             status_msg = self.bot.get_idle_status_message()
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
         else:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Nothing is currently playing"))
-            
+
     def handle_change_volume_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
@@ -739,23 +1069,43 @@ class PlayerCog:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: v [volume_level]"))
 
     def on_playback_end(self):
-        """Callback function to be called when playback ends."""
+        """Advance without losing queue order at the mpv end-of-track boundary."""
         if self.loading_new_track:
             return
 
-        # 1. Check Queue
-        if self.player.queue_mode and self.player.queue:
-            if self.player.queue_index < len(self.player.queue) - 1:
-                self.player.queue_index += 1
-                self.bot.io_pool.submit(self._play_from_queue, self.player.queue_index)
+        # Queue always has priority. A completed queued item is removed exactly
+        # once; if the previous track was non-queue, pending queue starts at item 1.
+        with self.player.queue_lock:
+            queue_has_current = self.player.queue_index >= 0 and bool(self.player.queue)
+            queue_has_pending = bool(self.player.queue)
+        if queue_has_current or (self.player.queue_mode and queue_has_pending):
+            if self._advance_queue_after_current(remember=queue_has_current):
+                return
+            if queue_has_current:
+                self.bot.enableVoiceTransmission(False)
+                status_msg = self.bot.get_idle_status_message()
+                self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
                 return
 
-        # 2. TT Player modes for non-queue playback.
+        # Queue Mode is isolated from normal Related Radio. If q is still ON but
+        # the queue is empty (for example after cq), the current audio may finish
+        # naturally but must not fall through into M2/Autoplay recommendations.
+        if self.player.queue_mode:
+            self.bot.enableVoiceTransmission(False)
+            status_msg = self.bot.get_idle_status_message()
+            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
+            return
+
+        # Explicit playlists/channels/favorites keep their authored order. Ordinary
+        # search playback deliberately does NOT auto-walk search results anymore.
         if self.player.play_mode == 3 and self.player.current_link:
             self.bot.io_pool.submit(self._repeat_current_track)
             return
-        if (self.player.play_mode == 2 or self.autoplay_enabled) and self._has_next_in_active_list():
+        if (self.player.play_mode == 2 or self.autoplay_enabled) and self.player.collection_results and self._has_next_in_active_list():
             self.bot.io_pool.submit(self._play_next_from_active_list, None, False)
+            return
+        if (self.player.play_mode == 2 or self.autoplay_enabled) and self.player.current_link:
+            self.bot.io_pool.submit(self._play_next_related, None, False, True)
             return
 
         self.bot.enableVoiceTransmission(False)
@@ -859,6 +1209,7 @@ class PlayerCog:
         self._set_active_index(current_index + 1)
         next_video = results[self._get_active_index()]
         
+        play_error = None
         try:
             self.player.stop()
             self.player.current_link = next_video['link']
@@ -872,10 +1223,12 @@ class PlayerCog:
             self._announce_track(self.player.media_title)
             self._prefetch_next_for_current()
         except Exception as e:
+            play_error = e
             self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=next_video.get('title', 'Unknown'), e=str(e)))
-            self.on_playback_end()
         finally:
             self.loading_new_track = False
+        if play_error is not None:
+            self.on_playback_end()
 
     def _play_previous_from_active_list(self, user_id=None, announce_private=False):
         results, _ = self._get_active_results()
@@ -894,6 +1247,7 @@ class PlayerCog:
         self._set_active_index(current_index - 1)
         prev_video = results[self._get_active_index()]
         
+        play_error = None
         try:
             self.player.stop()
             self.player.current_link = prev_video['link']
@@ -904,10 +1258,12 @@ class PlayerCog:
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
             self._prefetch_next_for_current()
         except Exception as e:
+            play_error = e
             self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=prev_video.get('title', 'Unknown'), e=str(e)))
-            self.on_playback_end()
         finally:
             self.loading_new_track = False
+        if play_error is not None:
+            self.on_playback_end()
 
     def _prefetch_next_for_current(self):
         results, _ = self._get_active_results()
@@ -1052,9 +1408,26 @@ class PlayerCog:
             return
         
         lines = [self._("Current Queue:")]
+        now = int(time.time())
         for i, video in enumerate(self.player.queue):
             prefix = "-> " if i == self.player.queue_index else f"{i+1}. "
-            lines.append(f"{prefix}{video['title']}")
+            added_by = str(video.get("added_by") or self._("Unknown"))
+            try:
+                age_seconds = max(0, now - int(video.get("added_at") or now))
+            except (TypeError, ValueError):
+                age_seconds = 0
+            if age_seconds < 60:
+                age = self._("just now")
+            elif age_seconds < 3600:
+                age = self._("{minutes} min ago").format(minutes=max(1, age_seconds // 60))
+            elif age_seconds < 86400:
+                age = self._("{hours} h ago").format(hours=max(1, age_seconds // 3600))
+            else:
+                age = self._("{days} d ago").format(days=max(1, age_seconds // 86400))
+            detail = self._("{title} | added by {nickname} | {age}").format(
+                title=video.get("title", self._("Unknown")), nickname=added_by, age=age
+            )
+            lines.append(prefix + detail)
         
         msg = "\n".join(lines)
         for chunk in self.bot._split_private_message(msg):
@@ -1074,32 +1447,67 @@ class PlayerCog:
     def handle_delete_queue_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
-        
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: dq <index>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: dq <index|title>"))
             return
-        
-        try:
-            idx = int(args[0]) - 1
-            if 0 <= idx < len(self.player.queue):
-                removed = self.player.queue.pop(idx)
-                self.bot.privateMessage(textmessage.nFromUserID, self._("Removed from queue: {title}").format(title=removed['title']))
-                if idx < self.player.queue_index:
-                    self.player.queue_index -= 1
-                elif idx == self.player.queue_index:
-                    if self.player.is_playing:
-                        self.handle_next_track_command(textmessage)
+
+        selector = " ".join(args).strip()
+        with self.player.queue_lock:
+            idx = None
+            if selector.isdigit():
+                candidate = int(selector) - 1
+                if 0 <= candidate < len(self.player.queue):
+                    idx = candidate
             else:
-                self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid queue index."))
-        except ValueError:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: dq <index>"))
+                needle = selector.casefold()
+                exact = [i for i, item in enumerate(self.player.queue) if str(item.get("title", "")).casefold() == needle]
+                partial = [i for i, item in enumerate(self.player.queue) if needle in str(item.get("title", "")).casefold()]
+                if exact:
+                    idx = exact[0]
+                elif partial:
+                    idx = partial[0]
+            if idx is None:
+                removed = None
+                was_current = False
+            else:
+                was_current = idx == self.player.queue_index
+                removed = self.player.queue.pop(idx)
+                if self.player.queue_index >= 0:
+                    if idx < self.player.queue_index:
+                        self.player.queue_index -= 1
+                    elif was_current:
+                        self.player.queue_index = -1
+
+        if removed is None:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Queue item not found."))
+            return
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Removed from queue: {title}").format(title=removed['title']))
+        if was_current:
+            with self.player.queue_lock:
+                has_next = self.player.queue_mode and bool(self.player.queue)
+                if has_next:
+                    self.player.queue_index = 0
+                    self.player.queue_transition = True
+            if has_next:
+                self._play_from_queue(0)
+            else:
+                self.loading_new_track = True
+                try:
+                    self.player.stop()
+                    self.player.current_link = None
+                    self.bot.enableVoiceTransmission(False)
+                finally:
+                    self.loading_new_track = False
 
     def handle_clear_queue_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
-        
-        self.player.queue = []
-        self.player.queue_index = -1
+        # cq removes queued entries only; unlike s it does not stop the audio that
+        # is already playing. If that audio was a queue item it becomes detached.
+        with self.player.queue_lock:
+            self.player.queue = []
+            self.player.queue_index = -1
+            self.player.queue_transition = False
         self.bot.privateMessage(textmessage.nFromUserID, self._("Queue cleared."))
 
     def handle_playing_info_command(self, textmessage, *args):
@@ -1133,31 +1541,72 @@ class PlayerCog:
         else:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Nothing is currently playing."))
 
+    def _play_search_result_at(self, index, user_id):
+        if index < 0 or index >= len(self.player.search_results):
+            return False
+        video = self.player.search_results[index]
+        self.loading_new_track = True
+        try:
+            self.player.clear_collection()
+            self.player.current_search_index = index
+            self.player.reset_radio_history(video, video.get("source") or "youtube")
+            self.player.stop()
+            self.player.current_link = video["link"]
+            self.bot.enableVoiceTransmission(True)
+            self.player.play_stream(video["link"])
+            self.bot.privateMessage(user_id, self._("Playing search result: {title}").format(title=video['title']))
+            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
+            self._announce_track(self.player.media_title)
+            return True
+        except Exception as exc:
+            self.bot.privateMessage(user_id, self._("Error playing track: {error}").format(error=str(exc)))
+            return False
+        finally:
+            self.loading_new_track = False
+
     def handle_next_search_result_selection(self, textmessage, *args):
-        if not self.player.search_results or not self.player.queue_mode or not self.player.queue:
+        if not self.player.search_results:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("No search results are available."))
             return
-        
-        self.player.current_search_index = (self.player.current_search_index + 1) % len(self.player.search_results)
-        video = self.player.search_results[self.player.current_search_index]
-        
-        if self.player.queue:
-            self.player.queue[-1] = video
+        if self.player.queue_mode:
+            if not self.player.queue:
+                return
+            self.player.current_search_index = (self.player.current_search_index + 1) % len(self.player.search_results)
+            video = self.player.search_results[self.player.current_search_index]
+            with self.player.queue_lock:
+                self.player.queue[-1] = video
+                is_current = self.player.queue_index == len(self.player.queue) - 1
             self.bot.privateMessage(textmessage.nFromUserID, self._("Selection changed to: {title}").format(title=video['title']))
-            if self.player.queue_index == len(self.player.queue) - 1:
+            if is_current:
                 self._play_from_queue(self.player.queue_index)
+            return
+        target = self.player.current_search_index + 1
+        if target >= len(self.player.search_results):
+            self.bot.privateMessage(textmessage.nFromUserID, self._("You've reached the end of the search results."))
+            return
+        self._play_search_result_at(target, textmessage.nFromUserID)
 
     def handle_prev_search_result_selection(self, textmessage, *args):
-        if not self.player.search_results or not self.player.queue_mode or not self.player.queue:
+        if not self.player.search_results:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("No search results are available."))
             return
-        
-        self.player.current_search_index = (self.player.current_search_index - 1) % len(self.player.search_results)
-        video = self.player.search_results[self.player.current_search_index]
-        
-        if self.player.queue:
-            self.player.queue[-1] = video
+        if self.player.queue_mode:
+            if not self.player.queue:
+                return
+            self.player.current_search_index = (self.player.current_search_index - 1) % len(self.player.search_results)
+            video = self.player.search_results[self.player.current_search_index]
+            with self.player.queue_lock:
+                self.player.queue[-1] = video
+                is_current = self.player.queue_index == len(self.player.queue) - 1
             self.bot.privateMessage(textmessage.nFromUserID, self._("Selection changed to: {title}").format(title=video['title']))
-            if self.player.queue_index == len(self.player.queue) - 1:
+            if is_current:
                 self._play_from_queue(self.player.queue_index)
+            return
+        target = self.player.current_search_index - 1
+        if target < 0:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("You are at the beginning of the search results."))
+            return
+        self._play_search_result_at(target, textmessage.nFromUserID)
 
     def handle_fav_command(self, textmessage, *args):
         if not self.player.is_playing or not self.player.current_link:
@@ -1183,27 +1632,41 @@ class PlayerCog:
             return
         
         if self.player.queue_mode:
-            self.player.queue.extend(self.favorites)
-            self._send_playback_message(self._("{nickname} added all favorites to queue.").format(nickname=self._nickname(textmessage.nFromUserID)))
-            if not self.player.is_playing:
-                self.player.queue_index = len(self.player.queue) - len(self.favorites)
-                self._play_from_queue(self.player.queue_index)
+            queue_range = self._enqueue_queue_items(self.favorites, user_id=textmessage.nFromUserID)
+            if queue_range:
+                start, end = queue_range
+                user_nickname = self._nickname(textmessage.nFromUserID)
+                self._send_playback_message(self._("{nickname} added all favorites to queue {start}-{end}.").format(
+                    nickname=user_nickname, start=start, end=end))
+                self._announce_queue(
+                    count=len(self.favorites), start=start, end=end,
+                    collection_title=self._("Favorites"), nickname=user_nickname, collection_kind="favorites",
+                )
         else:
             self.player.clear_collection()
             self.player.collection_results = self.favorites
             self.player.current_collection_index = 0
             self.player.collection_source = "favorites"
+            self.player.clear_radio_history()
             self._play_from_queue_explicit(0, self.favorites)
 
     def _play_from_queue_explicit(self, index, results):
         first_video = results[index]
-        self.player.current_link = first_video["link"]
-        self.bot.enableVoiceTransmission(True)
+        play_error = None
+        self.loading_new_track = True
         try:
+            if self.player.is_playing:
+                self.player.stop()
+            self.player.current_link = first_video["link"]
+            self.bot.enableVoiceTransmission(True)
             self.player.play_stream(first_video["link"])
             self._send_playback_message(self._("Playing from favorites: {title}").format(title=self.player.media_title))
         except Exception as e:
+            play_error = e
             self._send_playback_message(self._("Error playing {title}: {e}").format(title=first_video['title'], e=str(e)))
+        finally:
+            self.loading_new_track = False
+        if play_error is not None:
             self.on_playback_end()
 
     def handle_delfav_command(self, textmessage, *args):

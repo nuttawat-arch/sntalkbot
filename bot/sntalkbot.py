@@ -2,7 +2,7 @@
 from TeamTalk5 import TeamTalk, User, UserType, UserAccount, UserRight, TextMessage, ttstr, TextMsgType, Subscription, TTMessage, VideoCodec, Channel, ChannelType, AudioCodec, OpusCodec, Codec, OPUS_APPLICATION_VOIP, BanType, StreamType
 import TeamTalk5
 from bot.command_handler import CommandHandler
-from bot.command_aliases import COMMAND_ALIASES
+from bot.command_aliases import COMMON_ALIASES, PLAYER_ALIASES, MANAGER_ALIASES
 from bot.utils import BotUtils as utils, LoggingThreadPoolExecutor
 from bot.modules.admin import AdminCog
 from bot.modules.general import GeneralCog
@@ -25,6 +25,9 @@ from threading import Thread, Lock
 from concurrent.futures import ThreadPoolExecutor
 from bot.player import Player
 from bot.bot_identity import effective_status_message
+from bot.activity import ActivityLog
+from bot.dashboard_state import RuntimeStateWriter
+from bot.http_api import LocalStatusApi
 
 
 class SNTalkBot(TeamTalk):
@@ -72,6 +75,14 @@ class SNTalkBot(TeamTalk):
         self._event_bootstrap_timer = None
         self.io_pool = LoggingThreadPoolExecutor(max_workers=10, thread_name_prefix='TTBot_IO')
         self.quick_task_pool = LoggingThreadPoolExecutor(max_workers=5, thread_name_prefix='TTBot_Quick')
+        # Bounded, in-memory audit state. This deliberately stores only plain
+        # strings/ints, never ctypes TeamTalk objects, so event tracking cannot
+        # hold stale SDK structures or interfere with playback.
+        self.activity = ActivityLog(max_items=200)
+        self.started_at = self.activity.started_at
+        self._user_profile_snapshots = {}
+        self._channel_snapshots = {}
+        self._user_state_snapshots = {}
         self.player = Player(self.config_handler, cookiefile=self.cookiefile) if self.player_enabled else None
         self.command_handler = CommandHandler(self)
         self.commands_locked = self.bot_config.get("is_locked", False)
@@ -80,22 +91,19 @@ class SNTalkBot(TeamTalk):
         self.welcome_mode = self.bot_config.get("welcome_mode", 0)
         self.welcome_broadcast = self.bot_config.get("welcome_broadcast", True)
         self.welcome_msg = self.bot_config.get("welcome_msg", "ยินดีต้อนรับคุณ ชื่อ เข้าสู่ห้องครับ")
-        self.user_warnings = {}
-        self.bad_words = []
-        try:
-            os.makedirs("files", exist_ok=True)
-            badword_candidates = [os.path.join("files", "badword.txt"), "badword.txt"]
-            badword_file = next((path for path in badword_candidates if os.path.exists(path)), None)
-            if badword_file:
-                with open(badword_file, "r", encoding="utf-8") as f:
-                    self.bad_words = [line.strip().lower() for line in f if line.strip()]
-        except Exception as e:
-            print(f"Error loading bad words: {e}")
+        # One canonical multilingual word-filter source. badword.txt remains in
+        # release packages only as a compatibility/reference mirror; every shipped
+        # entry is required by validation to exist in blacklist.txt as well.
+        self.bad_words = utils.load_blacklist("blacklist.txt")
             
         self.random_tts_thread = None
         self.random_tts_messages = []
         self.initialize_connection()
         self._register_cogs()
+        self.runtime_state_writer = RuntimeStateWriter(self)
+        self.runtime_state_writer.start()
+        self.local_status_api = LocalStatusApi(self)
+        self.local_status_api.start()
 
     def get_idle_status_message(self):
         """Return the configured custom status or a role-specific automatic default."""
@@ -188,6 +196,10 @@ class SNTalkBot(TeamTalk):
     def shutdown(self):
         """Cleanly shuts down all resources used by the bot instance."""
         try:
+            if getattr(self, "local_status_api", None) is not None:
+                self.local_status_api.stop()
+            if getattr(self, "runtime_state_writer", None) is not None:
+                self.runtime_state_writer.stop()
             if self.player is not None:
                 self.player.close_player()            
             self.disconnect()            
@@ -251,12 +263,19 @@ class SNTalkBot(TeamTalk):
             if cog is not None:
                 cog.register(self.command_handler)
 
-        # Register intentional short aliases only when their canonical command is
-        # available in this feature mode. Aliases resolve to one canonical handler
-        # rather than registering duplicate command handlers.
-        for alias, target in COMMAND_ALIASES.items():
-            if target in self.command_handler.commands:
-                self.command_handler.register_alias(alias, target)
+        # Register aliases by feature profile.  Keep Player and Server Manager
+        # shortcuts physically separate so legacy compatibility cannot leak a
+        # management command into Player-only mode (or a media command into
+        # Manager-only mode).  Full Bot intentionally receives the union.
+        active_alias_maps = [COMMON_ALIASES]
+        if self.player_enabled:
+            active_alias_maps.append(PLAYER_ALIASES)
+        if self.server_management_enabled:
+            active_alias_maps.append(MANAGER_ALIASES)
+        for alias_map in active_alias_maps:
+            for alias, target in alias_map.items():
+                if target in self.command_handler.commands:
+                    self.command_handler.register_alias(alias, target)
 
         # Migrate any blocked-command entries that were saved using an alias.
         normalized_blocked = {
@@ -271,8 +290,99 @@ class SNTalkBot(TeamTalk):
 
         print(self._("All command modules have been registered."))
 
+    def record_activity(self, category, action, message, **metadata):
+        """Record a bounded runtime event without touching the TeamTalk event loop."""
+        try:
+            return self.activity.record(category, action, message, **metadata)
+        except Exception as exc:
+            logging.debug("activity log write failed: %s", exc)
+            return None
+
+    def _event_tracking_live(self):
+        with self._event_bootstrap_lock:
+            return bool(self._event_bootstrap_ready)
+
+    @staticmethod
+    def _profile_snapshot(user):
+        if not user:
+            return None
+        return {
+            "nickname": utils.ensure_text(ttstr(getattr(user, "szNickname", ""))),
+            "username": utils.ensure_text(ttstr(getattr(user, "szUsername", ""))),
+            "status": utils.ensure_text(ttstr(getattr(user, "szStatusMsg", ""))),
+            "status_mode": int(getattr(user, "nStatusMode", 0) or 0),
+            "channel_id": int(getattr(user, "nChannelID", 0) or 0),
+        }
+
+    @staticmethod
+    def _channel_snapshot(channel):
+        if not channel:
+            return None
+        return {
+            "id": int(getattr(channel, "nChannelID", 0) or 0),
+            "name": utils.ensure_text(ttstr(getattr(channel, "szName", ""))),
+            "topic": utils.ensure_text(ttstr(getattr(channel, "szTopic", ""))),
+            "parent_id": int(getattr(channel, "nParentID", 0) or 0),
+        }
+
+    def _moderate_channel_metadata(self, channel):
+        """Apply the same canonical multilingual filter to new and edited channels."""
+        if not self.server_management_enabled or not self.profanity_filter_enabled or not channel:
+            return False
+        blacklist = self.bad_words or utils.load_blacklist("blacklist.txt")
+        if not blacklist:
+            return False
+        channel_name = utils.ensure_text(ttstr(getattr(channel, "szName", "")))
+        channel_topic = utils.ensure_text(ttstr(getattr(channel, "szTopic", "")))
+        if not utils.contains_profanity(f"{channel_name} {channel_topic}", blacklist):
+            return False
+        channel_id = int(getattr(channel, "nChannelID", 0) or 0)
+        if channel_id:
+            self.doRemoveChannel(channel_id)
+            self.record_activity("moderation", "channel_removed", f"Removed channel with blocked name/topic: {channel_name}", channel_id=channel_id)
+        return True
+
+    @staticmethod
+    def _state_flag(name):
+        enum = getattr(TeamTalk5, "UserState", None)
+        value = getattr(enum, name, 0) if enum is not None else 0
+        try:
+            return int(getattr(value, "value", value) or 0)
+        except Exception:
+            return 0
+
+    def runtime_state_counts(self):
+        """Return current TeamTalk stream-state counts using SDK user-state flags."""
+        result = {"voice": 0, "media": 0, "video": 0, "desktop": 0}
+        flags = {
+            "voice": self._state_flag("USERSTATE_VOICE"),
+            "media_audio": self._state_flag("USERSTATE_MEDIAFILE_AUDIO"),
+            "media_video": self._state_flag("USERSTATE_MEDIAFILE_VIDEO"),
+            "video": self._state_flag("USERSTATE_VIDEOCAPTURE"),
+            "desktop": self._state_flag("USERSTATE_DESKTOP"),
+        }
+        try:
+            users = self.getServerUsers()
+        except Exception:
+            users = []
+        for user in users:
+            if int(getattr(user, "nUserID", 0) or 0) == int(self.getMyUserID() or 0):
+                continue
+            state = int(getattr(user, "uUserState", 0) or 0)
+            if flags["voice"] and state & flags["voice"]:
+                result["voice"] += 1
+            if ((flags["media_audio"] and state & flags["media_audio"]) or
+                    (flags["media_video"] and state & flags["media_video"])):
+                result["media"] += 1
+            if flags["video"] and state & flags["video"]:
+                result["video"] += 1
+            if flags["desktop"] and state & flags["desktop"]:
+                result["desktop"] += 1
+        return result
+
     def onConnectSuccess(self):
         print(self._("Connected successfully!"))
+        self.record_activity("system", "connect", "Connected to TeamTalk server")
         self._reconnect_attempt = 0
         self._event_bootstrap_lock = threading.Lock()
         self._event_bootstrap_ready = False
@@ -281,11 +391,13 @@ class SNTalkBot(TeamTalk):
         self.doLogin(ttstr(self.bot_config["nickname"]), ttstr(self.server_config["username"]), ttstr(self.server_config["password"]), ttstr(self.bot_config["client_name"]))
 
     def onConnectFailed(self):
+        self.record_activity("system", "connect_failed", "TeamTalk connection failed")
         print(self._("Could not connect to server {server_address} port={port}").format(server_address=self.server_config["address"], port=self.server_config["tcp_port"]))
         print(self._("Trying to reconnect."))
         self.reconnect()
 
     def onConnectionLost(self):
+        self.record_activity("system", "connection_lost", "TeamTalk connection lost")
         print(self._("Connection lost. Trying to reconnect..."))
         self.reconnect()
 
@@ -389,6 +501,7 @@ class SNTalkBot(TeamTalk):
 
     def onCmdMyselfLoggedIn(self, userid, useraccount):
         print(self._("Logged in successfully"))
+        self.record_activity("system", "login", "Bot logged in to TeamTalk")
         self._begin_event_bootstrap()
         channel_id = self.getChannelIDFromPath(ttstr(self.bot_config['default_channel']))
 
@@ -405,6 +518,7 @@ class SNTalkBot(TeamTalk):
         self._maybe_start_random_tts_broadcast()
 
     def onCmdMyselfKickedFromChannel(self, channelid, user):
+        self.record_activity("system", "kicked", f"Bot was kicked from channel {int(channelid or 0)}", channel_id=int(channelid or 0))
         # Never sleep inside TeamTalk's event callback. Reuse the non-blocking
         # reconnect worker so the event loop remains responsive.
         print(self._("I've been kicked from the channel. Scheduling reconnect..."))
@@ -453,6 +567,15 @@ class SNTalkBot(TeamTalk):
         # Subscribe only the user represented by this event. Re-subscribing the
         # entire server for every login was unnecessary work on busy servers.
         self._subscribe_user(user)
+        snapshot = self._profile_snapshot(user)
+        if snapshot is not None:
+            self._user_profile_snapshots[int(getattr(user, "nUserID", 0) or 0)] = snapshot
+        if fresh_login:
+            self.record_activity(
+                "user", "login",
+                f"{snapshot.get('nickname') or snapshot.get('username') or 'Unknown'} logged in",
+                user_id=int(getattr(user, "nUserID", 0) or 0),
+            )
         if self.accounts_config['detect_server_admins'] is True and user.uUserType == UserType.USERTYPE_ADMIN:
             username_lower = ttstr(user.szUsername).lower()
             if username_lower not in [u.lower() for u in self.accounts_config['authorized_users']]:
@@ -472,18 +595,61 @@ class SNTalkBot(TeamTalk):
         if self.user_manager is not None:
             self.user_manager.on_user_logged_in(user, fresh_login=fresh_login)
 
+    def onCmdUserUpdate(self, user: User):
+        """React to real TeamTalk user-property updates without polling."""
+        user_id = int(getattr(user, "nUserID", 0) or 0)
+        if not user_id:
+            return
+        current = self._profile_snapshot(user) or {}
+        previous = self._user_profile_snapshots.get(user_id)
+        self._user_profile_snapshots[user_id] = current
+
+        if user_id == int(self.getMyUserID() or 0):
+            return
+
+        # Re-check profile text when users change nickname/status after login.
+        # This closes the common loophole of logging in clean and renaming later.
+        if self.server_management_enabled and self.admin_cog is not None:
+            if self.admin_cog.check_user_profile_for_blacklist(user):
+                return
+
+        if not self._event_tracking_live() or not previous:
+            return
+        old_name = previous.get("nickname", "")
+        new_name = current.get("nickname", "")
+        old_status = previous.get("status", "")
+        new_status = current.get("status", "")
+        if old_name != new_name:
+            self.record_activity("user", "rename", f"{old_name or 'Unknown'} renamed to {new_name or 'Unknown'}", user_id=user_id)
+        if old_status != new_status:
+            display = new_name or current.get("username") or "Unknown"
+            self.record_activity("user", "status", f"{display} changed status", user_id=user_id)
+
     def onCmdUserJoinedChannel(self, user: User):
+        user_id = int(getattr(user, "nUserID", 0) or 0)
+        is_live = self._is_live_join_event(user)
+        snapshot = self._profile_snapshot(user)
+        if snapshot is not None:
+            self._user_profile_snapshots[user_id] = snapshot
         if self.jail_cog is not None:
             self.jail_cog.handle_user_join_channel(user)
         self._maybe_start_random_tts_broadcast()
-        
-        # New Welcome logic
-        if self.server_management_enabled and self.welcome_mode > 0 and self._is_live_join_event(user):
+
+        if is_live:
+            nickname = (snapshot or {}).get("nickname") or (snapshot or {}).get("username") or "Unknown"
+            self.record_activity("user", "join", f"{nickname} joined channel {int(getattr(user, 'nChannelID', 0) or 0)}", user_id=user_id, channel_id=int(getattr(user, "nChannelID", 0) or 0))
+
+        # Static welcome is a Manager/Full concern and only fires for a true live join.
+        if self.server_management_enabled and self.welcome_mode > 0 and is_live:
             nm = ttstr(user.szNickname)
             msg = self.welcome_msg.replace("ชื่อ", nm)
             self.send_message(msg)
 
     def onCmdUserLeftChannel(self, channelid: int, user: User):
+        user_id = int(getattr(user, "nUserID", 0) or 0)
+        if self._event_tracking_live() and user_id != int(self.getMyUserID() or 0):
+            nickname = utils.ensure_text(ttstr(getattr(user, "szNickname", ""))) or utils.ensure_text(ttstr(getattr(user, "szUsername", ""))) or "Unknown"
+            self.record_activity("user", "leave", f"{nickname} left channel {int(channelid or 0)}", user_id=user_id, channel_id=int(channelid or 0))
         if self.user_manager is not None:
             self.user_manager.on_user_parted(user)
         if self.translator_cog is not None:
@@ -492,8 +658,15 @@ class SNTalkBot(TeamTalk):
             self.tts_cog.on_user_parted(user)
 
     def onCmdUserLoggedOut(self, user: User):
+        user_id = int(getattr(user, "nUserID", 0) or 0)
+        if self._event_tracking_live() and user_id != int(self.getMyUserID() or 0):
+            snapshot = self._user_profile_snapshots.get(user_id) or self._profile_snapshot(user) or {}
+            nickname = snapshot.get("nickname") or snapshot.get("username") or "Unknown"
+            self.record_activity("user", "logout", f"{nickname} logged out", user_id=user_id)
+        self._user_profile_snapshots.pop(user_id, None)
+        self._user_state_snapshots.pop(user_id, None)
         with self._event_bootstrap_lock:
-            self._initial_login_user_ids.discard(int(getattr(user, "nUserID", 0) or 0))
+            self._initial_login_user_ids.discard(user_id)
         if self.user_manager is not None:
             self.user_manager.on_user_parted(user)
         if self.translator_cog is not None:
@@ -530,8 +703,8 @@ class SNTalkBot(TeamTalk):
         from_nickname = utils.ensure_text(ttstr(sender_user.szNickname)) if sender_user else "Unknown"
 
         # Word moderation is intentionally independent from Channel Input. The
-        # `filter` switch is the single master ON/OFF control for every word-list
-        # check (canonical blacklist plus legacy supplemental badword warnings).
+        # `filter` switch is the single master ON/OFF control for the canonical
+        # multilingual blacklist (Thai, English, and other configured languages).
         # Therefore `ci off` silences normal channel features without blinding an
         # enabled filter, while `filter off` disables all word filtering at once.
         if self.server_management_enabled and self.profanity_filter_enabled and from_uid != self.getMyUserID():
@@ -540,19 +713,6 @@ class SNTalkBot(TeamTalk):
             if self.admin_cog is not None and self.admin_cog.check_message_for_blacklist(textmessage):
                 return
 
-            # Keep badword.txt as a backward-compatible supplemental warning list.
-            # Shipped Thai entries are also in blacklist.txt now, so they follow the
-            # same canonical path as English/other-language entries.
-            if utils.contains_profanity(message_text, self.bad_words):
-                self.user_warnings[from_uid] = self.user_warnings.get(from_uid, 0) + 1
-                count = self.user_warnings[from_uid]
-                if count >= 3:
-                    self.kick_user(from_uid)
-                    self.send_broadcast_message(f"เตะคุณ {from_nickname} ออกจากเซิร์ฟเวอร์เนื่องจากพิมพ์คำหยาบเกินกำหนด")
-                    self.user_warnings[from_uid] = 0
-                else:
-                    self.privateMessage(from_uid, f"กรุณาอย่าพิมพ์คำหยาบนะครับ เตือนครั้งที่ {count}/3")
-                return
 
         # Channel Input controls normal reactions only. Moderation above has
         # already inspected the message. Private input is never blocked here.
@@ -577,9 +737,8 @@ class SNTalkBot(TeamTalk):
             return
 
         # Auto-play links
-        if re.match(r'^https?://[^\s]+$', message_text.strip()):
-            if self.player_cog is not None:
-                self.player_cog.handle_play_url_command(textmessage, message_text.strip())
+        if re.match(r'^https?://[^\s]+$', message_text.strip()) and self.player_cog is not None:
+            self.player_cog.handle_play_url_command(textmessage, message_text.strip())
             return
 
         if self.player_cog is not None and self.player_cog.handle_playlist_selection_message(textmessage):
@@ -594,22 +753,98 @@ class SNTalkBot(TeamTalk):
             if self.translator_cog.handle_private_translation(textmessage):
                 return
 
+        # Legacy-friendly final fallback: after every real workflow has had a
+        # chance to consume the text, tell the sender that it is not a command.
+        # Never answer TeamTalk CUSTOM events (for example typing notifications),
+        # and never answer our own text, otherwise the bot could create noise or
+        # a bot-to-bot response loop.
+        if self.command_handler.should_reply_unknown(textmessage, self.getMyUserID()):
+            self.privateMessage(from_uid, self._("Unknown or invalid command. Send h for help."))
+            return
+
         super().onCmdUserTextMessage(textmessage)
 
     def onUserAudioBlock(self, nUserID: int, nStreamType: StreamType):
         pass
 
     def onCmdChannelNew(self, channel: Channel):
-        if not self.server_management_enabled or not self.profanity_filter_enabled:
+        snapshot = self._channel_snapshot(channel) or {}
+        channel_id = snapshot.get("id", 0)
+        if channel_id:
+            self._channel_snapshots[channel_id] = snapshot
+        removed = self._moderate_channel_metadata(channel)
+        if not removed and self._event_tracking_live() and self.server_management_enabled:
+            self.record_activity("channel", "new", f"Channel created: {snapshot.get('name') or channel_id}", channel_id=channel_id)
+
+    def onCmdChannelUpdate(self, channel: Channel):
+        snapshot = self._channel_snapshot(channel) or {}
+        channel_id = snapshot.get("id", 0)
+        previous = self._channel_snapshots.get(channel_id)
+        if channel_id:
+            self._channel_snapshots[channel_id] = snapshot
+        removed = self._moderate_channel_metadata(channel)
+        if removed or not self._event_tracking_live() or not self.server_management_enabled:
             return
-        blacklist = utils.load_blacklist("blacklist.txt")
-        if not blacklist:
+        if previous:
+            if previous.get("name") != snapshot.get("name"):
+                self.record_activity("channel", "rename", f"Channel renamed: {previous.get('name') or channel_id} -> {snapshot.get('name') or channel_id}", channel_id=channel_id)
+            elif previous.get("topic") != snapshot.get("topic"):
+                self.record_activity("channel", "topic", f"Channel topic changed: {snapshot.get('name') or channel_id}", channel_id=channel_id)
+        else:
+            self.record_activity("channel", "update", f"Channel updated: {snapshot.get('name') or channel_id}", channel_id=channel_id)
+
+    def onCmdChannelRemove(self, channel: Channel):
+        snapshot = self._channel_snapshot(channel) or {}
+        channel_id = snapshot.get("id", 0)
+        previous = self._channel_snapshots.pop(channel_id, None) or snapshot
+        if self._event_tracking_live() and self.server_management_enabled:
+            self.record_activity("channel", "remove", f"Channel removed: {previous.get('name') or channel_id}", channel_id=channel_id)
+
+    def onCmdServerUpdate(self, serverproperties):
+        if not self._event_tracking_live() or not self.server_management_enabled:
             return
-        channel_name = utils.ensure_text(ttstr(channel.szName))
-        channel_topic = utils.ensure_text(ttstr(channel.szTopic))
-        if utils.contains_profanity(f"{channel_name} {channel_topic}", blacklist):
-            self.doRemoveChannel(channel.nChannelID)
+        name = utils.ensure_text(ttstr(getattr(serverproperties, "szServerName", ""))) or "server"
+        self.record_activity("server", "update", f"Server settings updated: {name}")
+
+    def onCmdFileNew(self, remote_file):
+        if not self._event_tracking_live() or not self.server_management_enabled:
             return
+        name = utils.ensure_text(ttstr(getattr(remote_file, "szFileName", ""))) or "file"
+        channel_id = int(getattr(remote_file, "nChannelID", 0) or 0)
+        self.record_activity("file", "new", f"File added: {name}", channel_id=channel_id)
+
+    def onCmdFileRemove(self, remote_file):
+        if not self._event_tracking_live() or not self.server_management_enabled:
+            return
+        name = utils.ensure_text(ttstr(getattr(remote_file, "szFileName", ""))) or "file"
+        channel_id = int(getattr(remote_file, "nChannelID", 0) or 0)
+        self.record_activity("file", "remove", f"File removed: {name}", channel_id=channel_id)
+
+    def onUserStateChange(self, user: User):
+        """Track media/video/desktop state changes; voice transitions are not logged to avoid noise."""
+        user_id = int(getattr(user, "nUserID", 0) or 0)
+        if not user_id or user_id == int(self.getMyUserID() or 0):
+            return
+        current = int(getattr(user, "uUserState", 0) or 0)
+        previous = self._user_state_snapshots.get(user_id, current)
+        self._user_state_snapshots[user_id] = current
+        if not self._event_tracking_live() or not self.server_management_enabled or previous == current:
+            return
+        nickname = utils.ensure_text(ttstr(getattr(user, "szNickname", ""))) or "Unknown"
+        watched = [
+            ("USERSTATE_MEDIAFILE_AUDIO", "media audio"),
+            ("USERSTATE_MEDIAFILE_VIDEO", "media video"),
+            ("USERSTATE_VIDEOCAPTURE", "camera"),
+            ("USERSTATE_DESKTOP", "desktop"),
+        ]
+        changes = []
+        for flag_name, label in watched:
+            flag = self._state_flag(flag_name)
+            if not flag or not ((previous ^ current) & flag):
+                continue
+            changes.append(f"{label} {'started' if current & flag else 'stopped'}")
+        if changes:
+            self.record_activity("stream", "state", f"{nickname}: {', '.join(changes)}", user_id=user_id, channel_id=int(getattr(user, "nChannelID", 0) or 0))
 
     def onUserAccount(self, useraccount: UserAccount):
         username = ttstr(useraccount.szUsername)

@@ -10,3 +10,9 @@ TeamTalk5.dll
 libTeamTalk5.so
 TeamTalk5.py
 teamtalk-sdk-*.7z
+# Never bake runtime credentials into image layers
+cookies.txt
+!defaults/cookies.txt
+config.ini
+.env
+.env.*

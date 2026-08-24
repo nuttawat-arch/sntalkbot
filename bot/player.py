@@ -29,14 +29,36 @@ class Player(mpv.MPV):
         self.collection_source = None
         self.queue = []
         self.queue_index = -1
+        # Queue mutations may come from yt-dlp worker threads at the exact moment
+        # mpv reports playback-end. Keep ordering deterministic across that boundary.
+        self.queue_lock = threading.RLock()
+        self.queue_transition = False
+        self.playback_end_transition = False
+        self.queue_history = []
         self.queue_mode = self.playback_config.get("queue_mode", False)
+        # Normal (non-queue) discovery history is independent from search results.
+        # Search navigation uses ,/. while n/b navigate YouTube/YouTube Music radio.
+        self.radio_history = []
+        self.radio_index = -1
+        self.radio_candidates = []
+        self.radio_source = "youtube"
         self.play_mode = int(self.playback_config.get("play_mode", 2) or 2)
         self._prefetch_cache = {}
         self._ydl_lock = threading.Lock()
         self.recent_history = {}
         self.end_callback = None
         self._temp_cache = {}
-        self.cookiefile = cookiefile or self.playback_config.get("cookiefile_path")
+        self.cookiefile = (
+            cookiefile
+            or os.getenv("SNTALKBOT_COOKIES_FILE", "").strip()
+            or self.playback_config.get("cookiefile_path")
+            or "/app/data/cookies.txt"
+        )
+        # Bundled legacy-project default. Persistent/user replacement always wins.
+        self.bundled_cookiefile = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "defaults", "cookies.txt"
+        )
         self.ytdlp_config = self.config_handler.get_ytdlp_config()
         self.fade_enabled = self.playback_config.get("fade_enabled", True)
         self.is_stereo_wide = self.playback_config.get("is_stereo_wide", False)
@@ -49,6 +71,28 @@ class Player(mpv.MPV):
         self.update_filters()
         self.ydl = yt_dlp.YoutubeDL(self._base_ydl_opts(noplaylist=True))
         self.prefetcher = LinkPrefetcher(self.prefetch_stream_info, max_pending=5)
+
+    @staticmethod
+    def _cookiefile_has_records(path):
+        """Return True only when a Netscape cookie file has at least one data row.
+
+        TTUHelper 1.4.0 may create a header-only cookies.txt for a fresh instance.
+        Treat that placeholder as empty so the bundled project default remains the
+        effective fallback until a real user-exported cookie file replaces it.
+        """
+        if not path or not os.path.isfile(path):
+            return False
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    line = line.rstrip("\r\n")
+                    if not line or (line.startswith("#") and not line.startswith("#HttpOnly_")):
+                        continue
+                    if len(line.split("\t")) >= 7:
+                        return True
+        except OSError:
+            return False
+        return False
 
     def _base_ydl_opts(self, *, extract_flat=False, noplaylist=False, playlistend=None):
         """Return yt-dlp Python API options shared by search and playback."""
@@ -67,8 +111,13 @@ class Player(mpv.MPV):
         }
         if playlistend is not None:
             opts["playlistend"] = playlistend
-        if self.cookiefile and os.path.isfile(self.cookiefile):
-            opts["cookiefile"] = self.cookiefile
+        active_cookiefile = None
+        if self.cookiefile and self._cookiefile_has_records(self.cookiefile):
+            active_cookiefile = self.cookiefile
+        elif self.bundled_cookiefile and self._cookiefile_has_records(self.bundled_cookiefile):
+            active_cookiefile = self.bundled_cookiefile
+        if active_cookiefile:
+            opts["cookiefile"] = active_cookiefile
         impersonate = (cfg.get("impersonate") or "").strip()
         if impersonate:
             opts["impersonate"] = impersonate
@@ -104,7 +153,16 @@ class Player(mpv.MPV):
             link = f"https://www.youtube.com/watch?v={video_id}"
         if not link:
             return None
-        return {"title": entry.get("title") or "Unknown title", "link": str(link)}
+        result = {
+            "title": entry.get("title") or "Unknown title",
+            "link": str(link),
+        }
+        if video_id:
+            result["id"] = str(video_id)
+        uploader = entry.get("artist") or entry.get("uploader") or entry.get("channel")
+        if uploader:
+            result["artist"] = str(uploader)
+        return result
 
     @property
     def media_title(self):
@@ -136,28 +194,50 @@ class Player(mpv.MPV):
                 return "channel"
         return None
 
-    def fetch_collection(self, link, max_items=100):
+    def fetch_collection_details(self, link, max_items=100):
+        """Return ``(type, title, items)`` for YouTube/YouTube Music collections.
+
+        ``fetch_collection`` remains as the backward-compatible two-value API.
+        The title is used only for concise queue/session announcements.
+        """
         collection_type = self.classify_collection_link(link)
         if collection_type == "playlist":
-            return collection_type, self._fetch_playlist_videos(link, max_items=max_items)
+            title, items = self._fetch_playlist_details(link, max_items=max_items)
+            return collection_type, title, items
         if collection_type == "channel":
-            return collection_type, self._fetch_channel_videos(link, max_items=max_items)
-        return None, []
+            items = self._fetch_channel_videos(link, max_items=max_items)
+            return collection_type, "channel", items
+        return None, None, []
 
-    def _fetch_playlist_videos(self, link, max_items=100):
+    def fetch_collection(self, link, max_items=100):
+        collection_type, _title, items = self.fetch_collection_details(link, max_items=max_items)
+        return collection_type, items
+
+    def _fetch_playlist_details(self, link, max_items=100):
         try:
             with yt_dlp.YoutubeDL(self._base_ydl_opts(extract_flat=True, playlistend=max_items)) as ydl:
                 info = ydl.extract_info(link, download=False)
         except Exception as exc:
             print(f"Error loading playlist videos: {exc}")
-            return []
+            return None, []
+        title = str((info or {}).get("title") or "playlist")
+        source = "ytmusic" if "music.youtube.com" in str(link).lower() else "youtube"
         results = []
         for entry in self._iter_entries(info or {}):
             item = self._entry_to_result(entry)
             if item:
+                item.setdefault("collection_title", title)
+                item.setdefault("collection_type", "playlist")
+                item.setdefault("source", source)
+                if source == "ytmusic" and item.get("id"):
+                    item["link"] = f"https://music.youtube.com/watch?v={item['id']}"
                 results.append(item)
             if len(results) >= max_items:
                 break
+        return title, results
+
+    def _fetch_playlist_videos(self, link, max_items=100):
+        _title, results = self._fetch_playlist_details(link, max_items=max_items)
         return results
 
     def _fetch_channel_videos(self, link, max_items=100):
@@ -191,14 +271,108 @@ class Player(mpv.MPV):
             print(f"yt-dlp search failed: {exc}")
         return results
 
+    def _tag_source(self, results, source):
+        for item in results:
+            item.setdefault("source", source)
+        return results
+
     def search_youtube(self, query):
         """Search YouTube using yt-dlp's official ytsearch extractor."""
-        return self._search(f"ytsearch50:{query}", limit=50)
+        return self._tag_source(self._search(f"ytsearch50:{query}", limit=50), "youtube")
 
     def search_ytmusic(self, query):
         """Search the YouTube Music Songs section using its supported search URL extractor."""
         target = f"https://music.youtube.com/search?q={quote_plus(query)}#songs"
-        return self._search(target, limit=20)
+        return self._tag_source(self._search(target, limit=20), "ytmusic")
+
+    @staticmethod
+    def video_id_from_result(item):
+        if not item:
+            return None
+        video_id = item.get("id")
+        if video_id:
+            return str(video_id)
+        try:
+            parsed = urlparse(str(item.get("link") or ""))
+            if parsed.netloc.endswith("youtu.be"):
+                return parsed.path.strip("/").split("/")[0] or None
+            if "youtube.com" in parsed.netloc:
+                return parse_qs(parsed.query).get("v", [None])[0]
+        except Exception:
+            return None
+        return None
+
+    def related_radio(self, seed, source=None, limit=30):
+        """Return YouTube/YouTube Music radio items for ``seed``.
+
+        This uses YouTube's own Mix/Radio playlist surface when yt-dlp can expose
+        it. A metadata-based search is only a fallback for deployments where the
+        generated radio playlist is unavailable without additional cookies/tokens.
+        """
+        seed = dict(seed or {})
+        video_id = self.video_id_from_result(seed)
+        source = source or seed.get("source") or "youtube"
+        results = []
+        if video_id:
+            if source == "ytmusic":
+                radio_id = f"RDAMVM{video_id}"
+                target = f"https://music.youtube.com/watch?v={video_id}&list={radio_id}"
+            else:
+                target = f"https://www.youtube.com/watch?v={video_id}&list=RD{video_id}&start_radio=1"
+            results = self._search(target, limit=limit)
+            self._tag_source(results, source)
+
+        # Remove the seed and duplicates while preserving YouTube's returned order.
+        seed_link = str(seed.get("link") or "")
+        seed_id = video_id
+        unique = []
+        seen = set()
+        for item in results:
+            item_id = self.video_id_from_result(item)
+            key = item_id or str(item.get("link") or "")
+            if not key or key in seen or (seed_id and item_id == seed_id) or str(item.get("link") or "") == seed_link:
+                continue
+            seen.add(key)
+            unique.append(item)
+        if unique:
+            return unique
+
+        # Conservative fallback: still use YouTube/YouTube Music search, seeded by
+        # title + artist. This is not claimed to reproduce the private recommender.
+        title = str(seed.get("title") or self.media_title or "").strip()
+        artist = str(seed.get("artist") or "").strip()
+        query = " ".join(part for part in (title, artist) if part).strip()
+        if not query:
+            return []
+        fallback = self.search_ytmusic(query) if source == "ytmusic" else self.search_youtube(query)
+        unique = []
+        seen = set()
+        for item in fallback:
+            item_id = self.video_id_from_result(item)
+            key = item_id or str(item.get("link") or "")
+            if not key or key in seen or (seed_id and item_id == seed_id) or str(item.get("link") or "") == seed_link:
+                continue
+            seen.add(key)
+            unique.append(item)
+            if len(unique) >= limit:
+                break
+        return unique
+
+    def reset_radio_history(self, seed, source=None):
+        seed = dict(seed or {})
+        if not seed.get("link"):
+            return
+        seed.setdefault("title", self.media_title or "Unknown title")
+        seed.setdefault("source", source or seed.get("source") or "youtube")
+        self.radio_history = [seed]
+        self.radio_index = 0
+        self.radio_candidates = []
+        self.radio_source = seed.get("source", "youtube")
+
+    def clear_radio_history(self):
+        self.radio_history = []
+        self.radio_index = -1
+        self.radio_candidates = []
 
     def update_filters(self):
         af_val = "scaletempo2"
@@ -469,13 +643,21 @@ class Player(mpv.MPV):
     def _on_idle_active(self, name, value):
         """Callback function for 'idle-active' property change."""
         if value is True and self.is_playing:
-            self.is_playing = False
+            # Mark the whole mpv idle transition before exposing is_playing=False.
+            # Queue additions can arrive from another TeamTalk/thread-pool thread
+            # at this exact boundary; without this guard a newly appended item can
+            # be mistaken for a fresh idle queue and jump ahead of older entries.
+            self.playback_end_transition = True
+            try:
+                self.is_playing = False
 
-            # Stop observing idle-active to prevent further triggers 
-            self.unobserve_property('idle-active', self._on_idle_active)
+                # Stop observing idle-active to prevent further triggers.
+                self.unobserve_property('idle-active', self._on_idle_active)
 
-            if self.end_callback: 
-                self.end_callback()
+                if self.end_callback:
+                    self.end_callback()
+            finally:
+                self.playback_end_transition = False
 
     def set_output_device(self):
         """Select mpv output by index or native device name; ``auto`` keeps mpv's default."""

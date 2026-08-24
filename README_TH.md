@@ -1,3 +1,5 @@
+> **SNTalkBot 5.1.0:** All-in-One รุ่นปัจจุบัน — แยก Full/Player/Manager ชัดเจน, Queue/playlist/Related Radio, default YouTube cookies, dashboard `status`, recent `events` และ moderation ที่ตามทันการแก้ nickname/status/channel แบบ event-driven
+
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 
 > **r7.4.2:** คืนพฤติกรรมคำสั่งแบบ r7.3/r7.4: ทั้ง Private และ Channel/Broadcast พิมพ์ `h`, `s`, `p เพลง`, `ci off`, `filter on` ได้โดยไม่ต้องใส่ `/`; `/` ยังรับได้เพื่อ compatibility แต่ไม่จำเป็น และ `filter` เป็น master switch ของตัวกรองคำทุกภาษา
@@ -11,11 +13,16 @@
 ## จุดสำคัญของรุ่นนี้
 
 - Private และ Channel/Broadcast ใช้คำสั่งสั้นแบบไม่มี `/` เหมือนกัน; `ic` ควบคุมการดักทุก Channel, `ci` ควบคุมการตอบสนองปกติต่อ Channel, `filter` เปิด/ปิด word moderation ทุกภาษา และ `cm` ควบคุมข้อความ Player ที่ประกาศออก Channel
+- `status` เป็นแดชบอร์ดคำสั่งเดียวที่ปรับข้อมูลตามประเภทบอต: Player เน้น playback/queue/radio/cookies, Manager เน้น moderation/input/server controls และ Full รวมทั้งสองฝ่าย
+- Manager/Full มี `events [1-25]` สำหรับดูเหตุการณ์ TeamTalk ล่าสุดจาก event จริง เช่น user/channel/server/file/media/video/desktop และ audit ชื่อคำสั่งผู้ดูแล โดยไม่เก็บ argument หรือ secret
+- ตัวกรองไม่ตรวจเฉพาะตอน login/create อีกต่อไป: เมื่อผู้ใช้เปลี่ยน nickname/status หรือ Channel ถูกเปลี่ยนชื่อ/Topic ระบบจะตรวจ canonical multilingual blacklist ซ้ำทันทีขณะ `filter on`
 - ชื่อคำสั่งที่ลงทะเบียนจริงไม่ซ้ำกัน และระบบจะหยุดทันทีด้วย error หากนักพัฒนาเพิ่มชื่อซ้ำในอนาคต
 - `help` ส่งหัวข้อก่อนหนึ่งข้อความ แล้วส่งคำสั่งพร้อมคำอธิบายทีละคำสั่ง หนึ่งคำสั่งต่อหนึ่ง TeamTalk private message
 - Player ใช้ `yt-dlp` โดยตรง รองรับ YouTube, YouTube Music, URL/stream, playlistchannel, queue, favorites, autoplay, history, seek, volumespeed, M1/M2/M3, audio filters และ download
+- `pp <playlist_link>` ต่อ playlist หลายชุดโดยไม่ตัดเพลงปัจจุบัน; Queue Mode เพิ่มทั้ง playlist ต่อท้าย FIFO และบอกช่วงคิว
+- Player/Full มี default YouTube cookies จากโปรเจกต์เดิม bootstrap เป็น `/app/data/cookies.txt` ครั้งแรก; ถ้าผู้ใช้แทน cookie เองใน persistent data ระบบจะเก็บไฟล์นั้นไว้และไม่ overwrite ตอนอัปเดต
 - มี worker prefetch ลิงก์ล่วงหน้าเพื่อไม่ให้การ extract ของ yt-dlp ไปบล็อก TeamTalk event thread
-- มี TTS ประกาศเพลงและคิว พร้อมลดระดับเพลงชั่วคราวระหว่างประกาศ
+- มี TTS ประกาศเพลงและคิวแบบ FIFO โดยไม่ลด/หยุดระดับเพลงขณะประกาศ
 - รองรับการ block command เป็นรายคำสั่งด้วย `blockcmd`
 - reconnect ทำใน worker แยกและกำหนดจำนวนครั้ง/ช่วงเวลาได้
 - Linux headless ใช้ MPV + PulseAudio virtual sink เพื่อส่งเสียงจริงเข้า TeamTalk
@@ -163,6 +170,10 @@ MPV (ao=pulse)
 ```
 
 `run_linux.sh` และ Docker ตั้ง `TTUTIL_MPV_AO=pulse` และใช้ `tools/setup_pulse_bridge.sh` เพื่อให้ MPV กับ TeamTalk อยู่บน PulseAudio runtime เดียวกัน
+
+## YouTube / YouTube Music cookies
+
+ดูคู่มือฉบับเต็มที่ `YOUTUBE_COOKIES_TH.md` โดย SNTalkBot 5 มี default cookie ที่ `/app/defaults/cookies.txt` ใน image และ bootstrap ไป `/app/data/cookies.txt` เฉพาะเมื่อ instance ยังไม่มีไฟล์; cookie ที่ผู้ใช้แทนเองจะอยู่ใน persistent data
 
 ## Config สำคัญ
 
@@ -496,7 +507,7 @@ rate 0
 
 ## `dr` — รายงานถึงผู้พัฒนา SNTalkBot โดยตรง
 
-`dr <message>` ส่งรายงานปัญหาโดยตรงถึงผู้พัฒนา SNTalkBot
+`dr <message>` ใช้แจ้งบั๊ก รายงานปัญหา ขอฟีเจอร์ หรือเสนอแนะฟีเจอร์โดยตรงถึงผู้พัฒนา SNTalkBot
 
 ส่วน `report <message>` ยังคงส่งรายงานหาแอดมิน TeamTalk ที่ออนไลน์อยู่
 
@@ -531,3 +542,11 @@ Player announcement ใช้ audio stream แยกจากเพลงแล�
 - แก้การแบ่งข้อความยาวไม่ให้ข้อความช่วงรอยต่อหาย
 - เพิ่ม guard สำหรับงาน async เมื่อผู้ใช้ออกจาก TeamTalk ระหว่างงาน
 - คง `dr`, Google standard gTTS, FIFO TTS และ No Music Ducking จากรุ่นก่อน
+
+## SNTalkBot Web Manager / Realtime Runtime Bridge (5.1.0)
+
+เมื่อรันใน Docker/TTUHelper บอตจะเขียน snapshot สถานะที่ `/app/data/runtime_status.json` ทุกประมาณ 2 วินาที เพื่อให้เว็บจัดการที่อยู่บน host อ่านข้อมูลสดได้ผ่าน volume เดิม โดยไม่เปิด HTTP port ใหม่ในแต่ละ instance
+
+ข้อมูลที่เปิดให้ Web Manager อ่านมีเฉพาะข้อมูลการทำงาน เช่น role, uptime, server address/port, nickname/status, ห้องปัจจุบัน, จำนวนผู้ใช้ออนไลน์, speaking/media/video/desktop counts, Player title/mode/queue/ผู้เพิ่มคิว และ activity ล่าสุด ข้อมูลลับ เช่น TeamTalk password, channel password, API token, license key และค่า cookies จะไม่ถูกเขียนลง snapshot
+
+SNTalkBot ยังทำงานได้ตามปกติแม้ไม่มี Web Manager; bridge นี้เป็น additive local management integration เท่านั้น

@@ -25,7 +25,7 @@ class BotUtils:
     """
     A class for standalone utility functions used by the bot.
     """
-    VERSION = "2026.08.23-r7.4.3"
+    VERSION = "5.1.0"
 
     @staticmethod
     def load_messages(filename="messages.txt"):
@@ -39,12 +39,25 @@ class BotUtils:
 
     @staticmethod
     def load_blacklist(filename="blacklist.txt"):
-        """Loads a blacklist from a file, converting to lowercase."""
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                return [line.strip().lower() for line in f]
-        except FileNotFoundError:
-            return []
+        """Load the multilingual blacklist, independent of process cwd.
+
+        Normal deployments run from the project root, but service wrappers, tests,
+        or future launchers may use another working directory.  Keep the historical
+        relative path first, then fall back to the project root beside ``bot/``.
+        """
+        candidates = [filename]
+        if not os.path.isabs(filename):
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            fallback = os.path.join(project_root, filename)
+            if fallback not in candidates:
+                candidates.append(fallback)
+        for candidate in candidates:
+            try:
+                with open(candidate, "r", encoding="utf-8") as f:
+                    return [line.strip().lower() for line in f if line.strip()]
+            except FileNotFoundError:
+                continue
+        return []
 
     @staticmethod
     def ensure_text(value):

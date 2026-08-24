@@ -89,6 +89,25 @@ def alias_catalog():
     fail("COMMAND_ALIASES mapping not found")
     return {}
 
+def role_alias_catalog():
+    path = ROOT / "bot" / "command_aliases.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    wanted = {"COMMON_ALIASES", "PLAYER_ALIASES", "MANAGER_ALIASES"}
+    result = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        for name in names:
+            if name in wanted:
+                value = ast.literal_eval(node.value)
+                result[name] = {str(k).strip().lstrip("/").lower(): str(v).strip().lstrip("/").lower() for k, v in value.items()}
+    missing = sorted(wanted - set(result))
+    if missing:
+        fail("role alias mappings missing: " + ", ".join(missing))
+    return result
+
+
 def thai_untranslated():
     po = ROOT / "locales" / "th" / "LC_MESSAGES" / "messages.po"
     text = po.read_text(encoding="utf-8")
@@ -103,6 +122,15 @@ def thai_untranslated():
 
 
 FAILED = False
+
+# Any legacy hard-coded utility version must track the release VERSION file.
+release_version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+utils_source_version = (ROOT / "bot" / "utils.py").read_text(encoding="utf-8")
+version_match = re.search(r'^\s*VERSION\s*=\s*["\']([^"\']+)["\']', utils_source_version, re.MULTILINE)
+if not version_match or version_match.group(1) != release_version:
+    fail(f"BotUtils.VERSION does not match VERSION: utility={version_match.group(1) if version_match else '?'} release={release_version}")
+else:
+    ok(f"hard-coded utility version matches release VERSION ({release_version})")
 
 # Compile every Python file without importing native dependencies.
 for path in ROOT.rglob("*.py"):
@@ -152,6 +180,22 @@ else:
     ok("no same-handler command aliases remain")
 
 aliases = alias_catalog()
+role_aliases = role_alias_catalog()
+common_aliases = role_aliases.get("COMMON_ALIASES", {})
+player_aliases = role_aliases.get("PLAYER_ALIASES", {})
+manager_aliases = role_aliases.get("MANAGER_ALIASES", {})
+if role_aliases:
+    role_keys = [set(common_aliases), set(player_aliases), set(manager_aliases)]
+    overlap = sorted((role_keys[0] & role_keys[1]) | (role_keys[0] & role_keys[2]) | (role_keys[1] & role_keys[2]))
+    composed = {}
+    for mapping in (common_aliases, manager_aliases, player_aliases):
+        composed.update(mapping)
+    if overlap:
+        fail("role alias names overlap across Common/Player/Manager: " + ", ".join(overlap))
+    elif composed != aliases:
+        fail("flat COMMAND_ALIASES does not exactly match role alias union")
+    else:
+        ok(f"aliases are role-separated (Common={len(common_aliases)}, Player={len(player_aliases)}, Manager={len(manager_aliases)}, total={len(aliases)})")
 alias_names = set(aliases)
 canonical_names = set(names)
 if alias_names.intersection(canonical_names):
@@ -163,12 +207,31 @@ if unknown_targets:
     fail("aliases target unknown canonical commands: " + ", ".join(x for x in unknown_targets))
 else:
     ok("all short aliases target canonical commands")
-required_aliases = {"h": "help", "rs": "restart", "sd": "shutdown", "w": "weather", "ap": "autoplay", "ch": "channel", "pf": "playfav"}
+# Keep the command language predictable: one shorthand per canonical command.
+# Multiple aliases for the same intent make screen-reader help noisier and make
+# future role migrations ambiguous.
+from collections import defaultdict
+_alias_targets = defaultdict(list)
+for alias_name, target_name in aliases.items():
+    _alias_targets[target_name].append(alias_name)
+duplicate_target_aliases = {target: sorted(names_) for target, names_ in _alias_targets.items() if len(names_) > 1}
+if duplicate_target_aliases:
+    fail("multiple short aliases target the same canonical command: " + "; ".join(
+        f"{target}<-{','.join(names_)}" for target, names_ in sorted(duplicate_target_aliases.items())
+    ))
+else:
+    ok("each canonical command has at most one short alias")
+required_aliases = {
+    "h": "help", "a": "about", "rs": "restart", "sd": "shutdown", "w": "weather",
+    "ap": "autoplay", "ch": "channel", "pf": "playfav",
+    "gl": "l", "c": "select", "sb": "-", "sf": "+",
+    "j": "join", "sc": "save", "vt": "voicetx",
+}
 wrong_required = [f"{a}->{aliases.get(a, '?')}" for a, target in required_aliases.items() if aliases.get(a) != target]
 if wrong_required:
     fail("required usability aliases missing or incorrect: " + ", ".join(wrong_required))
 else:
-    ok("required usability aliases are present (h rs sd w ap ch pf)")
+    ok("required usability aliases are present with one shorthand per intent (h/a + Player gl/c/sb/sf + Manager j/sc/vt)")
 
 # Command-dispatch regression test without importing the native TeamTalk SDK.
 def validate_prefix_free_dispatch():
@@ -215,6 +278,8 @@ def validate_prefix_free_dispatch():
         handler.register_alias("ap", "autoplay")
         handler.register_command("s", lambda msg, *args: calls.append(("STOP",) + tuple(args)))
         handler.register_command("p", lambda msg, *args: calls.append(("PLAY",) + tuple(args)))
+        handler.register_command("select", lambda msg, *args: calls.append(("SELECT",) + tuple(args)))
+        handler.register_alias("c", "select")
 
         def msg(text, msg_type, to_user_id=None, channel_id=None):
             if to_user_id is None:
@@ -242,6 +307,8 @@ def validate_prefix_free_dispatch():
         # Slash remains optional compatibility input.
         assert handler.handle_message(msg("/ap off", _MsgType.MSGTYPE_USER)) is True
         assert calls[-1] == ("AP", "off")
+        assert handler.handle_message(msg("c 56", _MsgType.MSGTYPE_USER)) is True
+        assert calls[-1] == ("SELECT", "56")
 
         # Explicit USER/CUSTOM stays private even with an odd non-zero channel id.
         odd_private = msg("h", _MsgType.MSGTYPE_USER, to_user_id=0, channel_id=7)
@@ -283,11 +350,22 @@ def validate_prefix_free_dispatch():
         assert handler.handle_message(opaque_channel) is True
         assert calls[-1] == ("HELP",)
 
-        # Unknown ordinary chat is never consumed.
+        # Unknown ordinary chat is not a registered command. The legacy error
+        # hint applies only to direct USER text, never Channel/Broadcast/CUSTOM
+        # conversation and never our own message.
         before = list(calls)
-        assert handler.handle_message(msg("hello there", _MsgType.MSGTYPE_USER)) is False
-        assert handler.handle_message(msg("hello there", _MsgType.MSGTYPE_CHANNEL)) is False
+        unknown_private = msg("hello there", _MsgType.MSGTYPE_USER)
+        unknown_channel = msg("hello there", _MsgType.MSGTYPE_CHANNEL)
+        unknown_custom = msg("typing", _MsgType.MSGTYPE_CUSTOM)
+        assert handler.handle_message(unknown_private) is False
+        assert handler.handle_message(unknown_channel) is False
         assert calls == before
+        assert handler.should_reply_unknown(unknown_private, 99) is True
+        assert handler.should_reply_unknown(unknown_channel, 99) is False
+        assert handler.should_reply_unknown(unknown_custom, 99) is False
+        own_private = msg("hello there", _MsgType.MSGTYPE_USER)
+        own_private.nFromUserID = 99
+        assert handler.should_reply_unknown(own_private, 99) is False
 
         # Canonical blocking also blocks aliases in every context.
         bot.blocked_commands = {"autoplay"}
@@ -318,6 +396,22 @@ if "ensure_text" not in command_handler_source or "decode(\"utf-8\"" not in util
 else:
     ok("TeamTalk incoming bytes are decoded to Unicode before command/moderation parsing")
 
+# Legacy unknown-command response must happen only after real workflows and must
+# not answer TeamTalk CUSTOM events such as typing notifications.
+sntalkbot_source_for_unknown = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
+unknown_text = 'Unknown or invalid command. Send h for help.'
+unknown_pos = sntalkbot_source_for_unknown.find(unknown_text)
+translator_pos = sntalkbot_source_for_unknown.find("self.translator_cog.handle_whisper_translation(textmessage)")
+super_pos = sntalkbot_source_for_unknown.find("super().onCmdUserTextMessage(textmessage)")
+if unknown_pos < 0:
+    fail("unknown-command fallback is missing")
+elif translator_pos < 0 or super_pos < 0 or not (translator_pos < unknown_pos < super_pos):
+    fail("unknown-command fallback must run after command/helper workflows and before superclass fallback")
+elif 'should_reply_unknown(textmessage, self.getMyUserID())' not in sntalkbot_source_for_unknown:
+    fail("unknown-command fallback is not using the tested private-only routing guard")
+else:
+    ok("unknown Private text gets an h-help hint after real workflows; Channel/CUSTOM chat is not spammed")
+
 # Moderation must stay alive even when Channel Input is disabled, but `filter`
 # is the single master switch for all word-list checks. The intended order is:
 # master-filter moderation -> Channel Input gate -> command dispatch -> helpers.
@@ -339,15 +433,21 @@ else:
     else:
         ok("word moderation runs before channel-input gating; ci off cannot blind an enabled filter")
 
-# `filter` must gate every word-list path, including legacy blacklist checks.
-if "if not self.bot.profanity_filter_enabled:" not in admin_source:
+# `filter` must gate every word-list path, including runtime profile/channel updates.
+message_gate = admin_source.find("def check_message_for_blacklist")
+message_gate = admin_source.find("if not self.bot.profanity_filter_enabled", message_gate) if message_gate >= 0 else -1
+profile_gate = admin_source.find("def check_user_profile_for_blacklist")
+profile_gate = admin_source.find("if not self.bot.profanity_filter_enabled", profile_gate) if profile_gate >= 0 else -1
+channel_gate = sntalkbot_source.find("def _moderate_channel_metadata")
+channel_gate = sntalkbot_source.find("not self.profanity_filter_enabled", channel_gate) if channel_gate >= 0 else -1
+if message_gate < 0:
     fail("message blacklist path is not gated by the filter master switch")
-elif "if self.bot.profanity_filter_enabled:" not in admin_source:
-    fail("nickname blacklist path is not gated by the filter master switch")
-elif "not self.profanity_filter_enabled" not in sntalkbot_source:
-    fail("channel-name blacklist path is not gated by the filter master switch")
+elif profile_gate < 0:
+    fail("nickname/status blacklist path is not gated by the filter master switch")
+elif channel_gate < 0:
+    fail("channel-name/topic blacklist path is not gated by the filter master switch")
 else:
-    ok("filter on/off is the master switch for message, nickname, and channel-name word filtering")
+    ok("filter on/off is the master switch for message, profile, and channel metadata word filtering")
 
 alias_source = (ROOT / "bot" / "command_aliases.py").read_text(encoding="utf-8")
 if "register_command('channelinput'" not in general_source or '"ci": "channelinput"' not in alias_source:
@@ -360,6 +460,24 @@ elif "set_intercept_channel_messages" not in sntalkbot_source or "doUnsubscribe"
     fail("intercept toggle does not apply subscribe/unsubscribe changes at runtime")
 else:
     ok("intercept/ic toggles server-wide channel interception at runtime")
+# All-in-one runtime dashboard/audit must use actual TeamTalk callback names from SDK 5.22a.
+required_event_callbacks = [
+    "def onCmdUserUpdate(", "def onCmdChannelUpdate(", "def onCmdChannelRemove(",
+    "def onCmdServerUpdate(", "def onCmdFileNew(", "def onCmdFileRemove(",
+    "def onUserStateChange(",
+]
+missing_event_callbacks = [name for name in required_event_callbacks if name not in sntalkbot_source]
+if missing_event_callbacks:
+    fail("runtime TeamTalk event coverage missing: " + ", ".join(missing_event_callbacks))
+elif "register_command('status'" not in general_source or "register_command('events'" not in general_source:
+    fail("status/events all-in-one commands are not registered")
+elif "command arguments/secrets are never stored" not in (ROOT / "bot" / "help.py").read_text(encoding="utf-8"):
+    fail("events help does not document secret-safe admin auditing")
+elif "used {command_name}" not in (ROOT / "bot" / "command_handler.py").read_text(encoding="utf-8"):
+    fail("admin command audit does not record canonical action names")
+else:
+    ok("status/events use real TeamTalk update/file/state callbacks and admin audit stores no raw command arguments")
+
 if 'value not in ("on", "off")' not in player_source or '"send_channel_messages"' not in player_source or '"status"' not in player_source:
     fail("cm on|off|status playback-channel-message control is incomplete")
 else:
@@ -380,6 +498,14 @@ def validate_multilingual_blacklist():
     missing = sorted((required_th | required_legacy) - set(words))
     if missing:
         fail("canonical multilingual blacklist is missing required legacy/Thai coverage: " + ", ".join(missing))
+        return False
+    compatibility_words = {
+        line.strip().casefold() for line in badword_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    missing_from_canonical = sorted(compatibility_words - set(words))
+    if missing_from_canonical:
+        fail("badword.txt contains entries not present in canonical blacklist.txt: " + ", ".join(missing_from_canonical[:20]))
         return False
     spec = importlib.util.spec_from_file_location("validate_bot_utils", ROOT / "bot" / "utils.py")
     module = importlib.util.module_from_spec(spec)
@@ -405,7 +531,14 @@ def validate_multilingual_blacklist():
     return True
 
 if validate_multilingual_blacklist():
-    ok("canonical blacklist.txt preserves legacy languages and includes Thai with obfuscation/false-positive protection")
+    ok("canonical blacklist.txt preserves legacy languages, includes Thai, and fully contains compatibility badword.txt")
+
+if 'contains_profanity(message_text, self.bad_words)' in sntalkbot_source:
+    fail("legacy supplemental badword warning path still runs separately from canonical blacklist")
+elif 'self.bad_words = utils.load_blacklist("blacklist.txt")' not in sntalkbot_source:
+    fail("runtime bad-word compatibility list is not sourced from canonical blacklist.txt")
+else:
+    ok("runtime word moderation uses one canonical multilingual blacklist path")
 
 # Missing optional blacklist.wav must never block the moderation action.
 if 'if os.path.exists(audio_path):' not in admin_source or 'unable to play blacklist alert audio' not in admin_source:
@@ -466,8 +599,11 @@ def validate_runtime_word_filter_paths():
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         class FakeUser:
+            nUserID = 7
             szIPAddress = "203.0.113.9"
             szUsername = "tester"
+            szNickname = "tester"
+            szStatusMsg = ""
         class _ConfigHandler:
             def __init__(self): self.updates = []
             def update_bot_settings(self, values): self.updates.append(dict(values))
@@ -478,6 +614,8 @@ def validate_runtime_word_filter_paths():
                 self.kicked=[]; self.bans=[]; self.private=[]; self.config_handler=_ConfigHandler()
             def _(self, text): return text
             def getUser(self, uid): return FakeUser()
+            def getMyUserID(self): return 99
+            def record_activity(self, *args, **kwargs): pass
             def kick_user(self, uid): self.kicked.append(uid)
             def privateMessage(self, uid, text): self.private.append((uid, str(text)))
             def doBan(self, banned): self.bans.append((banned.uBanTypes, str(banned.szIPAddress), str(banned.szUsername))); return 1
@@ -511,6 +649,18 @@ def validate_runtime_word_filter_paths():
         assert cog.check_message_for_blacklist(msg("ไอเหี้ย")) is True, "Thai ban-mode blacklist not enforced"
         assert bot.bans and bot.bans[-1][0] == _BanType.BANTYPE_USERNAME, f"expected username ban, got {bot.bans!r}"
         assert bot.kicked == [7], f"expected kick [7], got {bot.kicked!r}"
+
+        # USER_UPDATE profile moderation shares the same master switch/list.
+        bad_profile = types.SimpleNamespace(
+            nUserID=8, szNickname="good", szStatusMsg="ค ว ย",
+            szIPAddress="203.0.113.10", szUsername="profileuser"
+        )
+        bot.kicked.clear(); bot.bot_config["blacklist_mode"] = 1
+        bot.profanity_filter_enabled = False
+        assert cog.check_user_profile_for_blacklist(bad_profile) is False, "filter OFF still moderated profile update"
+        bot.profanity_filter_enabled = True
+        assert cog.check_user_profile_for_blacklist(bad_profile) is True, "profile update profanity not enforced"
+        assert bot.kicked == [8], f"expected updated profile kick [8], got {bot.kicked!r}"
         return True
     except Exception as exc:
         fail(f"runtime word-filter regression: {exc!r}")
@@ -530,14 +680,479 @@ def validate_runtime_word_filter_paths():
             sys.path.remove(root_str)
 
 if validate_runtime_word_filter_paths():
-    ok("runtime filter command ON/OFF persistence, Thai/English matching, false-positive guards, kick, and ban paths work")
+    ok("runtime filter ON/OFF, Thai/English message matching, profile-update moderation, false-positive guards, kick, and ban paths work")
 
-# About must expose the public developer contact requested for the project.
-required_about = ["nuttawat", "SN Family", "nutblind2545t@gmail.com", "0637457797"]
-if any(value not in general_source for value in required_about):
-    fail("about command is missing public developer/contact information")
+
+
+def validate_status_events_runtime():
+    """Exercise the all-in-one dashboard and bounded event viewer without native TeamTalk."""
+    fake_tt = types.ModuleType("TeamTalk5")
+    class _UserType:
+        USERTYPE_ADMIN = 2
+    fake_tt.UserType = _UserType
+    fake_tt.ttstr = lambda value: value
+    previous_tt = sys.modules.get("TeamTalk5")
+    previous_wikipedia = sys.modules.get("wikipedia")
+    previous_langdetect = sys.modules.get("langdetect")
+    previous_requests = sys.modules.get("requests")
+    root_str = str(ROOT)
+    added_root = root_str not in sys.path
+    if added_root:
+        sys.path.insert(0, root_str)
+    sys.modules["TeamTalk5"] = fake_tt
+    # GeneralCog imports these modules for unrelated commands; the dashboard
+    # itself must remain testable without performing network work.
+    if previous_wikipedia is None:
+        wiki = types.ModuleType("wikipedia")
+        wiki.exceptions = types.SimpleNamespace(PageError=Exception, DisambiguationError=Exception)
+        sys.modules["wikipedia"] = wiki
+    if previous_langdetect is None:
+        lang = types.ModuleType("langdetect")
+        lang.detect = lambda value: "th"
+        sys.modules["langdetect"] = lang
+    if previous_requests is None:
+        sys.modules["requests"] = types.ModuleType("requests")
+    try:
+        activity_spec = importlib.util.spec_from_file_location("_sntalkbot_activity_test", ROOT / "bot" / "activity.py")
+        activity_module = importlib.util.module_from_spec(activity_spec)
+        activity_spec.loader.exec_module(activity_module)
+        general_spec = importlib.util.spec_from_file_location("_sntalkbot_general_status_test", ROOT / "bot" / "modules" / "general.py")
+        general_module = importlib.util.module_from_spec(general_spec)
+        general_spec.loader.exec_module(general_module)
+
+        import threading, time as _time
+        messages = []
+        admin_user = types.SimpleNamespace(nUserID=7, uUserType=2, szNickname="Admin", szUsername="admin")
+        other_user = types.SimpleNamespace(nUserID=8, uUserType=0, szNickname="Guest", szUsername="guest")
+        player = types.SimpleNamespace(
+            media_title="Test Song", is_playing=True, queue=[{"title":"A"},{"title":"B"}],
+            queue_lock=threading.RLock(), queue_mode=True, play_mode=2,
+            cookiefile=str(ROOT / "does-not-exist.cookies"),
+            bundled_cookiefile=str(ROOT / "defaults" / "cookies.txt"),
+        )
+        class Bot:
+            player_enabled = True
+            server_management_enabled = True
+            playback_config = {"autoplay_enabled": True}
+            profanity_filter_enabled = True
+            bot_config = {"channel_input_enabled": False, "intercept_channel_messages": True}
+            commands_locked = False
+            welcome_mode = 1
+            def __init__(self):
+                self.player = player
+                self.started_at = _time.time() - 3661
+                self.activity = activity_module.ActivityLog(max_items=20)
+            def _(self, text): return text
+            def privateMessage(self, uid, text): messages.append(str(text))
+            def getServerUsers(self): return [admin_user, other_user]
+            def getMyUserID(self): return 99
+            def getMyChannelID(self): return 5
+            def getChannel(self, channel_id): return types.SimpleNamespace(szName="Music")
+            def getUser(self, uid): return admin_user if uid == 7 else other_user
+            def is_authorized_user(self, username): return str(username).lower() == "admin"
+            def runtime_state_counts(self): return {"voice":1,"media":1,"video":0,"desktop":0}
+        bot = Bot()
+        bot.activity.record("user", "login", "Guest logged in")
+        bot.activity.record("channel", "rename", "Lobby renamed to Music")
+        cog = general_module.GeneralCog(bot)
+        msg = types.SimpleNamespace(nFromUserID=7, szFromUsername="admin")
+        cog.handle_status_command(msg)
+        assert any("Full Bot" in line and "users 2" in line for line in messages), messages
+        assert any("Player | Test Song" in line and "queue 2" in line for line in messages), messages
+        assert any("Manager | filter ON | ci OFF | ic ON" in line for line in messages), messages
+        assert any("speaking 1 | media 1" in line for line in messages), messages
+        before = len(messages)
+        cog.handle_events_command(msg, "2")
+        event_lines = messages[before:]
+        assert event_lines and "Recent events" in event_lines[0], event_lines
+        assert any("channel/rename" in line for line in event_lines[1:]), event_lines
+        assert any("user/login" in line for line in event_lines[1:]), event_lines
+        return True
+    except Exception as exc:
+        fail(f"status/events runtime regression: {exc!r}")
+        return False
+    finally:
+        if previous_tt is None: sys.modules.pop("TeamTalk5", None)
+        else: sys.modules["TeamTalk5"] = previous_tt
+        if previous_wikipedia is None: sys.modules.pop("wikipedia", None)
+        else: sys.modules["wikipedia"] = previous_wikipedia
+        if previous_langdetect is None: sys.modules.pop("langdetect", None)
+        else: sys.modules["langdetect"] = previous_langdetect
+        if previous_requests is None: sys.modules.pop("requests", None)
+        else: sys.modules["requests"] = previous_requests
+        if added_root and root_str in sys.path: sys.path.remove(root_str)
+
+if validate_status_events_runtime():
+    ok("role-aware status dashboard and recent-events viewer execute with bounded secret-safe activity data")
+
+def validate_player_queue_and_radio_regressions():
+    """Reproduce the end-of-track enqueue race and verify normal radio navigation."""
+    fake_tt = types.ModuleType("TeamTalk5")
+    fake_tt.ttstr = lambda value: value
+    previous_tt = sys.modules.get("TeamTalk5")
+    previous_yt = sys.modules.get("yt_dlp")
+    root_str = str(ROOT)
+    added_root = root_str not in sys.path
+    if added_root:
+        sys.path.insert(0, root_str)
+    sys.modules["TeamTalk5"] = fake_tt
+    if previous_yt is None:
+        fake_yt = types.ModuleType("yt_dlp")
+        fake_yt.YoutubeDL = object
+        sys.modules["yt_dlp"] = fake_yt
+    try:
+        spec = importlib.util.spec_from_file_location("_sntalkbot_player_regression_test", ROOT / "bot" / "modules" / "player.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        class ImmediatePool:
+            def submit(self, fn, *args, **kwargs):
+                return fn(*args, **kwargs)
+
+        class FakeBot:
+            def __init__(self):
+                self.io_pool = ImmediatePool()
+                self.playback_config = {"autoplay_enabled": True}
+                self.bot_config = {"gender": ""}
+                self.messages = []
+            def _(self, text): return text
+            def privateMessage(self, uid, text): self.messages.append((uid, str(text)))
+            def enableVoiceTransmission(self, enabled): pass
+            def doChangeStatus(self, *args): pass
+            def get_idle_status_message(self): return "idle"
+
+        player = types.SimpleNamespace(
+            queue=[{"title":"A","link":"a"},{"title":"B","link":"b"}],
+            queue_index=0, queue_mode=True, queue_lock=__import__("threading").RLock(),
+            queue_transition=False, playback_end_transition=True, queue_history=[],
+            is_playing=False, play_mode=2, current_link="a", media_title="A",
+            collection_results=[], search_results=[{"title":"S1","link":"s1"},{"title":"S2","link":"s2"}],
+            current_search_index=0, current_collection_index=0, radio_history=[],
+            radio_index=-1, radio_candidates=[], radio_source="youtube",
+        )
+        bot = FakeBot()
+        cog = module.PlayerCog.__new__(module.PlayerCog)
+        cog.bot = bot; cog.player = player; cog._ = bot._; cog.loading_new_track = False; cog.autoplay_enabled = True
+        plays = []
+        def fake_play_queue(index):
+            with player.queue_lock:
+                player.queue_index = index
+                player.queue_transition = False
+                plays.append(player.queue[index]["title"])
+        cog._play_from_queue = fake_play_queue
+        cog._send_playback_message = lambda *args, **kwargs: None
+        cog._announce_track = lambda *args, **kwargs: None
+        cog._is_in_same_channel = lambda user_id: True
+        cog._nickname = lambda user_id: "Tester"
+
+        # Exact historical race: mpv already flipped is_playing False, while A is
+        # still the active queue item. Adding C must append only; it must not play C.
+        cog._enqueue_queue_items([{"title":"C","link":"c"}], user_id=7)
+        assert [x["title"] for x in player.queue] == ["A","B","C"], player.queue
+        assert player.queue[-1].get("added_by") == "Tester" and player.queue[-1].get("added_by_user_id") == 7, player.queue[-1]
+        assert isinstance(player.queue[-1].get("added_at"), int), player.queue[-1]
+        assert plays == [], f"newest item jumped the queue: {plays!r}"
+
+        # Playback-end removes A only and starts B; then B removes itself and C follows.
+        player.playback_end_transition = False
+        cog.on_playback_end()
+        assert [x["title"] for x in player.queue] == ["B","C"], player.queue
+        assert plays == ["B"], plays
+        cog.on_playback_end()
+        assert [x["title"] for x in player.queue] == ["C"], player.queue
+        assert plays == ["B","C"], plays
+        assert [x["title"] for x in player.queue_history] == ["A","B"], player.queue_history
+
+        # If Queue Mode remains ON but cq has made the queue empty, playback end
+        # must stop instead of leaking into normal M2/Related Radio.
+        player.queue = []; player.queue_index = -1; player.queue_mode = True
+        player.current_link = "detached-queue-track"; player.play_mode = 2
+        related_after_cq = []
+        cog._play_next_related = lambda *args, **kwargs: (related_after_cq.append(True) or True)
+        cog.on_playback_end()
+        assert related_after_cq == [], "empty Queue Mode leaked into Related Radio"
+        cog._play_next_related = module.PlayerCog._play_next_related.__get__(cog, module.PlayerCog)
+
+        # Normal mode: n/b are radio history, while . and , remain search-result navigation.
+        player.queue_mode = False; player.collection_results = []; player.current_link = "seed"; player.media_title = "Seed"
+        player.radio_history = [{"title":"Seed","link":"seed","source":"youtube"}]; player.radio_index = 0
+        player.radio_candidates = []
+        player.related_radio = lambda seed, source, limit=30: [
+            {"title":"Related 1","link":"r1","source":"youtube"},
+            {"title":"Related 2","link":"r2","source":"youtube"},
+        ]
+        radio_plays = []
+        cog._play_radio_item = lambda item, **kwargs: (radio_plays.append(item["title"]) or True)
+        assert cog._play_next_related(user_id=7, announce_private=True) is True
+        assert radio_plays[-1] == "Related 1" and player.radio_index == 1
+        assert cog._play_previous_related(user_id=7, announce_private=True) is True
+        assert radio_plays[-1] == "Seed" and player.radio_index == 0
+        assert cog._play_next_related(user_id=7, announce_private=True) is True
+        assert radio_plays[-1] == "Related 1" and player.radio_index == 1
+
+        search_moves = []
+        cog._play_search_result_at = lambda index, user_id: (search_moves.append(index) or True)
+        msg = types.SimpleNamespace(nFromUserID=7)
+        player.current_search_index = 0
+        cog.handle_next_search_result_selection(msg)
+        assert search_moves[-1] == 1, search_moves
+        player.current_search_index = 1
+        cog.handle_prev_search_result_selection(msg)
+        assert search_moves[-1] == 0, search_moves
+
+        # n/b remain Related Radio controls even while an explicit playlist is
+        # loaded. Playlist position jumps use select <index>; automatic playback
+        # still walks the authored collection until its final item.
+        player.collection_results = [{"title":"P1","link":"p1"},{"title":"P2","link":"p2"}]
+        related_cmd = []; list_cmd = []
+        cog._play_next_related = lambda **kwargs: (related_cmd.append("n") or True)
+        cog._play_previous_related = lambda **kwargs: (related_cmd.append("b") or True)
+        cog._play_next_from_active_list = lambda **kwargs: list_cmd.append("next")
+        cog._play_previous_from_active_list = lambda **kwargs: list_cmd.append("prev")
+        cog.handle_next_track_command(msg)
+        cog.handle_previous_track_command(msg)
+        assert related_cmd == ["n", "b"], related_cmd
+        assert list_cmd == [], f"n/b unexpectedly navigated playlist: {list_cmd!r}"
+
+        # Explicit playlist position selection is 1-based. A long YouTube/YT Music
+        # playlist can jump directly to item 56 without walking 55 tracks first.
+        player.collection_results = [
+            {"title": f"P{i}", "link": f"p{i}"} for i in range(1, 61)
+        ]
+        player.current_collection_index = 0
+        selected_links = []
+        player.stop = lambda: None
+        def fake_play_stream(link):
+            selected_links.append(link)
+            player.media_title = next((x["title"] for x in player.collection_results if x["link"] == link), link)
+        player.play_stream = fake_play_stream
+        cog._prefetch_next_for_current = lambda: None
+        cog.handle_select_command(msg, "56")
+        assert player.current_collection_index == 55, player.current_collection_index
+        assert player.current_link == "p56" and selected_links[-1] == "p56", (player.current_link, selected_links)
+
+        # Reset the playlist fixture before exercising a second, independent pp case.
+        player.collection_results = [{"title":"P1","link":"p1"},{"title":"P2","link":"p2"}]
+
+        # pp appends a second playlist without interrupting the active collection.
+        player.queue_mode = False; player.is_playing = True; player.current_link = "p1"; player.media_title = "P1"
+        player.current_collection_index = 0
+        player.fetch_collection_details = lambda link: ("playlist", "Second", [
+            {"title":"P3","link":"p3"},{"title":"P4","link":"p4"}
+        ])
+        player_stops = []
+        player.stop = lambda: player_stops.append(True)
+        cog._prefetch_next_for_current = lambda: None
+        cog._play_collection_task("playlist2", 7, True)
+        assert [x["title"] for x in player.collection_results] == ["P1","P2","P3","P4"], player.collection_results
+        assert player_stops == [], "pp interrupted current playback"
+
+        # In Queue Mode the whole playlist is appended atomically and the exact
+        # 1-based queue range is available to Player TTS/channel announcements.
+        player.queue_mode = True; player.queue = [{"title":"Q1","link":"q1"},{"title":"Q2","link":"q2"}]
+        player.queue_index = 0; player.queue_transition = False; player.playback_end_transition = False; player.is_playing = True
+        announced = []
+        cog._announce_queue = lambda **kwargs: announced.append(kwargs)
+        cog._play_collection_task("playlist2", 7, True)
+        assert [x["title"] for x in player.queue] == ["Q1","Q2","P3","P4"], player.queue
+        assert announced and announced[-1].get("start") == 3 and announced[-1].get("end") == 4, announced
+        assert announced[-1].get("collection_title") == "Second", announced
+        assert announced[-1].get("nickname") == "Tester", announced
+        assert all(item.get("added_by") == "Tester" for item in player.queue[-2:]), player.queue[-2:]
+        return True
+    except Exception as exc:
+        fail(f"Player queue/radio regression: {exc!r}")
+        return False
+    finally:
+        if previous_tt is None:
+            sys.modules.pop("TeamTalk5", None)
+        else:
+            sys.modules["TeamTalk5"] = previous_tt
+        if previous_yt is None:
+            sys.modules.pop("yt_dlp", None)
+        else:
+            sys.modules["yt_dlp"] = previous_yt
+        if added_root and root_str in sys.path:
+            sys.path.remove(root_str)
+
+if validate_player_queue_and_radio_regressions():
+    ok("queue FIFO/ownership/range announcements, pp playlist append, select 56, and normal n/b Related Radio are regression-tested separately from ,/. search navigation")
+
+# The mpv idle callback must raise the queue/end transition guard before it
+# exposes is_playing=False. This closes the real cross-thread enqueue window,
+# not just the callback-body case reproduced above.
+player_core_source = (ROOT / "bot" / "player.py").read_text(encoding="utf-8")
+config_default_source = (ROOT / "config_default.ini").read_text(encoding="utf-8")
+dockerignore_source = (ROOT / ".dockerignore").read_text(encoding="utf-8")
+gitignore_source = (ROOT / ".gitignore").read_text(encoding="utf-8")
+playlist_detail_start = player_core_source.find("def _fetch_playlist_details")
+playlist_detail_end = player_core_source.find("def _fetch_playlist_videos", playlist_detail_start)
+playlist_detail_block = player_core_source[playlist_detail_start:playlist_detail_end]
+if (playlist_detail_start < 0
+        or 'source = "ytmusic" if "music.youtube.com"' not in playlist_detail_block
+        or 'https://music.youtube.com/watch?v=' not in playlist_detail_block):
+    fail("YouTube Music playlist entries do not preserve ytmusic source/link identity")
 else:
-    ok("about command includes nuttawat / SN Family developer contact information")
+    ok("YouTube Music playlist entries preserve ytmusic source identity for post-playlist Radio")
+if "cookiefile_path = /app/data/cookies.txt" not in config_default_source or 'or "/app/data/cookies.txt"' not in player_core_source:
+    fail("Player cookie path is not defaulted to persistent /app/data/cookies.txt")
+elif 'self.bundled_cookiefile = os.path.join(' not in player_core_source or '"defaults", "cookies.txt"' not in player_core_source:
+    fail("Player has no bundled default cookie fallback")
+elif 'if self.cookiefile and self._cookiefile_has_records(self.cookiefile):' not in player_core_source or 'elif self.bundled_cookiefile and self._cookiefile_has_records(self.bundled_cookiefile):' not in player_core_source:
+    fail("Player cookie precedence does not require a real persistent cookie before the bundled default")
+elif 'opts["cookiefile"] = active_cookiefile' not in player_core_source:
+    fail("Player does not pass the resolved persistent/bundled cookie file to yt-dlp")
+else:
+    ok("Player prefers a real persistent/user cookie and falls back to the bundled default when the persistent file is absent or header-only")
+
+bridge_source = (ROOT / "bot" / "dashboard_state.py").read_text(encoding="utf-8") if (ROOT / "bot" / "dashboard_state.py").is_file() else ""
+api_source = (ROOT / "bot" / "http_api.py").read_text(encoding="utf-8") if (ROOT / "bot" / "http_api.py").is_file() else ""
+sntalk_source = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
+if not bridge_source or 'runtime_status.json' not in bridge_source:
+    fail("Web runtime-state bridge is missing")
+elif 'RuntimeStateWriter(self)' not in sntalk_source or '.runtime_state_writer.start()' not in sntalk_source:
+    fail("SNTalkBot does not start the web runtime-state bridge")
+elif any(secret in bridge_source for secret in ('server_config.get("password")', 'channel_password', 'telegram_bot_token', 'api_key')):
+    fail("Web runtime-state bridge appears to expose secret configuration")
+elif not api_source or 'SNTALKBOT_API_PORT' not in api_source or 'SNTALKBOT_API_TOKEN' not in api_source:
+    fail("token-protected local realtime HTTP API is missing")
+elif 'do_POST' in api_source or 'do_PUT' in api_source or 'do_DELETE' in api_source:
+    fail("local bot API exposes a management write method; it must remain read-only")
+elif '127.0.0.1' not in api_source or 'Authorization' not in api_source or 'Bearer' not in api_source:
+    fail("local bot API is not clearly loopback/token protected")
+elif 'LocalStatusApi(self)' not in sntalk_source or '.local_status_api.start()' not in sntalk_source:
+    fail("SNTalkBot does not start the optional local realtime API")
+elif 'user_id == my_user_id' not in bridge_source or 'admins_online' not in bridge_source:
+    fail("dashboard state does not explicitly exclude the bot itself from online Administrator results")
+else:
+    ok("secret-free JSON fallback + read-only token-protected loopback HTTP API expose realtime state and exclude the bot itself from Administrator results")
+
+# Exercise the standalone HTTP transport with a real loopback socket.
+try:
+    import socket, urllib.request, urllib.error, os as _os
+    _spec = importlib.util.spec_from_file_location("_snt_http_api_validation", ROOT / "bot" / "http_api.py")
+    _mod = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+    _sock = socket.socket(); _sock.bind(("127.0.0.1", 0)); _port = _sock.getsockname()[1]; _sock.close()
+    class _Writer:
+        def build_snapshot(self): return {"connected": True, "admins_online_count": 1, "admins_online": [{"username":"human-admin"}]}
+    class _Bot:
+        runtime_state_writer = _Writer()
+    _old_port=_os.environ.get("SNTALKBOT_API_PORT"); _old_token=_os.environ.get("SNTALKBOT_API_TOKEN"); _old_bind=_os.environ.get("SNTALKBOT_API_BIND")
+    _os.environ["SNTALKBOT_API_PORT"]=str(_port); _os.environ["SNTALKBOT_API_TOKEN"]="validation-token"; _os.environ["SNTALKBOT_API_BIND"]="127.0.0.1"
+    _api=_mod.LocalStatusApi(_Bot()); assert _api.start()
+    try:
+        _bad=urllib.request.Request(f"http://127.0.0.1:{_port}/v1/status")
+        try:
+            urllib.request.urlopen(_bad,timeout=2); raise AssertionError("unauthorized request unexpectedly succeeded")
+        except urllib.error.HTTPError as exc:
+            assert exc.code==401
+        _good=urllib.request.Request(f"http://127.0.0.1:{_port}/v1/status",headers={"Authorization":"Bearer validation-token"})
+        with urllib.request.urlopen(_good,timeout=2) as resp:
+            _payload=__import__("json").loads(resp.read().decode())
+        assert _payload["connected"] is True and _payload["api"]["realtime"] is True
+        ok("local realtime HTTP API rejects unauthenticated reads and serves token-authenticated status on loopback")
+    finally:
+        _api.stop()
+        for _k,_v in (("SNTALKBOT_API_PORT",_old_port),("SNTALKBOT_API_TOKEN",_old_token),("SNTALKBOT_API_BIND",_old_bind)):
+            if _v is None: _os.environ.pop(_k,None)
+            else: _os.environ[_k]=_v
+except Exception as exc:
+    fail(f"local realtime HTTP API runtime test failed: {exc!r}")
+required_docker_ignores = {"cookies.txt", "config.ini", ".env", ".env.*"}
+actual_docker_ignores = {line.strip() for line in dockerignore_source.splitlines() if line.strip() and not line.lstrip().startswith("#")}
+missing_docker_ignores = sorted(required_docker_ignores - actual_docker_ignores)
+if missing_docker_ignores:
+    fail(f"Docker build context can include runtime credentials: missing .dockerignore entries {missing_docker_ignores}")
+else:
+    if "!defaults/cookies.txt" not in actual_docker_ignores:
+        fail("bundled default cookie is excluded from Docker build context")
+    else:
+        ok("Docker build context blocks accidental root cookies/config/.env secrets while allowing only the bundled defaults/cookies.txt bootstrap")
+default_cookie_path = ROOT / "defaults" / "cookies.txt"
+entrypoint_source = (ROOT / "docker-entrypoint.sh").read_text(encoding="utf-8")
+if not default_cookie_path.is_file():
+    fail("legacy bundled default YouTube cookie is missing")
+else:
+    try:
+        records = []
+        for raw_line in default_cookie_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not raw_line or (raw_line.startswith("#") and not raw_line.startswith("#HttpOnly_")):
+                continue
+            cols = raw_line.split("\t")
+            if len(cols) >= 7:
+                records.append(cols)
+        if not records or not all("youtube.com" in cols[0] for cols in records):
+            fail("bundled default cookie is not a valid YouTube Netscape cookie set")
+        elif 'if [ ! -f "$RUNTIME_COOKIES" ] && [ -f "$DEFAULT_COOKIES" ]' not in entrypoint_source:
+            fail("entrypoint does not bootstrap default cookies only when the persistent cookie is absent")
+        elif 'DEFAULT_COOKIES="/app/defaults/cookies.txt"' not in entrypoint_source:
+            fail("entrypoint default cookie path is incorrect")
+        else:
+            ok(f"bundled default YouTube cookie bootstrap is present ({len(records)} records) and never overwrites a persistent replacement")
+    except Exception as exc:
+        fail(f"unable to validate bundled default cookies: {exc!r}")
+if "cookies.txt" not in gitignore_source:
+    fail("Git ignore rules do not protect cookies.txt")
+elif "!defaults/cookies.txt" not in gitignore_source:
+    fail("Git ignore rules also hide the bundled defaults/cookies.txt, so git archive would omit the default")
+else:
+    ok("Git ignores personal cookies but explicitly allows the bundled defaults/cookies.txt")
+cookie_guide_path = ROOT / "YOUTUBE_COOKIES_TH.md"
+cookie_export_path = ROOT / "tools" / "export_youtube_cookies.ps1"
+if not cookie_guide_path.is_file() or not cookie_export_path.is_file():
+    fail("YouTube cookie guide/export helper is missing from the package")
+else:
+    cookie_guide_source = cookie_guide_path.read_text(encoding="utf-8")
+    cookie_export_source = cookie_export_path.read_text(encoding="utf-8")
+    required_cookie_guide = ("-ListProfiles", "chrome://version", "about:profiles", "robots.txt", "private/incognito")
+    missing_cookie_guide = [token for token in required_cookie_guide if token not in cookie_guide_source]
+    if missing_cookie_guide:
+        fail("YouTube cookie guide is missing profile/export steps: " + ", ".join(missing_cookie_guide))
+    elif "[switch]$ListProfiles" not in cookie_export_source or "Show-BrowserProfiles" not in cookie_export_source:
+        fail("Windows cookie export helper does not expose browser profile listing")
+    else:
+        ok("YouTube cookie guide/export helper include browser-profile discovery and private/incognito workflow")
+idle_start = player_core_source.find("def _on_idle_active")
+idle_end = player_core_source.find("def set_output_device", idle_start)
+idle_block = player_core_source[idle_start:idle_end]
+transition_pos = idle_block.find("self.playback_end_transition = True")
+not_playing_pos = idle_block.find("self.is_playing = False")
+if idle_start < 0 or transition_pos < 0 or not_playing_pos < 0 or transition_pos > not_playing_pos:
+    fail("mpv idle transition guard must be raised before is_playing=False")
+else:
+    ok("mpv idle boundary is guarded before is_playing=False, closing the last-second enqueue window")
+
+# Queue playback must not retain a stale playlist/radio that could resume after
+# clearing or leaving the queue.
+queue_play_start = player_source.find("def _play_from_queue")
+queue_play_end = player_source.find("def handle_pause_resume_command", queue_play_start)
+queue_play_block = player_source[queue_play_start:queue_play_end]
+if "self.player.clear_collection()" not in queue_play_block or "self.player.clear_radio_history()" not in queue_play_block:
+    fail("queue playback does not isolate stale collection/radio state")
+else:
+    ok("queue playback isolates stale collection/radio state before starting queued audio")
+
+# Related playback should use YouTube's Mix/Radio surfaces first, not quietly
+# regress to advancing the ordinary search-results array.
+player_core_radio = player_core_source[player_core_source.find("def related_radio"):player_core_source.find("def reset_radio_history")]
+if "RDAMVM{video_id}" not in player_core_radio or "list=RD{video_id}&start_radio=1" not in player_core_radio:
+    fail("YouTube/YouTube Music radio surface construction is missing")
+else:
+    ok("related playback constructs YouTube Mix and YouTube Music Radio surfaces before fallback search")
+
+# About must expose developer contact + active role + dr usage, but must not
+# advertise the report service base URL as a user-facing page.
+required_contact = ["nuttawat", "SN Family", "nutblind2545t@gmail.com", "0637457797"]
+required_about_block = ["dr <your message>", "Full Bot", "Player Bot", "Server Manager Bot"]
+about_start = general_source.find("def handle_about_command")
+about_end = general_source.find("def handle_gcid_command", about_start)
+about_block = general_source[about_start:about_end]
+if any(value not in general_source for value in required_contact) or any(value not in about_block for value in required_about_block):
+    fail("about command is missing role/contact/dr information")
+elif "DEVELOPER_REPORT_BASE_URL" in about_block or "Developer reports:" in about_block:
+    fail("about command still exposes the non-form report service URL")
+else:
+    ok("about shows bot role/contact and dr usage without advertising the support-service URL")
 
 
 # Existing persistent Docker configs must not be forced into the interactive
@@ -632,7 +1247,7 @@ player_only = commands_in_class("PlayerCog")
 manager_modules = set().union(*(commands_in_class(name) for name in (
     "AdminCog", "JailCog", "TTSCog", "TranslatorCog", "AccountRequestCog", "UserManager"
 )))
-manager_general = {"weather", "report", "intercept"}
+manager_general = {"weather", "report", "intercept", "events"}
 manager_only = manager_modules | manager_general
 general_registered = commands_in_class("GeneralCog")
 common_only = general_registered - manager_general
@@ -641,6 +1256,16 @@ if role_collision:
     fail("Player/Manager role-specific command collision: " + ", ".join(x for x in role_collision))
 else:
     ok(f"role command groups are disjoint (Common={len(common_only)}, Player={len(player_only)}, Manager={len(manager_only)}, Full={len(common_only | player_only | manager_only)})")
+
+if role_aliases:
+    bad_common = sorted(set(common_aliases.values()) - common_only)
+    bad_player = sorted(set(player_aliases.values()) - player_only)
+    bad_manager = sorted(set(manager_aliases.values()) - manager_only)
+    if bad_common or bad_player or bad_manager:
+        fail(f"role alias target leak: common={bad_common} player={bad_player} manager={bad_manager}")
+    else:
+        ok("Common/Player/Manager aliases target only commands owned by the same role")
+
 player_admin_utilities = {"cc", "csize", "cm"}
 if not player_admin_utilities.issubset(player_only) or player_admin_utilities.intersection(manager_only):
     fail("Player cache/message controls must live only in PlayerCog: cc csize cm")
@@ -723,6 +1348,10 @@ if "https://report.nuttawat.ddnsfree.com" not in general_py or "/api/report" not
     fail("official developer report relay URL is missing")
 else:
     ok("official developer report relay URL is embedded")
+if '"X-SNTalkBot-Report": "1"' not in general_py:
+    fail("dr does not send the official report-client marker expected by Report API 1.0.1")
+else:
+    ok("dr sends the official X-SNTalkBot-Report marker expected by Report API 1.0.1")
 if "send_telegram_notification" in general_py:
     fail("GeneralCog still sends dr directly to Telegram")
 else:
@@ -807,9 +1436,9 @@ spec = importlib.util.spec_from_file_location("sntalkbot_bot_identity", identity
 identity = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(identity)
 status_cases = {
-    (True, False): "Player Bot | พิมพ์ h เพื่อดูคำสั่ง",
-    (False, True): "Server Manager Bot | พิมพ์ h เพื่อดูคำสั่ง",
-    (True, True): "Full Bot (Player + Server Manager) | พิมพ์ h เพื่อดูคำสั่ง",
+    (True, False): "Player Bot | พิมพ์ h เพื่อดูวิธีใช้",
+    (False, True): "Server Manager Bot | พิมพ์ h เพื่อดูวิธีใช้",
+    (True, True): "Full Bot (Player + Server Manager) | พิมพ์ h เพื่อดูวิธีใช้",
 }
 for flags, expected in status_cases.items():
     actual = identity.role_status_message(*flags)
@@ -821,7 +1450,7 @@ elif identity.effective_status_message("auto", False, True) != status_cases[(Fal
     fail("auto status does not resolve to Server Manager role status")
 elif identity.effective_status_message("Player Bot | พิมพ์ help เพื่อดูคำสั่ง", True, False) != status_cases[(True, False)]:
     fail("legacy Player auto status does not migrate to the private h / channel /h wording")
-elif identity.effective_status_message("Player Bot | พิมพ์ h เพื่อดูคำสั่ง", True, False) != status_cases[(True, False)]:
+elif identity.effective_status_message("Player Bot | พิมพ์ h เพื่อดูวิธีใช้", True, False) != status_cases[(True, False)]:
     fail("r7.4 Player auto status does not migrate to the private h / channel /h wording")
 elif identity.effective_status_message("สถานะของฉัน", True, True) != "สถานะของฉัน":
     fail("custom status is not preserved")

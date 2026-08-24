@@ -1,3 +1,84 @@
+# SNTalkBot 5.1.0 — Realtime API สำหรับ Web Manager
+
+## สิ่งที่ผู้ใช้ควรรู้
+
+- เพิ่ม HTTP API แบบอ่านอย่างเดียวสำหรับ Web Manager: `GET /healthz` และ `GET /v1/status` โดยใช้ Bearer token แยกต่อ instance และ bind ที่ `127.0.0.1` เท่านั้นตามค่าที่ TTUHelper กำหนด
+- TTUHelper 1.5.0 จะจัดพอร์ต API ของแต่ละ instance จากช่วง `20000-27999` แบบไม่ซ้ำกัน ทำให้หลายบอตบน IP เดียวส่งสถานะ realtime ได้โดยไม่ชนพอร์ต
+- Web Manager 1.1.0 อ่านสถานะจาก API ภายในแล้วส่งต่อให้ browser ผ่าน SSE; ถ้า API ใช้ไม่ได้ยัง fallback ไป `runtime_status.json` ได้
+- Dashboard สามารถเห็น connection/server/channel, จำนวนผู้ใช้, ผู้ที่กำลังพูด/stream/video/desktop, Administrator ที่ออนไลน์โดยไม่รวมบัญชีบอตเอง และข้อมูล Player/Manager ตาม role
+- Player ส่งข้อมูลเพลงปัจจุบัน โหมดการเล่น คิว จำนวนคิว และผู้เพิ่มคิวให้ Dashboard โดยไม่เปิด password, token, API key หรือค่า cookie
+- `runtime_status.json` ยังคงเป็น fallback แบบ atomic write และ snapshot ทั้ง API/JSON ใช้โครงข้อมูลเดียวกัน
+- แก้ compatibility กับ TTUHelper: `cookies.txt` ที่มีเพียง Netscape header จะไม่ถูกถือเป็น cookie session จริง จึง fallback ไป default cookie ของโปรเจกต์จนกว่าจะมี cookie ที่ใช้งานได้มาทับ
+- การเปลี่ยนแปลง 5.1.0 เป็น management/realtime bridge แบบ additive; ความหมายคำสั่ง Player/Manager, Queue FIFO, Playlist/Related Radio และ moderation เดิมไม่เปลี่ยน
+
+## ความปลอดภัยและการแยก instance
+
+- API ของบอตไม่เปิดออก Internet โดยค่าเริ่มต้นและไม่ควรถูก Reverse Proxy โดยตรง; browser ติดต่อ Web Manager เท่านั้น
+- API token อยู่ใน metadata ของ instance และไม่ถูกใส่ใน runtime snapshot หรือหน้าเว็บ
+- API เป็น read-only ไม่มี endpoint สำหรับ stop/restart/delete/update; action จัดการระบบต้องผ่าน TTUHelper/Web Manager privileged bridge ตามสิทธิ์ผู้ใช้
+- validator ทดสอบว่า request ที่ไม่มี token ถูกปฏิเสธ และ request ที่มี token ถูกต้องอ่านสถานะบน loopback ได้จริง
+
+---
+
+# SNTalkBot 5.0.0
+
+## การเปลี่ยนแปลงที่ผู้ใช้ควรรู้ — รวมทุกงานที่ยังไม่เคย publish ตั้งแต่ฐาน r7.4.3
+
+- แยกประเภทบอตชัดเจน: **Full Bot**, **Player Bot**, **Server Manager Bot**; Full รวมสองฝ่าย ส่วน Player/Manager ไม่ลงทะเบียนคำสั่งข้ามหน้าที่
+- เพิ่ม `status` เป็นแดชบอร์ดคำสั่งเดียวตามประเภทบอต: ทุกโหมดเห็น uptime/ห้อง/จำนวนผู้ใช้/กิจกรรม TeamTalk; Player/Full เห็นเพลง คิว M1-M3 Autoplay และ Cookies; ผู้ดูแล Manager/Full เห็น filter/ci/ic/lock/welcome เพิ่มเติม
+- เพิ่ม `events [1-25]` สำหรับผู้ดูแล Manager/Full เพื่อดูเหตุการณ์ล่าสุดที่เกิดขึ้นจริงใน TeamTalk เช่น login/join/leave, เปลี่ยนชื่อหรือสถานะ, ห้องถูกสร้าง/แก้/ลบ, ไฟล์ในห้อง, server update และการเริ่ม/หยุด media/video/desktop; เก็บแบบวงแหวนในหน่วยความจำและล้างเมื่อบอตรีสตาร์ต
+- ขยาย moderation ไปยัง event แก้ไขข้อมูลจริง: ถ้าผู้ใช้ล็อกอินด้วยชื่อปกติแล้วเปลี่ยน nickname/status เป็นคำต้องห้าม หรือแก้ชื่อ/Topic Channel ภายหลัง `filter on` จะตรวจซ้ำทันที; `filter off` ปิดทั้งหมดตามเดิม
+- คำสั่งผู้ดูแลที่ทำงานผ่านบอตถูกบันทึกใน `events` เฉพาะชื่อ action และผู้สั่ง โดยไม่เก็บ argument จึงไม่บันทึกรหัสผ่าน ข้อความส่วนตัว token หรือ payload ลับลง audit ring
+- คำสั่งใช้แบบไม่มี `/` ได้ทั้ง Private และ Channel; `/` ยังรับเพื่อ compatibility และ `ci off` ปิดการตอบสนอง Channel โดยไม่ทำให้ moderation หยุด
+- Private ที่ไม่ตรงคำสั่ง/workflow จะบอกว่าไม่รู้จักคำสั่งและแนะนำ `h`; ข้อความสนทนาปกติใน Channel/CUSTOM ไม่โดนตอบรบกวน
+- สถานะอัตโนมัติบอกประเภทบอตและลงท้าย `พิมพ์ h เพื่อดูวิธีใช้`; `about` แนะนำ `dr <ข้อความของคุณ>` สำหรับแจ้งบั๊ก ขอ/เสนอฟีเจอร์ โดยไม่แสดง URL support ที่ไม่มีแบบฟอร์ม
+- จัดคำสั่งย่อใหม่ให้ **หนึ่งคำสั่งหลักมี shorthand เดียวเท่านั้น**: ใช้ `a`→about, `c`→select, `j`→join, `vt`→voicetx; ตัด alias ซ้ำ `ab`, `sel`, `i`, `jc`, `va`
+- แก้ Linux TeamTalk text/bytes regression เพื่อให้คำสั่งและ moderation รับข้อความจริงจาก SDK ได้โดยไม่ทำ event loop ล้ม
+- ระบบกรองใช้ `blacklist.txt` multilingual path เดียวสำหรับไทย/อังกฤษ/ภาษาอื่น; `filter on|off|status` คุมทั้งหมด และ filter ทำงานก่อน `ci`
+- แก้ Queue FIFO ที่จังหวะเพลงจบ: รายการใหม่ไม่แซงของเก่า, เพลงที่เล่นจบถูกนำออกทีละตัว, `dq` ลบทีละรายการ, `cq` ล้างคิว, `s` หยุดและล้างคิวทั้งหมด
+- ทุก queue item เก็บชื่อผู้เพิ่มและเวลาที่เพิ่ม; `ql` แสดงเพลง + ผู้เพิ่ม + อายุของรายการ และข้อความ/TTS ตอนเพิ่มเพลง, playlist หรือ Favorites บอกชื่อผู้เพิ่มกับหมายเลข/ช่วงคิว
+- โหมดปกติแยก navigation: `,`/`.` เลื่อนผลค้นหา, `n`/`b` เดิน Related Radio history; `c 56` หรือ `select 56` กระโดดไปเพลงที่ 56 ของ playlist/session
+- M2/Autoplay ใช้ YouTube Mix / YouTube Music Radio ก่อน fallback related search; Playlist/Channel/Favorites เล่นตามลำดับก่อนและไม่ถูก recommendation แทรก
+- เพิ่ม `pp <playlist_link>` เพื่อ **ต่อ playlist ชุดที่ 2, 3, ...** โดยไม่หยุดเพลงปัจจุบัน; Queue Mode เพิ่ม playlist ทั้งชุดต่อท้าย FIFO และประกาศช่วงคิว
+- คืน **default YouTube cookies จากโปรเจกต์เดิม** เป็น bootstrap สำหรับ Player/Full: instance ใหม่จะได้ `/app/data/cookies.txt` อัตโนมัติ ถ้ามี cookie ที่ผู้ใช้ติดตั้งไว้แล้วจะไม่ถูก overwrite; วันหลังใช้ `ttuhelper cks` แทนไฟล์ชื่อเดิมได้
+- TTUHelper 1.4 รองรับ `cks`, `cks-all`, `cks-check`; cookie commands ใช้เฉพาะ Player/Full และ `cks-all` ข้าม Server Manager
+- คู่มือ TTUHelper รองรับทั้งดาวน์โหลด ZIP และ `git clone`; คู่มือ cookies มีการเลือก browser profile และสคริปต์ `-ListProfiles` สำหรับวันที่ต้องการแทน default cookie ด้วยชุดใหม่
+
+## การป้องกัน regression
+
+- validator บังคับ role isolation, one-alias-per-command, Linux bytes, unknown-command routing, moderation-before-ci และ canonical multilingual blacklist
+- validator จำลอง queue race ตรง playback-end, queue ownership metadata, playlist append, `select 56`, Related Radio navigation และ Queue Mode isolation
+- validator ตรวจ default cookie bootstrap ว่ามี Netscape YouTube records, image มีเฉพาะ bundled default และ entrypoint ไม่ overwrite persistent replacement
+- validator ตรวจ callback ที่มีจริงของ TeamTalk สำหรับ user/channel/server/file/state update, ทดสอบ `status`/`events` แบบ runtime และบังคับว่า `events` อยู่เฉพาะ Manager/Full
+- Dashboard นับสถานะพูด/stream/video/desktop แบบสด แต่ไม่เก็บ voice start/stop ทุกครั้งลง event log เพื่อไม่ให้รายการเหตุการณ์ถูก spam จากการพูดปกติ
+
+# 2026.08.23-r7.4.5
+
+## สิ่งที่ผู้ใช้ควรรู้
+- แก้บั๊กคิวช่วงเพลงจบ: เพลงที่เพิ่มใหม่จะต่อท้าย FIFO และไม่แซงรายการเก่าที่รออยู่ แม้เพิ่มตรงจังหวะ playback-end
+- เพลงในคิวที่เล่นจบจะถูกนำออกทีละรายการ; `dq <ลำดับ|ชื่อเพลง>` ลบทีละรายการ, `cq` ล้างคิว, และ `s` หยุดพร้อมล้างคิวทั้งหมด
+- Queue Mode แยกจาก Related Radio: ถ้า `q` ยังเปิดแต่คิวหมด/ถูก `cq` ล้าง เพลงปัจจุบันจบแล้วจะหยุด ไม่ไหลไป recommendation ของโหมดปกติ
+- โหมดปกติแยก navigation ชัดเจน: `,`/`.` ใช้ผลการค้นหา ส่วน `b`/`n` ใช้ประวัติ Related Radio
+- M2/Autoplay หลังเพลงค้นหาปกติจะต่อด้วย YouTube Mix / YouTube Music Radio แทนการไล่ผลค้นหาถัดไป; Playlist/Channel/Favorites ที่เปิดโดยตรงยังเล่นตามลำดับเดิม
+- ระบบกรองใช้ `blacklist.txt` multilingual เป็น runtime path เดียว; `filter on/off` ยังคุมทั้งหมด และ `ci off` ไม่ปิด moderation
+
+## การป้องกัน regression
+- เพิ่ม runtime test จำลองจังหวะเพิ่มเพลงตรง playback-end เพื่อยืนยันว่าคิวเดิมไม่หายและเพลงใหม่ไม่แซง
+- เพิ่ม test แยก Related Radio history ออกจาก search navigation และตรวจ canonical blacklist ครอบคลุม `badword.txt` ทั้งหมด
+
+# 2026.08.23-r7.4.4
+
+## สิ่งที่ผู้ใช้ควรรู้
+- แยก 3 ประเภทชัดเจน: Full Bot, Player Bot และ Server Manager Bot; Player-only ไม่ได้คำสั่ง Manager และ Manager-only ไม่ได้คำสั่ง Player
+- เมื่อข้อความ Private ไม่ตรงกับคำสั่งหรือ workflow ที่เปิดใช้งาน บอตตอบว่าไม่รู้จัก/คำสั่งไม่ถูกต้องและแนะนำ `h` เพื่อดูวิธีใช้; Channel สนทนาปกติไม่โดน fallback นี้
+- คืน alias เดิมที่ไม่ชนระบบใหม่ตาม role: Common `a`; Player/Full `gl`, `c`, `sb`, `sf`; Manager/Full `jc`, `sc`, `va`
+- สถานะอัตโนมัติระบุประเภทบอตและลงท้าย `พิมพ์ h เพื่อดูวิธีใช้`
+- `about` แสดงประเภทบอตและเปลี่ยนจาก URL support เป็นคำแนะนำ `dr <ข้อความของคุณ>` สำหรับแจ้งบั๊ก รายงานปัญหา ขอฟีเจอร์ หรือเสนอแนะ
+
+## การป้องกัน regression
+- validator ตรวจ role/alias isolation, unknown-command fallback, about ที่ไม่เปิดเผยหน้า support URL, คำสั่งครบ และ Linux TeamTalk bytes regression เดิม
+- ไม่ย้อน Google Cloud TTS, service abstraction, alias ที่ชนคำสั่งใหม่ หรือโค้ด legacy ที่ไม่มี runtime parity
+
 # 2026.08.23-r7.4.3
 
 - แก้ Linux TeamTalk runtime: ข้อความขาเข้าจาก SDK อาจเป็น `bytes`; แปลง UTF-8 เป็น `str` ก่อน Unicode normalization/command parsing
@@ -95,7 +176,7 @@
 
 # SNTalkBot 2026.08.23-r5
 
-- `dr` เปลี่ยนเป็นระบบรายงานถึงผู้พัฒนาแบบ relay กลางที่ `https://report.nuttawat.ddnsfree.com/api/report`
+- `dr` เปลี่ยนเป็นระบบรายงานถึงผู้พัฒนาแบบ relay กลาง ผู้ใช้ส่งได้โดยตรงด้วย `dr <ข้อความ>` โดยไม่ต้องเปิด URL รายงานแยก
 - ไม่ต้องและไม่ควรฝัง Telegram Bot Token ใน Docker image หรือ config ของลูกค้า
 - API ล่ม/timeout แล้วคำสั่งจบอย่างปลอดภัย ไม่ทำให้บอต crash
 - จำกัดข้อความ `dr` สูงสุด 2000 ตัวอักษร

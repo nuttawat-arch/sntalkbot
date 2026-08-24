@@ -1,6 +1,7 @@
 # Local runtime configuration / credentials
 config.ini
 cookies.txt
+!defaults/cookies.txt
 .env
 .env.*
 !.env.example

@@ -161,16 +161,10 @@ class AdminCog:
                 del self.duration_bans[username]
             
         # 5. Check the canonical multilingual blacklist only while the master
-        # word filter is enabled. Thai/English/other languages share this path.
-        if self.bot.profanity_filter_enabled:
-            blacklist = utils.load_blacklist("blacklist.txt")
-            if utils.contains_profanity(nickname, blacklist):
-                if self.bot.bot_config["blacklist_mode"] == 1:
-                    self.bot.kick_user(user_id)
-                elif self.bot.bot_config["blacklist_mode"] == 2:
-                    self.ban_user(user_id, BanType.BANTYPE_IPADDR)
-                    self.bot.kick_user(user_id)
-                return
+        # word filter is enabled. The same helper is also reused by the real
+        # TeamTalk USER_UPDATE event so renaming after login cannot bypass it.
+        if self.check_user_profile_for_blacklist(user):
+            return
 
         # 6. Check for "NoName"
         if self.bot.bot_config['prevent_noname']:
@@ -189,6 +183,29 @@ class AdminCog:
                 self.ban_user(user_id, BanType.BANTYPE_IPADDR)
                 self.bot.kick_user(user_id)
             return
+
+    def check_user_profile_for_blacklist(self, user):
+        """Moderate nickname/status text using the one canonical multilingual list."""
+        if not self.bot.profanity_filter_enabled or not user:
+            return False
+        user_id = int(getattr(user, "nUserID", 0) or 0)
+        if not user_id or user_id == int(self.bot.getMyUserID() or 0):
+            return False
+        nickname = utils.ensure_text(ttstr(getattr(user, "szNickname", "")))
+        status_message = utils.ensure_text(ttstr(getattr(user, "szStatusMsg", "")))
+        blacklist = getattr(self.bot, "bad_words", None) or utils.load_blacklist("blacklist.txt")
+        if not blacklist or not utils.contains_profanity(f"{nickname} {status_message}", blacklist):
+            return False
+        if self.bot.bot_config.get("blacklist_mode", 1) == 2:
+            self.ban_user(user_id, BanType.BANTYPE_IPADDR)
+        self.bot.kick_user(user_id)
+        if hasattr(self.bot, "record_activity"):
+            self.bot.record_activity(
+                "moderation", "profile",
+                f"Blocked user profile text: {nickname or user_id}",
+                user_id=user_id,
+            )
+        return True
 
     def check_message_for_blacklist(self, textmessage: TextMessage):
         """Check the canonical multilingual blacklist and apply its legacy action.

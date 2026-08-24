@@ -4,7 +4,17 @@ import langdetect
 import requests
 from pathlib import Path
 from datetime import datetime, timezone
+import os
+import time
 from bot.utils import BotUtils as utils
+
+
+
+class _NullContext:
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        return False
 
 DEVELOPER_REPORT_BASE_URL = "https://report.nuttawat.ddnsfree.com"
 DEVELOPER_REPORT_ENDPOINT = DEVELOPER_REPORT_BASE_URL.rstrip("/") + "/api/report"
@@ -36,11 +46,114 @@ class GeneralCog:
         command_handler.register_command('about', self.handle_about_command)
         command_handler.register_command('dr', self.handle_direct_report_command)
         command_handler.register_command('gcid', self.handle_gcid_command)
+        command_handler.register_command('status', self.handle_status_command)
         command_handler.register_command('channelinput', self.handle_channel_input_command, admin_only=True)
         if self.bot.server_management_enabled:
             command_handler.register_command('weather', self.handle_weather_command)
+            command_handler.register_command('events', self.handle_events_command, admin_only=True)
             command_handler.register_command('report', self.handle_report_command)
             command_handler.register_command('intercept', self.handle_intercept_command, admin_only=True)
+
+    @staticmethod
+    def _format_uptime(seconds):
+        seconds = max(0, int(seconds or 0))
+        days, rem = divmod(seconds, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, _secs = divmod(rem, 60)
+        if days:
+            return f"{days}d {hours}h {minutes}m"
+        if hours:
+            return f"{hours}h {minutes}m"
+        return f"{minutes}m"
+
+    def _sender_is_admin(self, textmessage):
+        username = utils.ensure_text(ttstr(getattr(textmessage, "szFromUsername", "")))
+        if self.bot.is_authorized_user(username):
+            return True
+        try:
+            user = self.bot.getUser(textmessage.nFromUserID)
+        except Exception:
+            user = None
+        return bool(user and user.uUserType == UserType.USERTYPE_ADMIN)
+
+    def handle_status_command(self, textmessage, *args):
+        """One screen-reader-friendly dashboard whose content follows the active bot role."""
+        sender_id = textmessage.nFromUserID
+        role = "Full Bot" if self.bot.player_enabled and self.bot.server_management_enabled else (
+            "Player Bot" if self.bot.player_enabled else "Server Manager Bot"
+        )
+        uptime = self._format_uptime(time.time() - float(getattr(self.bot, "started_at", time.time())))
+        try:
+            users = [u for u in self.bot.getServerUsers() if int(getattr(u, "nUserID", 0) or 0) != int(self.bot.getMyUserID() or 0)]
+        except Exception:
+            users = []
+        channel_id = int(self.bot.getMyChannelID() or 0)
+        channel_name = str(channel_id or "-")
+        try:
+            channel = self.bot.getChannel(channel_id)
+            if channel:
+                channel_name = utils.ensure_text(ttstr(getattr(channel, "szName", ""))) or channel_name
+        except Exception:
+            pass
+
+        self.bot.privateMessage(sender_id, self._("{role} | uptime {uptime} | channel {channel} | users {users}").format(
+            role=role, uptime=uptime, channel=channel_name, users=len(users)
+        ))
+
+        state_counts = self.bot.runtime_state_counts() if hasattr(self.bot, "runtime_state_counts") else {}
+        self.bot.privateMessage(sender_id, self._("TeamTalk activity | speaking {voice} | media {media} | video {video} | desktop {desktop}").format(
+            voice=state_counts.get("voice", 0), media=state_counts.get("media", 0),
+            video=state_counts.get("video", 0), desktop=state_counts.get("desktop", 0),
+        ))
+
+        if self.bot.player_enabled and self.bot.player is not None:
+            player = self.bot.player
+            title = str(getattr(player, "media_title", "") or "-") if getattr(player, "is_playing", False) else self._("idle")
+            with getattr(player, "queue_lock", _NullContext()):
+                queue_count = len(getattr(player, "queue", []) or [])
+            queue_mode = "ON" if getattr(player, "queue_mode", False) else "OFF"
+            autoplay = "ON" if bool(self.bot.playback_config.get("autoplay_enabled", True)) else "OFF"
+            mode = f"M{int(getattr(player, 'play_mode', 2) or 2)}"
+            if getattr(player, "cookiefile", None) and os.path.isfile(player.cookiefile):
+                cookie_state = self._("persistent/custom")
+            elif getattr(player, "bundled_cookiefile", None) and os.path.isfile(player.bundled_cookiefile):
+                cookie_state = self._("bundled default")
+            else:
+                cookie_state = self._("none")
+            self.bot.privateMessage(sender_id, self._("Player | {title} | queue {queue} | q {queue_mode} | {mode} | autoplay {autoplay} | cookies {cookies}").format(
+                title=title, queue=queue_count, queue_mode=queue_mode, mode=mode, autoplay=autoplay, cookies=cookie_state
+            ))
+
+        if self.bot.server_management_enabled and self._sender_is_admin(textmessage):
+            self.bot.privateMessage(sender_id, self._("Manager | filter {filter_state} | ci {ci_state} | ic {ic_state} | commands {lock_state} | welcome {welcome_state}").format(
+                filter_state="ON" if self.bot.profanity_filter_enabled else "OFF",
+                ci_state="ON" if self.bot.bot_config.get("channel_input_enabled", True) else "OFF",
+                ic_state="ON" if self.bot.bot_config.get("intercept_channel_messages", True) else "OFF",
+                lock_state=self._("locked") if self.bot.commands_locked else self._("open"),
+                welcome_state="ON" if self.bot.welcome_mode > 0 else "OFF",
+            ))
+
+    def handle_events_command(self, textmessage, *args):
+        """Show recent real TeamTalk/admin events kept in a bounded in-memory ring."""
+        limit = 10
+        if args:
+            try:
+                limit = int(args[0])
+            except (TypeError, ValueError):
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: events [1-25]"))
+                return
+        limit = max(1, min(limit, 25))
+        items = self.bot.activity.recent(limit) if hasattr(self.bot, "activity") else []
+        if not items:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("No recent runtime events."))
+            return
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Recent events (newest first):"))
+        for item in reversed(items):
+            age = self.bot.activity.format_age(item.get("timestamp", time.time()))
+            self.bot.privateMessage(
+                textmessage.nFromUserID,
+                f"{age} | {item.get('category','event')}/{item.get('action','update')} | {item.get('message','')}"
+            )
 
     def handle_channel_input_command(self, textmessage, *args):
         """Enable/disable normal channel features while moderation remains active."""
@@ -311,11 +424,15 @@ class GeneralCog:
     def handle_about_command(self, textmessage, *args):
         import platform
         sender_id = textmessage.nFromUserID
-        self.bot.privateMessage(sender_id, f"SN TalkBot {_project_version()} | Python {platform.python_version()} | Linux/Docker ready | yt-dlp + MPV + TeamTalk")
+        role = "Full Bot" if self.bot.player_enabled and self.bot.server_management_enabled else (
+            "Player Bot" if self.bot.player_enabled else "Server Manager Bot" if self.bot.server_management_enabled else "SN TalkBot"
+        )
+        runtime = "yt-dlp + MPV + TeamTalk" if self.bot.player_enabled else "TeamTalk Server Manager"
+        self.bot.privateMessage(sender_id, f"SN TalkBot {_project_version()} | {role} | Python {platform.python_version()} | Linux/Docker ready | {runtime}")
         self.bot.privateMessage(sender_id, self._("Developer: {name} from {organization}").format(name=DEVELOPER_NAME, organization=DEVELOPER_ORGANIZATION))
         self.bot.privateMessage(sender_id, self._("Contact email: {email}").format(email=DEVELOPER_EMAIL))
         self.bot.privateMessage(sender_id, self._("Contact phone: {phone}").format(phone=DEVELOPER_PHONE))
-        self.bot.privateMessage(sender_id, self._("Developer reports: {url}").format(url=DEVELOPER_REPORT_BASE_URL))
+        self.bot.privateMessage(sender_id, self._("Report a bug, request a feature, or send a suggestion: dr <your message>"))
 
     def handle_gcid_command(self, textmessage, *args):
         if args:
