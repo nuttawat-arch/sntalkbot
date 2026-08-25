@@ -1,3 +1,22 @@
+# Development Report — SNTalkBot 5.1.5 (Queue Handoff / Prefetch Race Fix)
+
+## ปัญหาที่แก้
+- Queue Mode เพลงแรกเคยเริ่มเล่น/ประกาศ Now Playing ก่อนข้อความเพิ่มคิวถูกประกาศ
+- เพลงถัดไปบางครั้งเริ่มช้า เพราะ prefetch เดิมอ่าน active collection ทั้งที่ queue playback ล้าง collection state แล้ว จึงไม่ preload FIFO item 2 จริง
+- prefetch cache เดิมมี race เล็ก ๆ ระหว่างปล่อย yt-dlp lock กับ commit cache ทำให้ foreground มีโอกาส extract metadata ซ้ำ
+
+## การแก้ไข
+- reserve เพลงแรกใน queue ก่อน และเริ่ม playback หลัง enqueue announcement ถูกส่งเข้าคิว TTS แล้ว
+- Queue Mode prefetch จาก FIFO queue โดยตรง สูงสุด 5 รายการถัดไป
+- commit prefetch cache ก่อนปล่อย shared yt-dlp extraction lock และ foreground recheck cache หลังได้ lock
+
+## Validation
+- canonical commands ยังคง 124
+- regression ทดสอบ queue announcement-before-play, FIFO next-item scheduling และ in-flight cache race จริง
+- Python compile/help/locale/moderation/realtime/Linux LF gates ผ่าน
+
+---
+
 # Development Report — SNTalkBot 5.1.4 (Admin Credential Verifier / LF Closure)
 
 ## 2026-08-25

@@ -1,3 +1,11 @@
+# SNTalkBot 5.1.5 — Queue First-Announcement / FIFO Prefetch
+
+- Queue Mode เพลงแรกประกาศ “เพิ่มเข้าคิว” ก่อน Now Playing โดย reserve queue item ก่อนและเริ่ม playback หลัง enqueue announcement ถูกส่งเข้าคิว TTS
+- prefetch เพลงถัดไปอ่าน FIFO queue โดยตรง ไม่พึ่ง collection state ที่ queue playback ล้างออก
+- commit prefetch cache ก่อนปล่อย shared yt-dlp lock และ foreground recheck cache หลังได้ lock ลด metadata extraction ซ้ำ/ช่องว่างระหว่างคิว 1→2
+- จำนวน canonical commands ยังคง 124; ไม่มี command เดิมถูกลบ
+- validator เพิ่ม regression ของ announcement order, FIFO item 2+ scheduling และ in-flight prefetch race
+
 # SNTalkBot 5.1.4 — TeamTalk Admin Credential Proof / Linux SDK LF
 
 - เพิ่ม `tools/verify_teamtalk_admin.py` สำหรับ Web Manager: รับ JSON ทาง stdin เท่านั้น, login ชั่วคราวด้วย TeamTalk SDK, ตรวจ `UserType.USERTYPE_ADMIN`, คืนผลแบบไม่มี secret และ disconnect/close ทันที

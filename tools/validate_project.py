@@ -855,6 +855,42 @@ def validate_player_queue_and_radio_regressions():
         cog._is_in_same_channel = lambda user_id: True
         cog._nickname = lambda user_id: "Tester"
 
+        # First Queue Mode item must announce its queue position before playback
+        # enqueues the separate "Now playing" announcement.  _enqueue_queue_items
+        # reserves item 1 but the caller explicitly starts only after announcing.
+        first_player = types.SimpleNamespace(
+            queue=[], queue_index=-1, queue_mode=True, queue_lock=__import__("threading").RLock(),
+            queue_transition=False, playback_end_transition=False, queue_history=[],
+            is_playing=False, play_mode=2, current_link=None, media_title="",
+            collection_results=[], search_results=[], current_search_index=0, current_collection_index=0,
+        )
+        first_cog = module.PlayerCog.__new__(module.PlayerCog)
+        first_cog.bot=bot; first_cog.player=first_player; first_cog._=bot._
+        first_cog._nickname=lambda uid: "Tester"
+        order=[]
+        first_cog._play_from_queue=lambda index: order.append(("play", index))
+        first_cog._prefetch_next_for_current=lambda: order.append(("prefetch", None))
+        qr=first_cog._enqueue_queue_items([{"title":"First","link":"first"}], user_id=7)
+        assert qr[:2] == (1,1) and qr[2] is True and order == [], (qr, order)
+        order.append(("queue", qr[0]))
+        first_cog._after_queue_enqueue(qr[2])
+        assert order == [("queue",1),("play",0)], order
+        # Adding while already playing must not interrupt; it should kick prefetch.
+        first_player.is_playing=True; first_player.queue_index=0; first_player.queue_transition=False
+        qr2=first_cog._enqueue_queue_items([{"title":"Second","link":"second"}], user_id=7)
+        first_cog._after_queue_enqueue(qr2[2])
+        assert qr2[2] is False and order[-1] == ("prefetch",None), (qr2, order)
+
+        # Queue prefetch must inspect the FIFO queue itself. Queue playback clears
+        # collection_results, so relying on the active playlist would leave item 2
+        # cold and force yt-dlp work after item 1 already ended.
+        scheduled=[]
+        first_player.prefetcher=types.SimpleNamespace(schedule=lambda links: scheduled.append(list(links)))
+        first_player.queue=[{"title":"First","link":"first"},{"title":"Second","link":"second"},{"title":"Third","link":"third"}]
+        first_player.queue_index=0; first_player.queue_mode=True
+        module.PlayerCog._prefetch_next_for_current(first_cog)
+        assert scheduled == [["second","third"]], scheduled
+
         # Exact historical race: mpv already flipped is_playing False, while A is
         # still the active queue item. Adding C must append only; it must not play C.
         cog._enqueue_queue_items([{"title":"C","link":"c"}], user_id=7)
@@ -1039,7 +1075,31 @@ def validate_player_queue_and_radio_regressions():
             sys.path.remove(root_str)
 
 if validate_player_queue_and_radio_regressions():
-    ok("queue FIFO/ownership/range announcements, pp playlist append, select 56, per-item ,/. queue-search targeting, and normal n/b Related Radio are regression-tested")
+    ok("queue FIFO/ownership, first-item queue-before-play announcement, pending prefetch, pp/select/search targeting, and normal n/b Radio are regression-tested")
+
+# Prefetch/playback use one yt-dlp lock. If playback arrives while the worker is
+# still extracting the same next URL, play_stream must re-check cache *after*
+# acquiring that lock; otherwise it extracts the same song twice and creates a
+# visible gap between queue items.
+_player_core = (ROOT / "bot" / "player.py").read_text(encoding="utf-8")
+_play_start = _player_core.find("def play_stream")
+_play_end = _player_core.find("def fade_out_and_stop", _play_start)
+_play_block = _player_core[_play_start:_play_end]
+if _play_block.count("self._prefetch_cache.pop(link, None)") < 2 or "with self._ydl_lock" not in _play_block:
+    fail("queue handoff prefetch race guard is missing from play_stream")
+else:
+    ok("queue handoff reuses in-flight prefetch after yt-dlp lock instead of extracting the next track twice")
+_prefetch_start = _player_core.find("    def prefetch_stream_info(self, link):")
+_prefetch_end = _player_core.find("    def get_channel_link", _prefetch_start)
+_prefetch_block = _player_core[_prefetch_start:_prefetch_end]
+if not (
+    "with self._ydl_lock:" in _prefetch_block
+    and "if info:\n                    self._prefetch_cache[link] = info" in _prefetch_block
+    and _prefetch_block.find("self._prefetch_cache[link] = info") < _prefetch_block.find("        except Exception")
+):
+    fail("prefetch cache is not committed before releasing the yt-dlp lock")
+else:
+    ok("prefetch commits the next-track cache before releasing yt-dlp lock, closing the last duplicate-extraction race")
 
 # Linux/source line endings are release-critical.  Windows checkouts must not
 # re-introduce CRLF into Python/shell/config sources that are copied into Docker.

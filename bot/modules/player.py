@@ -49,7 +49,7 @@ class PlayerCog:
     # item should start. mpv flips it to False before playback-end callbacks,
     # which used to let a last-second enqueue jump ahead of older pending items.
     def _enqueue_queue_items(self, items, *, user_id=None, nickname=None):
-        """Append items atomically and return their 1-based inclusive queue range.
+        """Append items atomically and return (start, end, should_start).
 
         Every queued item keeps lightweight audit metadata (`added_by`,
         `added_by_user_id`, `added_at`) so ql can tell users who added what and
@@ -84,11 +84,24 @@ class PlayerCog:
                 and not self.player.is_playing
             )
             if should_start:
+                # Reserve item 1 atomically, but do not start it here.  The caller
+                # must first enqueue the human-visible/Player-TTS "added to queue"
+                # announcement and then call _after_queue_enqueue().  This fixes
+                # the first-item ordering bug where "Now playing" was spoken first.
                 self.player.queue_index = 0
                 self.player.queue_transition = True
+        return start_position, end_position, should_start
+
+    def _after_queue_enqueue(self, should_start):
+        """Start a newly-reserved first queue item only after its queue announcement.
+
+        If playback is already active, schedule/preload the oldest pending queue
+        items immediately so the end-of-track handoff does not wait on metadata.
+        """
         if should_start:
             self._play_from_queue(0)
-        return start_position, end_position
+        else:
+            self._prefetch_next_for_current()
 
     def _advance_queue_after_current(self, *, remember=True):
         """Consume only the current queue item and continue with the oldest pending item."""
@@ -574,16 +587,23 @@ class PlayerCog:
         try:
             with self.player._ydl_lock:
                 info = self.player.ydl.extract_info(link, download=False)
+                # Store before releasing the shared extraction lock so a first
+                # queue playback cannot slip between extraction and cache commit.
+                if info:
+                    self.player._prefetch_cache[link] = info
             video = {
                 'title': info.get('title') or "Unknown title",
                 'link': link
             }
+            # _enqueue_url_task already paid the full yt-dlp extraction cost;
+            # queue playback now consumes the cached result.
             queue_range = self._enqueue_queue_items([video], user_id=user_id)
-            start, _end = queue_range or (None, None)
+            start, _end, should_start = queue_range or (None, None, False)
             user_nickname = self._nickname(user_id)
             self._send_playback_message(self._("{nickname} added to queue {position}: {title}").format(
                 nickname=user_nickname, position=start or "?", title=video['title']))
             self._announce_queue(title=video['title'], start=start, nickname=user_nickname)
+            self._after_queue_enqueue(should_start)
         except Exception as e:
             self.bot.privateMessage(user_id, self._("Error adding to queue: {e}").format(e=str(e)))
 
@@ -613,7 +633,7 @@ class PlayerCog:
 
         if self.player.queue_mode:
             queue_range = self._enqueue_queue_items(results, user_id=user_id)
-            start, end = queue_range or (None, None)
+            start, end, should_start = queue_range or (None, None, False)
             title = collection_title or collection_type or self._("playlist")
             self._send_playback_message(self._("{nickname} added playlist {title} to queue {start}-{end}.").format(
                 nickname=self._nickname(user_id), title=title, start=start or "?", end=end or "?"
@@ -621,6 +641,7 @@ class PlayerCog:
             self._announce_queue(
                 count=len(results), start=start, end=end, collection_title=title, nickname=self._nickname(user_id)
             )
+            self._after_queue_enqueue(should_start)
             return
 
         if append:
@@ -878,11 +899,12 @@ class PlayerCog:
             video["_search_index"] = 0
             video["_search_source"] = source
             queue_range = self._enqueue_queue_items([video], user_id=user_id)
-            start, _end = queue_range or (None, None)
+            start, _end, should_start = queue_range or (None, None, False)
             user_nickname = self._nickname(user_id)
             self._send_playback_message(self._("{nickname} added to queue {position}: {title}").format(
                 nickname=user_nickname, position=start or "?", title=video['title']))
             self._announce_queue(title=video['title'], start=start, nickname=user_nickname)
+            self._after_queue_enqueue(should_start)
         else:
             self._send_playback_message(self._("No results found for '{query}'.").format(query=query))
 
@@ -907,6 +929,9 @@ class PlayerCog:
             self.player.current_link = video['link']
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(video['link'])
+            # As soon as current playback is live, prepare the next FIFO items.
+            # This keeps queue-to-queue handoff fast even for short tracks.
+            self._prefetch_next_for_current()
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
             self._announce_track(self.player.media_title)
         except Exception as e:
@@ -1270,6 +1295,21 @@ class PlayerCog:
             self.on_playback_end()
 
     def _prefetch_next_for_current(self):
+        # Queue Mode is independent from playlist/collection state.  A queued
+        # track deliberately clears collection_results before playback, so using
+        # only _get_active_results() here meant item 2 was never actually
+        # prefetched and the end-of-track handoff could block on yt-dlp.
+        if self.player.queue_mode:
+            with self.player.queue_lock:
+                start = self.player.queue_index + 1 if self.player.queue_index >= 0 else 0
+                links = [
+                    item.get("link") for item in self.player.queue[start:start + 5]
+                    if isinstance(item, dict) and item.get("link")
+                ]
+            if links:
+                self.player.prefetcher.schedule(links)
+            return
+
         results, _ = self._get_active_results()
         if not results:
             return
@@ -1711,7 +1751,7 @@ class PlayerCog:
         if self.player.queue_mode:
             queue_range = self._enqueue_queue_items(self.favorites, user_id=textmessage.nFromUserID)
             if queue_range:
-                start, end = queue_range
+                start, end, should_start = queue_range
                 user_nickname = self._nickname(textmessage.nFromUserID)
                 self._send_playback_message(self._("{nickname} added all favorites to queue {start}-{end}.").format(
                     nickname=user_nickname, start=start, end=end))
@@ -1719,6 +1759,7 @@ class PlayerCog:
                     count=len(self.favorites), start=start, end=end,
                     collection_title=self._("Favorites"), nickname=user_nickname, collection_kind="favorites",
                 )
+                self._after_queue_enqueue(should_start)
         else:
             self.player.clear_collection()
             self.player.collection_results = self.favorites

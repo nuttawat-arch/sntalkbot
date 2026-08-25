@@ -427,7 +427,13 @@ class Player(mpv.MPV):
             if not info:
                 try:
                     with self._ydl_lock:
-                        info = self.ydl.extract_info(link, download=False)
+                        # A prefetch worker may have been extracting this exact URL
+                        # while play_stream() waited for the shared yt-dlp lock.
+                        # Re-check after acquiring the lock so we consume that fresh
+                        # result instead of paying for a duplicate extraction.
+                        info = self._prefetch_cache.pop(link, None)
+                        if not info:
+                            info = self.ydl.extract_info(link, download=False)
                 except Exception:
                     host = (urlparse(str(link)).hostname or "").lower()
                     if str(link).lower().startswith(("http://", "https://")) and not any(x in host for x in ("youtube.com", "youtu.be", "music.youtube.com")):
@@ -485,12 +491,19 @@ class Player(mpv.MPV):
             return
         try:
             with self._ydl_lock:
+                # Playback may have populated the cache while this worker waited.
+                if link in self._prefetch_cache:
+                    return
                 info = self.ydl.extract_info(link, download=False)
+                # Commit while still holding the same yt-dlp lock.  Otherwise
+                # playback can acquire the lock in the tiny window after
+                # extract_info() returns but before this worker stores the cache,
+                # causing the next queue item to be extracted a second time.
+                if info:
+                    self._prefetch_cache[link] = info
         except Exception as e:
             print(f"Error prefetching stream: {e}")
             return
-        if info:
-            self._prefetch_cache[link] = info
 
     def get_channel_link(self, link):
         try:
