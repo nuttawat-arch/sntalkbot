@@ -25,7 +25,7 @@ class BotUtils:
     """
     A class for standalone utility functions used by the bot.
     """
-    VERSION = "5.1.5"
+    VERSION = "5.1.6"
 
     @staticmethod
     def load_messages(filename="messages.txt"):

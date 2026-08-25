@@ -1,3 +1,10 @@
+# SNTalkBot 5.1.6 — Radio Webpage / Stream Resolver
+
+- เพิ่ม fallback สำหรับ URL ที่เป็นหน้าเว็บสถานีวิทยุ ไม่ใช่ direct media URL: ค้นหา stream จาก audio/source, script/data attribute, PLS/M3U/M3U8 และ Icecast/Shoutcast
+- แก้กรณี yt-dlp คืน metadata แต่ไม่มี `url` ซึ่งเดิมแสดง `No playable URL found for the requested link.`
+- resolver จำกัด depth/จำนวน request เพื่อไม่ทำให้ playback thread ไล่เว็บไม่สิ้นสุด และไม่เปลี่ยนเส้นทาง YouTube/YouTube Music เดิม
+- fixture ของ `https://90rakthai.com/` ต้อง resolve stream ลูกทุ่งรักไทยได้; canonical commands ยังคง 124
+
 # SNTalkBot 5.1.5 — Queue First-Announcement / FIFO Prefetch
 
 - Queue Mode เพลงแรกประกาศ “เพิ่มเข้าคิว” ก่อน Now Playing โดย reserve queue item ก่อนและเริ่ม playback หลัง enqueue announcement ถูกส่งเข้าคิว TTS

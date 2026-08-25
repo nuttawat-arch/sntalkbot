@@ -1,9 +1,11 @@
 import os
+import re
 import mpv
 import tempfile
 import threading
 import time
-from urllib.parse import parse_qs, quote_plus, urlparse
+from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
+import requests
 import yt_dlp
 from bot.prefetch import LinkPrefetcher
 
@@ -419,6 +421,160 @@ class Player(mpv.MPV):
             self['volume'] = curr
             time.sleep(delay)
 
+    @staticmethod
+    def _stream_candidate_score(url):
+        """Rank likely audio/radio stream URLs discovered inside a station webpage."""
+        value = str(url or "").strip()
+        low = value.lower()
+        if not low.startswith(("http://", "https://")):
+            return -1
+        if any(low.endswith(ext) or (ext + "?") in low for ext in (".mp3", ".aac", ".aacp", ".ogg", ".opus", ".m4a", ".m3u8", ".m3u", ".pls")):
+            return 100
+        score = 0
+        if ";stream" in low:
+            score += 90
+        if any(token in low for token in ("/stream", "/listen", "/live", "icecast", "shoutcast")):
+            score += 55
+        parsed = urlparse(value)
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+        if port and port not in (80, 443):
+            score += 25
+        if any(bad in low for bad in (".jpg", ".jpeg", ".png", ".gif", ".svg", ".css", ".js", ".woff", ".ico")):
+            score -= 100
+        return score
+
+    @classmethod
+    def _extract_stream_candidates(cls, text, base_url):
+        """Extract ordered radio/audio candidates from HTML, JS, M3U or PLS text."""
+        raw = str(text or "")
+        raw = raw.replace("\\/", "/").replace("&amp;", "&")
+        candidates = []
+        seen = set()
+
+        def add(value):
+            value = str(value or "").strip().strip("'\"<>()[]{} ,;")
+            if not value or value.startswith(("data:", "javascript:", "#")):
+                return
+            absolute = urljoin(base_url, value)
+            parsed = urlparse(absolute)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                return
+            if absolute in seen:
+                return
+            seen.add(absolute)
+            score = cls._stream_candidate_score(absolute)
+            if score >= 0:
+                candidates.append((score, len(candidates), absolute))
+
+        for match in re.finditer(r"(?im)^\s*File\d+\s*=\s*(https?://[^\s]+)", raw):
+            add(match.group(1))
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.startswith(("http://", "https://")):
+                add(line)
+
+        attr_pattern = r"(?is)(?:src|href|data-src|data-url|stream|streamurl|stream_url|audio|audio_url|file|url)\s*[=:]\s*[\"']([^\"']+)[\"']"
+        for match in re.finditer(attr_pattern, raw):
+            add(match.group(1))
+        for match in re.finditer(r"https?://[^\s\"'<>\\]+", raw, flags=re.I):
+            add(match.group(0))
+
+        candidates.sort(key=lambda item: (-item[0], item[1]))
+        return [url for _score, _order, url in candidates]
+
+    def _resolve_radio_webpage(self, link, *, max_depth=2):
+        """Resolve a station homepage/playlist to a direct audio stream."""
+        start = str(link or "").strip()
+        if not start.lower().startswith(("http://", "https://")):
+            return None
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 SNTalkBot-RadioResolver/1.0",
+            "Accept": "text/html,application/xhtml+xml,audio/*,application/vnd.apple.mpegurl,audio/x-mpegurl,*/*;q=0.5",
+            "Icy-MetaData": "1",
+        }
+        visited = set()
+        queue = [(start, 0)]
+        best_title = None
+        fetches = 0
+        max_fetches = 16
+        while queue and fetches < max_fetches:
+            current, depth = queue.pop(0)
+            if current in visited or depth > max_depth:
+                continue
+            visited.add(current)
+            fetches += 1
+            try:
+                response = requests.get(current, headers=headers, timeout=(4, 6), allow_redirects=True, stream=True)
+                response.raise_for_status()
+            except Exception:
+                continue
+            final_url = str(response.url or current)
+            content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+            icy_name = str(response.headers.get("icy-name") or "").strip()
+            if icy_name and not best_title:
+                best_title = icy_name
+            if icy_name and content_type in {"", "application/octet-stream", "binary/octet-stream"}:
+                response.close()
+                return {"url": final_url, "title": best_title or final_url}
+            playlist_types = {
+                "audio/x-scpls", "application/pls+xml", "audio/x-mpegurl",
+                "audio/mpegurl", "application/x-mpegurl",
+            }
+            if (content_type.startswith("audio/") and content_type not in playlist_types) or content_type in {
+                "application/ogg", "application/vnd.apple.mpegurl",
+            }:
+                response.close()
+                return {"url": final_url, "title": best_title or final_url}
+
+            try:
+                chunks = []
+                total = 0
+                for chunk in response.iter_content(chunk_size=16384):
+                    if not chunk:
+                        continue
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total >= 512 * 1024:
+                        break
+                payload = b"".join(chunks)
+                encoding = response.encoding or "utf-8"
+            finally:
+                response.close()
+            text = payload.decode(encoding, errors="replace")
+            if not best_title:
+                title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", text)
+                if title_match:
+                    best_title = re.sub(r"\s+", " ", title_match.group(1)).strip()
+
+            candidates = self._extract_stream_candidates(text, final_url)
+            for candidate in candidates:
+                score = self._stream_candidate_score(candidate)
+                if score >= 50 and not candidate.lower().split("?", 1)[0].endswith((".pls", ".m3u")):
+                    return {"url": candidate, "title": best_title or candidate}
+            if depth < max_depth:
+                for candidate in candidates[:12]:
+                    if candidate not in visited:
+                        queue.append((candidate, depth + 1))
+        return None
+
+    def _play_resolved_radio(self, link):
+        resolved = self._resolve_radio_webpage(link)
+        if not resolved:
+            return False
+        direct = resolved.get("url")
+        if not direct:
+            return False
+        self.media_title = resolved.get("title") or str(link)
+        self.is_playing = True
+        self.play(str(direct))
+        self.current_link = str(link)
+        self.observe_property('idle-active', self._on_idle_active)
+        self.add_to_recent_history(self.media_title, self.current_link)
+        return True
+
     def play_stream(self, link):
         """Play a URL using yt-dlp, with a direct HTTP stream fallback for radio/stream URLs."""
         try:
@@ -437,13 +593,8 @@ class Player(mpv.MPV):
                 except Exception:
                     host = (urlparse(str(link)).hostname or "").lower()
                     if str(link).lower().startswith(("http://", "https://")) and not any(x in host for x in ("youtube.com", "youtu.be", "music.youtube.com")):
-                        self.media_title = str(link)
-                        self.is_playing = True
-                        self.play(str(link))
-                        self.current_link = str(link)
-                        self.observe_property('idle-active', self._on_idle_active)
-                        self.add_to_recent_history(self.media_title, self.current_link)
-                        return
+                        if self._play_resolved_radio(link):
+                            return
                     raise
             self.media_title = info.get('title') or "Unknown title"
             if self._requires_temp_download(info, link):
@@ -454,6 +605,10 @@ class Player(mpv.MPV):
             else:
                 direct_link = info.get('url')
                 if not direct_link:
+                    host = (urlparse(str(link)).hostname or "").lower()
+                    if str(link).lower().startswith(("http://", "https://")) and not any(x in host for x in ("youtube.com", "youtu.be", "music.youtube.com")):
+                        if self._play_resolved_radio(link):
+                            return
                     raise ValueError("No playable URL found for the requested link.")
                 self.is_playing = True
                 self.play(direct_link)

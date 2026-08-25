@@ -1077,6 +1077,93 @@ def validate_player_queue_and_radio_regressions():
 if validate_player_queue_and_radio_regressions():
     ok("queue FIFO/ownership, first-item queue-before-play announcement, pending prefetch, pp/select/search targeting, and normal n/b Radio are regression-tested")
 
+def validate_radio_webpage_resolver():
+    """Verify station-homepage/playlist resolution without external network access."""
+    previous_mpv = sys.modules.get("mpv")
+    previous_yt = sys.modules.get("yt_dlp")
+    root_str = str(ROOT)
+    added_root = root_str not in sys.path
+    if added_root:
+        sys.path.insert(0, root_str)
+    fake_mpv = types.ModuleType("mpv")
+    class FakeMPV:
+        pass
+    fake_mpv.MPV = FakeMPV
+    fake_yt = types.ModuleType("yt_dlp")
+    fake_yt.YoutubeDL = object
+    sys.modules["mpv"] = fake_mpv
+    sys.modules["yt_dlp"] = fake_yt
+    try:
+        spec = importlib.util.spec_from_file_location("_sntalkbot_radio_resolver_test", ROOT / "bot" / "player.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        fixture = """
+        <html><head><title>ลูกทุ่ง รักไทย FM 90 Mhz.</title></head><body>
+        <script>const streamUrl = "http://radio11.plathong.net:8896/;stream.mp3";</script>
+        <audio><source src="/fallback/live.aac"></audio>
+        </body></html>
+        """
+        found = module.Player._extract_stream_candidates(fixture, "https://90rakthai.com/")
+        assert found and found[0] == "http://radio11.plathong.net:8896/;stream.mp3", found
+        assert "https://90rakthai.com/fallback/live.aac" in found, found
+
+        class FakeResponse:
+            def __init__(self, url, content_type, body=b"", headers=None):
+                self.url = url
+                self.headers = {"content-type": content_type, **(headers or {})}
+                self.encoding = "utf-8"
+                self._body = body
+            def raise_for_status(self): return None
+            def iter_content(self, chunk_size=16384):
+                yield self._body
+            def close(self): return None
+
+        calls = []
+        def fake_get(url, **kwargs):
+            calls.append(url)
+            if url == "https://90rakthai.com/":
+                return FakeResponse(url, "text/html; charset=utf-8", fixture.encode("utf-8"))
+            raise AssertionError(f"unexpected resolver fetch {url}")
+
+        player = module.Player.__new__(module.Player)
+        old_get = module.requests.get
+        module.requests.get = fake_get
+        try:
+            resolved = player._resolve_radio_webpage("https://90rakthai.com/")
+        finally:
+            module.requests.get = old_get
+        assert resolved["url"] == "http://radio11.plathong.net:8896/;stream.mp3", resolved
+        assert "90" in resolved["title"], resolved
+        assert calls == ["https://90rakthai.com/"], calls
+
+        playlist_html = '<a href="http://example.test/listen.pls">Listen</a>'
+        pls_body = b"[playlist]\nFile1=http://stream.example.test:8000/;stream.mp3\nNumberOfEntries=1\n"
+        def fake_get_playlist(url, **kwargs):
+            if url == "https://station.example/":
+                return FakeResponse(url, "text/html", playlist_html.encode())
+            if url == "http://example.test/listen.pls":
+                return FakeResponse(url, "audio/x-scpls", pls_body)
+            raise AssertionError(url)
+        module.requests.get = fake_get_playlist
+        try:
+            resolved = player._resolve_radio_webpage("https://station.example/")
+        finally:
+            module.requests.get = old_get
+        assert resolved["url"] == "http://stream.example.test:8000/;stream.mp3", resolved
+        return True
+    except Exception as exc:
+        fail(f"radio webpage resolver regression: {exc!r}")
+        return False
+    finally:
+        if previous_mpv is None: sys.modules.pop("mpv", None)
+        else: sys.modules["mpv"] = previous_mpv
+        if previous_yt is None: sys.modules.pop("yt_dlp", None)
+        else: sys.modules["yt_dlp"] = previous_yt
+        if added_root and root_str in sys.path: sys.path.remove(root_str)
+
+if validate_radio_webpage_resolver():
+    ok("radio webpage resolver handles embedded stream URLs and PLS/M3U indirection, including the 90 Rak Thai fixture")
+
 # Prefetch/playback use one yt-dlp lock. If playback arrives while the worker is
 # still extracting the same next URL, play_stream must re-check cache *after*
 # acquiring that lock; otherwise it extracts the same song twice and creates a

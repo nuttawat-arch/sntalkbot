@@ -83,7 +83,7 @@ dr <ข้อความ>
 
 ## Player
 
-รองรับ YouTube, YouTube Music, URL/stream, playlist, channel, queue, favorites, history, seek, volume, speed, M1/M2/M3, autoplay, shuffle, cache/download และ TTS ประกาศเพลง/คิว
+รองรับ YouTube, YouTube Music, URL/stream, หน้าเว็บสถานีวิทยุที่ฝัง stream, playlist, channel, queue, favorites, history, seek, volume, speed, M1/M2/M3, autoplay, shuffle, cache/download และ TTS ประกาศเพลง/คิว
 
 ### Playlist และ playlist ต่อเนื่อง
 

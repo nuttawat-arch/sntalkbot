@@ -1,3 +1,22 @@
+# Development Report — SNTalkBot 5.1.6 (Radio Webpage Resolver / URL Compatibility)
+
+## ปัญหาที่แก้
+- URL ที่เป็นหน้าเว็บสถานีวิทยุบางแห่ง เช่น `https://90rakthai.com/` ให้ yt-dlp metadata แต่ไม่มี playable `url` จึงจบที่ `No playable URL found for the requested link.`
+- fallback เดิมเมื่อ yt-dlp โยน exception ส่งหน้า HTML ตรงให้ mpv ซึ่งไม่ใช่ stream จริงและอาจล้มแบบไม่ชัดเจน
+
+## การแก้ไข
+- เพิ่ม bounded radio webpage resolver: direct audio response, ICY/Icecast/Shoutcast, `<audio>/<source>`, stream URL ใน HTML/JavaScript/data attributes และ playlist `.pls/.m3u/.m3u8`
+- จำกัดการไล่หน้าเว็บสูงสุด 16 HTTP fetch และ depth 2 เพื่อไม่ให้สถานีที่มีลิงก์จำนวนมากทำให้คิวค้างนาน
+- ใช้ resolver ทั้งกรณี yt-dlp exception และกรณี yt-dlp คืน info แต่ไม่มี playable URL; YouTube/YouTube Music ยังคงผ่าน yt-dlp เดิม
+- regression fixture ของ 90 Rak Thai ยืนยันการค้นพบ `http://radio11.plathong.net:8896/;stream.mp3` โดยไม่ hard-code resolver ให้รองรับเฉพาะสถานีเดียว
+
+## Validation
+- canonical commands ยังคง 124
+- Queue first-announcement/FIFO prefetch/race regressions จาก 5.1.5 ยังผ่าน
+- radio resolver HTML + PLS indirection regression ผ่านโดยไม่ใช้อินเทอร์เน็ตจริง
+
+---
+
 # Development Report — SNTalkBot 5.1.5 (Queue Handoff / Prefetch Race Fix)
 
 ## ปัญหาที่แก้
