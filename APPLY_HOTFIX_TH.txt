@@ -1,11 +1,9 @@
-SNTalkBot 2026.08.23-r7.4.3 Linux TeamTalk text hotfix
+SNTalkBot 5.1.7 URL resolver patch
 
-วิธีใช้กับ repo เดิมบน Windows:
-1. แตก ZIP นี้ทับโฟลเดอร์ D:\SNTalkBot-Complete-Package\sntalkbot โดยคง path เดิม
-2. จาก SNTalkBot-Release-Automation ให้รัน publish_all.ps1 ตามคำสั่งเดิม โดยอย่าใช้ -SkipDocker
-3. หลัง publish สำเร็จ บน Linux รัน: sudo ttuhelper update
-4. ตรวจ: sudo ttuhelper logs Multipurpose
-5. ทดลองส่ง h ทั้ง Private และ Channel; /h ยังคงรองรับเพื่อ compatibility
+1. Merge โฟลเดอร์ sntalkbot ทับ repo เดิมโดยรักษา .git
+2. รัน python tools/validate_project.py
+3. Publish ผ่าน SNTalkBot-Release-Automation โดยไม่ใช้ -SkipDocker
+4. Production: Pull SNTalkBot image ล่าสุดและ Update running Player/Full bots
+5. ทดสอบ u <station webpage>, Queue Mode u <URL>, YouTube URL เดิม และ URL เว็บธรรมดาที่ไม่มีสื่อ
 
-Hotfix นี้แก้ TypeError: normalize() argument 2 must be str, not bytes
-และเพิ่ม validator จำลอง TeamTalkPy Linux bytes/str เพื่อกัน regression
+resolver ใหม่ไม่ใช้ headless browser และมี depth/fetch/time caps เพื่อไม่ให้บอตไล่เว็บไม่สิ้นสุด

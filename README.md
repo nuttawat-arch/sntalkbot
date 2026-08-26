@@ -1,6 +1,6 @@
 # SNTalkBot
 
-> **SNTalkBot 5.1.6:** role-isolated Full/Player/Manager operation, queue provenance and playlist sessions, Related Radio, bundled default YouTube cookies, a role-aware `status` dashboard, bounded Manager/Full `events`, and event-driven moderation for user/channel metadata updates.
+> **SNTalkBot 5.1.7:** role-isolated Full/Player/Manager operation, queue provenance and playlist sessions, Related Radio, bundled default YouTube cookies, a role-aware `status` dashboard, bounded Manager/Full `events`, and event-driven moderation for user/channel metadata updates.
 
 
 Registered commands are prefix-free in both private and channel/broadcast messages (for example `h`, `p song`, `ap on`). A leading `/` remains accepted only for backward compatibility. Admins can disable normal channel-text reactions with `ci off`; an enabled `filter` still moderates received text before the channel-input gate, and `cm on|off|status` independently controls Player announcements sent to the channel.
@@ -20,6 +20,8 @@ The project can run in three instance modes:
 Runtime event integration uses TeamTalk user/channel/server/file/state callbacks rather than polling. `status` is available in every role; `events [1-25]` is registered only in Manager/Full and stores a bounded in-memory audit trail without raw command arguments or secrets.
 
 For the complete Thai documentation, see [`README_TH.md`](README_TH.md).
+
+URL playback keeps yt-dlp as the first resolver. For unsupported station homepages, a bounded fallback can follow embedded players, known-provider iframes, static audio/player configuration, encoded URLs, HLS and common radio playlists without crawling ordinary site navigation. Queue-mode `u <URL>` uses the same fallback.
 
 ## Quick Docker Hub publish
 

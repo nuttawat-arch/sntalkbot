@@ -6,6 +6,7 @@ import threading
 import time
 import json
 import re
+from urllib.parse import urlparse
 
 class PlayerCog:
     """
@@ -585,12 +586,42 @@ class PlayerCog:
 
     def _enqueue_url_task(self, link, user_id):
         try:
-            with self.player._ydl_lock:
-                info = self.player.ydl.extract_info(link, download=False)
-                # Store before releasing the shared extraction lock so a first
-                # queue playback cannot slip between extraction and cache commit.
-                if info:
+            info = None
+            ydl_error = None
+            try:
+                with self.player._ydl_lock:
+                    info = self.player.ydl.extract_info(link, download=False)
+                    # Store before releasing the shared extraction lock so a first
+                    # queue playback cannot slip between extraction and cache commit.
+                    if info and info.get('url'):
+                        self.player._prefetch_cache[link] = info
+            except Exception as exc:
+                ydl_error = exc
+
+            # Queue mode must use the same broad URL fallback as immediate `u`.
+            # A station homepage often gives yt-dlp metadata but no direct URL, or
+            # generic extraction may fail completely. Resolve its embedded player
+            # dynamically and cache a synthetic playable info object for handoff.
+            if not info or not info.get('url'):
+                host = (urlparse(str(link)).hostname or "").lower()
+                is_public_web_url = str(link).lower().startswith(("http://", "https://"))
+                is_youtube = any(x in host for x in ("youtube.com", "youtu.be", "music.youtube.com"))
+                resolved = None
+                if is_public_web_url and not is_youtube:
+                    resolved = self.player._resolve_radio_webpage(link)
+                if resolved and resolved.get('url'):
+                    info = {
+                        'title': resolved.get('title') or str(link),
+                        'url': resolved['url'],
+                        'webpage_url': str(link),
+                        '_sntalkbot_resolved_stream': True,
+                    }
                     self.player._prefetch_cache[link] = info
+                elif ydl_error is not None:
+                    raise ydl_error
+                else:
+                    raise ValueError("No playable URL found for the requested link.")
+
             video = {
                 'title': info.get('title') or "Unknown title",
                 'link': link

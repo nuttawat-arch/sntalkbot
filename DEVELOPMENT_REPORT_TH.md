@@ -1,3 +1,26 @@
+# Development Report — SNTalkBot 5.1.7 (Dynamic URL / Nested Radio Resolver)
+
+## ปัญหาที่แก้
+- 5.1.6 รองรับหน้าเว็บสถานีแบบ static ได้แล้ว แต่บางเว็บวาง player ไว้ใน iframe/embed ซ้อน, ใช้ provider ที่ yt-dlp รู้จักเฉพาะ URL ภายใน, หรือซ่อน stream URL ด้วย escaping/query/base64 config
+- Queue Mode `u <URL>` เดิมยังเรียก yt-dlp ตรงใน enqueue worker จึงไม่ได้ fallback radio resolver แบบเดียวกับการเล่นทันที
+- resolver รุ่นก่อนยังตาม candidate ทั่วไปมากเกินความจำเป็นเมื่อหน้าเว็บมีลิงก์จำนวนมาก และ depth/fetch caps ไม่ครอบ overall time budget
+
+## การแก้ไข
+- รักษา yt-dlp Generic Extractor เป็น resolver แรกเสมอ; custom resolver เป็น fallback เท่านั้น
+- แยก discovery เป็น semantic targets: media/source, iframe/embed/object, stream-oriented data attributes, meta refresh, player config, playlist และ literal URL โดยไม่ crawl ordinary navigation
+- iframe/embed ที่พบจะลอง yt-dlp แบบจำกัดสูงสุด 3 จุดก่อน fetch HTML เอง ช่วย provider ที่มี dedicated extractor โดยไม่เพิ่ม headless browser dependency
+- รองรับ escaped URL (`\/`, `\uXXXX`, `\xXX`), percent-encoded query, static `atob()` base64, HLS manifest, PLS/M3U, ASX/XSPF และ direct Icecast/Shoutcast
+- จำกัด depth=3, fetch=20, payload ต่อหน้า 768 KiB และ overall budget 18 วินาที; HLS manifest ถูกคืนเป็น URL เดิม ไม่ไล่ media segment ทีละชิ้น
+- Queue Mode ใช้ fallback เดียวกันและบันทึก resolved URL ลง prefetch cache ก่อน handoff
+
+## Validation
+- canonical commands = 124; command/help parity เดิมไม่เปลี่ยน
+- fixture 90 Rak Thai ยัง resolve `http://radio11.plathong.net:8896/;stream.mp3` โดยไม่มี station hard-code
+- nested iframe -> escaped HLS, iframe known-provider -> yt-dlp, encoded query, static base64, PLS และ ordinary non-radio page safe-failure ผ่าน
+- queue announcement/FIFO/prefetch race, moderation, realtime API, Linux LF และ TeamTalk admin verifier regressions ยังผ่าน
+
+---
+
 # Development Report — SNTalkBot 5.1.6 (Radio Webpage Resolver / URL Compatibility)
 
 ## ปัญหาที่แก้

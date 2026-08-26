@@ -1150,6 +1150,109 @@ def validate_radio_webpage_resolver():
         finally:
             module.requests.get = old_get
         assert resolved["url"] == "http://stream.example.test:8000/;stream.mp3", resolved
+
+        # Nested iframe + JavaScript escaped HLS URL. This is the common case
+        # that a shallow regex-only resolver misses when the station homepage
+        # delegates playback to a separate embedded player.
+        root_html = '<html><iframe src="/embed/radio-player.html"></iframe><a href="/about">About</a></html>'
+        iframe_html = r'<script>window.player = {stream_url: "https:\/\/cdn.example.test\/live\/station.m3u8"};</script>'
+        nested_calls = []
+        def fake_get_nested(url, **kwargs):
+            nested_calls.append(url)
+            if url == "https://nested.example/":
+                return FakeResponse(url, "text/html", root_html.encode())
+            if url == "https://nested.example/embed/radio-player.html":
+                return FakeResponse(url, "text/html", iframe_html.encode())
+            raise AssertionError(url)
+        module.requests.get = fake_get_nested
+        try:
+            resolved = player._resolve_radio_webpage("https://nested.example/")
+        finally:
+            module.requests.get = old_get
+        assert resolved["url"] == "https://cdn.example.test/live/station.m3u8", resolved
+        assert nested_calls == [
+            "https://nested.example/",
+            "https://nested.example/embed/radio-player.html",
+        ], nested_calls
+
+        # A homepage can be unsupported while its iframe belongs to a provider
+        # that yt-dlp knows. The fallback should retry yt-dlp on a bounded number
+        # of embed URLs before manually crawling the iframe HTML.
+        known_root = '<iframe src="https://known-provider.example/embed/abc"></iframe>'
+        known_calls = []
+        def fake_get_known(url, **kwargs):
+            known_calls.append(url)
+            if url == "https://known-root.example/":
+                return FakeResponse(url, "text/html", known_root.encode())
+            raise AssertionError(f"known provider iframe should resolve through yt-dlp first: {url}")
+        class FakeYDLInstance:
+            def extract_info(self, url, download=False):
+                assert url == "https://known-provider.example/embed/abc", url
+                return {"title": "Known embedded station", "url": "https://cdn.known.example/live.m3u8"}
+        player.ydl = FakeYDLInstance()
+        player._ydl_lock = module.threading.Lock()
+        module.requests.get = fake_get_known
+        try:
+            resolved = player._resolve_radio_webpage("https://known-root.example/")
+        finally:
+            module.requests.get = old_get
+        assert resolved["url"] == "https://cdn.known.example/live.m3u8", resolved
+        assert known_calls == ["https://known-root.example/"], known_calls
+
+        # HLS endpoints do not always end in .m3u8. Once the response is an
+        # EXT-X manifest, keep the manifest URL instead of selecting a segment.
+        hls_body = b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\nsegment001.ts\n"
+        def fake_get_hls(url, **kwargs):
+            if url == "https://hls.example/live":
+                return FakeResponse(url, "application/x-mpegurl", hls_body)
+            raise AssertionError(url)
+        module.requests.get = fake_get_hls
+        try:
+            resolved = player._resolve_radio_webpage("https://hls.example/live")
+        finally:
+            module.requests.get = old_get
+        assert resolved["url"] == "https://hls.example/live", resolved
+
+        # Percent-encoded player query can expose the real stream without
+        # executing the embedded player.
+        query_html = (
+            '<iframe src="/player?stream=https%3A%2F%2Fstream.example.test%3A9000%2F%3Bstream.mp3"></iframe>'
+        )
+        targets = module.Player._extract_radio_targets(query_html, "https://encoded.example/")
+        assert any(t["url"] == "https://stream.example.test:9000/;stream.mp3" for t in targets), targets
+
+        # Static atob() player configs are decoded without executing JavaScript.
+        import base64 as _base64
+        encoded = _base64.b64encode(b"https://audio.example.test/live.aac").decode()
+        atob_html = f'<script>const x = atob("{encoded}");</script>'
+        found = module.Player._extract_stream_candidates(atob_html, "https://base64.example/")
+        assert "https://audio.example.test/live.aac" in found, found
+
+        asx = '<asx><entry><ref href="/radio/live.mp3" /></entry></asx>'
+        xspf = '<playlist><trackList><track><location>https://xspf.example/live.ogg</location></track></trackList></playlist>'
+        assert "https://legacy.example/radio/live.mp3" in module.Player._extract_stream_candidates(asx, "https://legacy.example/listen.asx")
+        assert "https://xspf.example/live.ogg" in module.Player._extract_stream_candidates(xspf, "https://legacy.example/listen.xspf")
+
+        # A normal website (representative of `u https://nuttawat.ddnsfree.com`)
+        # must fail safely instead of crawling navigation or treating assets as audio.
+        plain_html = (
+            '<html><head><title>Normal site</title><script src="/static/app.js"></script></head>'
+            '<body><a href="/about">About</a><a href="/contact">Contact</a>'
+            '<img src="/logo.png"></body></html>'
+        )
+        plain_calls = []
+        def fake_get_plain(url, **kwargs):
+            plain_calls.append(url)
+            if url == "https://nuttawat.example/":
+                return FakeResponse(url, "text/html", plain_html.encode())
+            raise AssertionError(f"normal site resolver must not crawl: {url}")
+        module.requests.get = fake_get_plain
+        try:
+            resolved = player._resolve_radio_webpage("https://nuttawat.example/", max_seconds=2)
+        finally:
+            module.requests.get = old_get
+        assert resolved is None, resolved
+        assert plain_calls == ["https://nuttawat.example/"], plain_calls
         return True
     except Exception as exc:
         fail(f"radio webpage resolver regression: {exc!r}")
@@ -1162,7 +1265,37 @@ def validate_radio_webpage_resolver():
         if added_root and root_str in sys.path: sys.path.remove(root_str)
 
 if validate_radio_webpage_resolver():
-    ok("radio webpage resolver handles embedded stream URLs and PLS/M3U indirection, including the 90 Rak Thai fixture")
+    ok("radio webpage resolver handles nested iframe/provider players, escaped/encoded URLs, PLS/M3U/HLS/ASX/XSPF, safe non-radio failure, and the 90 Rak Thai fixture")
+
+# yt-dlp Generic Extractor must remain the first URL resolver. The bounded
+# webpage crawler is a fallback only, so normal YouTube/media behavior is not
+# replaced by custom HTML parsing.
+_player_core_for_url = (ROOT / "bot" / "player.py").read_text(encoding="utf-8")
+_play_url_start = _player_core_for_url.find("    def play_stream(self, link):")
+_play_url_end = _player_core_for_url.find("    def fade_out_and_stop", _play_url_start)
+_play_url_block = _player_core_for_url[_play_url_start:_play_url_end]
+if not (
+    "self.ydl.extract_info(link, download=False)" in _play_url_block
+    and "self._play_resolved_radio(link)" in _play_url_block
+    and _play_url_block.find("self.ydl.extract_info(link, download=False)")
+        < _play_url_block.find("self._play_resolved_radio(link)")
+):
+    fail("URL resolver order changed: yt-dlp must run before radio webpage fallback")
+else:
+    ok("URL playback keeps yt-dlp Generic Extractor first and bounded webpage resolution as fallback")
+
+_queue_module_core = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
+_queue_url_start = _queue_module_core.find("    def _enqueue_url_task(self, link, user_id):")
+_queue_url_end = _queue_module_core.find("    def handle_append_playlist_command", _queue_url_start)
+_queue_url_block = _queue_module_core[_queue_url_start:_queue_url_end]
+if not (
+    "self.player._resolve_radio_webpage(link)" in _queue_url_block
+    and "_sntalkbot_resolved_stream" in _queue_url_block
+    and "self.player._prefetch_cache[link] = info" in _queue_url_block
+):
+    fail("queue-mode URL command does not share the webpage/stream fallback")
+else:
+    ok("queue-mode u <URL> shares the same dynamic webpage/stream resolver and caches the resolved handoff")
 
 # Prefetch/playback use one yt-dlp lock. If playback arrives while the worker is
 # still extracting the same next URL, play_stream must re-check cache *after*

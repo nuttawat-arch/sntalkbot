@@ -1,3 +1,12 @@
+# SNTalkBot 5.1.7 — Dynamic URL / Nested Radio Resolver
+
+- คง `yt-dlp` Generic Extractor เป็นด่านแรกสำหรับ `u <URL>`; fallback ใหม่ทำงานเฉพาะเมื่อ yt-dlp ไม่มี playable URL หรือ extract ไม่สำเร็จ
+- เพิ่มการตาม `<iframe>/<embed>` แบบ bounded และลอง player URL ที่พบผ่าน yt-dlp ซ้ำได้สูงสุด 3 จุด เพื่อรองรับกรณีหน้าเว็บหลักไม่รู้จักแต่ provider ใน iframe มี extractor
+- static fallback รองรับ `<audio>/<source>`, data attributes, JSON/JavaScript player config, URL ที่ escape/percent-encode, `atob()` base64 แบบไม่ execute JavaScript, Icecast/Shoutcast, HLS, PLS/M3U และ legacy ASX/XSPF
+- เพิ่ม overall time budget, depth/fetch caps และไม่ไล่ ordinary navigation links จึงไม่เปลี่ยนเว็บทั่วไปให้เป็น crawler; URL ที่ไม่ใช่สื่อจะ fail แบบปลอดภัย
+- Queue Mode `u <URL>` ใช้ resolver เดียวกันและ cache synthetic playable info ก่อนเริ่มคิว จึงรองรับหน้าเว็บสถานีเช่นเดียวกับการเล่นทันที
+- regression ครอบคลุม 90 Rak Thai fixture, nested iframe/HLS, encoded/base64 config, PLS indirection, ordinary website safe-failure และลำดับ yt-dlp-first; canonical commands ยังคง 124
+
 # SNTalkBot 5.1.6 — Radio Webpage / Stream Resolver
 
 - เพิ่ม fallback สำหรับ URL ที่เป็นหน้าเว็บสถานีวิทยุ ไม่ใช่ direct media URL: ค้นหา stream จาก audio/source, script/data attribute, PLS/M3U/M3U8 และ Icecast/Shoutcast

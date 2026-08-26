@@ -1,10 +1,14 @@
 import os
 import re
+import base64
+import binascii
+import html
 import mpv
 import tempfile
 import threading
 import time
-from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 import requests
 import yt_dlp
 from bot.prefetch import LinkPrefetcher
@@ -428,12 +432,18 @@ class Player(mpv.MPV):
         low = value.lower()
         if not low.startswith(("http://", "https://")):
             return -1
-        if any(low.endswith(ext) or (ext + "?") in low for ext in (".mp3", ".aac", ".aacp", ".ogg", ".opus", ".m4a", ".m3u8", ".m3u", ".pls")):
+        if any(low.endswith(ext) or (ext + "?") in low for ext in (
+            ".mp3", ".aac", ".aacp", ".ogg", ".opus", ".m4a", ".wav",
+            ".flac", ".m3u8", ".m3u", ".pls", ".asx", ".xspf",
+        )):
             return 100
         score = 0
         if ";stream" in low:
             score += 90
-        if any(token in low for token in ("/stream", "/listen", "/live", "icecast", "shoutcast")):
+        if any(token in low for token in (
+            "/stream", "/listen", "/live", "icecast", "shoutcast",
+            "radioplayer", "radio-player", "player/", "player?",
+        )):
             score += 55
         parsed = urlparse(value)
         try:
@@ -442,92 +452,257 @@ class Player(mpv.MPV):
             port = None
         if port and port not in (80, 443):
             score += 25
-        if any(bad in low for bad in (".jpg", ".jpeg", ".png", ".gif", ".svg", ".css", ".js", ".woff", ".ico")):
+        if any(bad in low for bad in (
+            ".jpg", ".jpeg", ".png", ".gif", ".svg", ".css", ".js",
+            ".woff", ".woff2", ".ttf", ".ico", ".webp", ".pdf",
+        )):
             score -= 100
         return score
 
+    @staticmethod
+    def _decode_embedded_text(value):
+        """Decode common HTML/JavaScript URL escaping without executing page code."""
+        text = html.unescape(str(value or ""))
+        text = text.replace("\\/", "/")
+        def repl_u(match):
+            try:
+                return chr(int(match.group(1), 16))
+            except Exception:
+                return match.group(0)
+        text = re.sub(r"\\u([0-9a-fA-F]{4})", repl_u, text)
+        text = re.sub(r"\\x([0-9a-fA-F]{2})", repl_u, text)
+        return text
+
+    @staticmethod
+    def _looks_like_direct_stream(url):
+        value = str(url or "").lower().split("#", 1)[0]
+        path = value.split("?", 1)[0]
+        if ";stream" in value:
+            return True
+        return path.endswith((
+            ".mp3", ".aac", ".aacp", ".ogg", ".opus", ".m4a", ".wav",
+            ".flac", ".m3u8",
+        ))
+
+    @staticmethod
+    def _looks_like_playlist(url):
+        path = str(url or "").lower().split("?", 1)[0].split("#", 1)[0]
+        return path.endswith((".pls", ".m3u", ".asx", ".xspf"))
+
     @classmethod
-    def _extract_stream_candidates(cls, text, base_url):
-        """Extract ordered radio/audio candidates from HTML, JS, M3U or PLS text."""
-        raw = str(text or "")
-        raw = raw.replace("\\/", "/").replace("&amp;", "&")
-        candidates = []
+    def _extract_radio_targets(cls, text, base_url):
+        """Return prioritized, bounded targets discovered in HTML/JS/JSON/playlists.
+
+        The resolver does not execute JavaScript.  It only recognizes common static
+        player configuration forms, media/embed attributes, playlist files and
+        escaped/encoded HTTP URLs.  Ordinary navigation links are deliberately not
+        crawled, which keeps a non-radio website from turning into a site spider.
+        """
+        raw = cls._decode_embedded_text(text)
+        targets = []
         seen = set()
 
-        def add(value):
-            value = str(value or "").strip().strip("'\"<>()[]{} ,;")
+        def add(value, *, bonus=0, follow=False, direct=False, kind="text"):
+            value = cls._decode_embedded_text(value).strip().strip("'\"<>()[]{} ,")
             if not value or value.startswith(("data:", "javascript:", "#")):
                 return
+            if value.startswith("//"):
+                scheme = urlparse(base_url).scheme or "https"
+                value = f"{scheme}:{value}"
             absolute = urljoin(base_url, value)
             parsed = urlparse(absolute)
             if parsed.scheme not in ("http", "https") or not parsed.netloc:
                 return
             if absolute in seen:
                 return
-            seen.add(absolute)
             score = cls._stream_candidate_score(absolute)
-            if score >= 0:
-                candidates.append((score, len(candidates), absolute))
+            if score < 0:
+                return
+            seen.add(absolute)
+            direct = bool(direct or cls._looks_like_direct_stream(absolute))
+            follow = bool(follow or direct or cls._looks_like_playlist(absolute) or score >= 20)
+            targets.append({
+                "url": absolute,
+                "score": score + int(bonus),
+                "order": len(targets),
+                "follow": follow,
+                "direct": direct,
+                "kind": kind,
+            })
 
-        for match in re.finditer(r"(?im)^\s*File\d+\s*=\s*(https?://[^\s]+)", raw):
-            add(match.group(1))
+            # Player pages often put the real stream in a percent-encoded query
+            # parameter (for example ?stream=https%3A%2F%2Fhost%2Flive).
+            for values in parse_qs(parsed.query, keep_blank_values=False).values():
+                for nested in values[:4]:
+                    nested = unquote(str(nested or ""))
+                    if nested.startswith(("http://", "https://", "//")):
+                        add(nested, bonus=70, follow=True, kind="query")
+
+        class DiscoveryParser(HTMLParser):
+            def handle_starttag(self, tag, attrs):
+                tag = str(tag or "").lower()
+                data = {str(k or "").lower(): (v or "") for k, v in attrs if k}
+                if tag in {"audio", "video", "source"}:
+                    for key in ("src", "data-src", "data-url", "data-stream", "data-stream-url"):
+                        if data.get(key):
+                            add(data[key], bonus=140, follow=True, direct=True, kind="media")
+                elif tag in {"iframe", "embed"}:
+                    for key in ("src", "data-src", "data-url"):
+                        if data.get(key):
+                            add(data[key], bonus=100, follow=True, kind="embed")
+                elif tag == "object" and data.get("data"):
+                    add(data["data"], bonus=90, follow=True, kind="embed")
+                elif tag == "a" and data.get("href"):
+                    # Follow only stream/player-looking links, never ordinary site nav.
+                    href = data["href"]
+                    absolute = urljoin(base_url, cls._decode_embedded_text(href))
+                    if cls._stream_candidate_score(absolute) >= 20 or cls._looks_like_playlist(absolute):
+                        add(href, bonus=25, follow=True, kind="link")
+                elif tag == "meta":
+                    equiv = data.get("http-equiv", "").lower()
+                    content = data.get("content", "")
+                    if equiv == "refresh" and content:
+                        match = re.search(r"(?i)url\s*=\s*['\"]?([^'\";]+)", content)
+                        if match:
+                            add(match.group(1), bonus=80, follow=True, kind="meta-refresh")
+
+                # Generic data-* player attributes are common in WordPress/radio widgets.
+                for key, value in data.items():
+                    if not value:
+                        continue
+                    if any(token in key for token in ("stream", "audio", "radio", "source", "media")):
+                        add(value, bonus=100, follow=True, kind="data-attr")
+
+        if "<" in raw and ">" in raw:
+            try:
+                parser = DiscoveryParser(convert_charrefs=True)
+                parser.feed(raw)
+            except Exception:
+                pass
+
+        # PLS / M3U files.
+        for match in re.finditer(r"(?im)^\s*File\d+\s*=\s*([^\s]+)", raw):
+            add(match.group(1), bonus=150, follow=True, direct=True, kind="playlist")
+        is_m3u_text = raw.lstrip().upper().startswith("#EXTM3U")
         for line in raw.splitlines():
             line = line.strip()
-            if line.startswith(("http://", "https://")):
-                add(line)
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith(("http://", "https://", "//")):
+                add(line, bonus=120, follow=True, direct=True, kind="playlist")
+            elif is_m3u_text and "=" not in line and len(line) <= 2048:
+                add(line, bonus=120, follow=True, direct=True, kind="playlist")
 
-        attr_pattern = r"(?is)(?:src|href|data-src|data-url|stream|streamurl|stream_url|audio|audio_url|file|url)\s*[=:]\s*[\"']([^\"']+)[\"']"
-        for match in re.finditer(attr_pattern, raw):
-            add(match.group(1))
+        # Legacy ASX/XSPF radio playlists. Absolute URLs would also be found by
+        # the literal scanner; these patterns additionally preserve relative refs.
+        for match in re.finditer(r"""(?is)<ref[^>]+href\s*=\s*["']([^"']+)["']""", raw):
+            add(match.group(1), bonus=140, follow=True, direct=True, kind="playlist")
+        for match in re.finditer(r"(?is)<location[^>]*>\s*([^<]+)\s*</location>", raw):
+            add(match.group(1), bonus=140, follow=True, direct=True, kind="playlist")
+
+        # Common JS/JSON player configuration keys.
+        keyed = (
+            r"(?is)(?:stream(?:_?url)?|audio(?:_?url)?|radio(?:_?url)?|source|src|file|url|playlist)"
+            r"\s*[=:]\s*[\"']([^\"']+)[\"']"
+        )
+        for match in re.finditer(keyed, raw):
+            add(match.group(1), bonus=170, follow=True, kind="config")
+
+        # A small, safe atob() recognizer handles static base64 player configs.
+        for match in re.finditer(r"(?is)atob\(\s*['\"]([A-Za-z0-9+/=_-]{12,4096})['\"]\s*\)", raw):
+            token = match.group(1)
+            try:
+                padded = token + ("=" * (-len(token) % 4))
+                decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8", errors="replace")
+            except (ValueError, UnicodeError, binascii.Error):
+                continue
+            for url_match in re.finditer(r"https?://[^\s\"'<>\\]+", decoded, flags=re.I):
+                add(url_match.group(0), bonus=100, follow=True, kind="base64-config")
+
+        # Last resort: literal HTTP URLs in inline scripts/JSON.  They are ranked
+        # but only followed when the URL itself looks stream/player related.
         for match in re.finditer(r"https?://[^\s\"'<>\\]+", raw, flags=re.I):
-            add(match.group(0))
+            add(match.group(0), bonus=0, kind="literal")
 
-        candidates.sort(key=lambda item: (-item[0], item[1]))
-        return [url for _score, _order, url in candidates]
+        targets.sort(key=lambda item: (-item["score"], item["order"]))
+        return targets
 
-    def _resolve_radio_webpage(self, link, *, max_depth=2):
-        """Resolve a station homepage/playlist to a direct audio stream."""
+    @classmethod
+    def _extract_stream_candidates(cls, text, base_url):
+        """Compatibility helper returning ordered URLs only."""
+        return [item["url"] for item in cls._extract_radio_targets(text, base_url)]
+
+    def _resolve_radio_webpage(self, link, *, max_depth=3, max_fetches=20, max_seconds=18.0):
+        """Resolve a station homepage/embed/playlist to a direct audio stream.
+
+        yt-dlp remains the first resolver in play_stream().  This bounded crawler
+        is only a fallback for ordinary HTTP(S) pages that yt-dlp cannot turn into
+        a playable URL.  It never executes JavaScript and never follows ordinary
+        website navigation links.
+        """
         start = str(link or "").strip()
         if not start.lower().startswith(("http://", "https://")):
             return None
         headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 SNTalkBot-RadioResolver/1.0",
-            "Accept": "text/html,application/xhtml+xml,audio/*,application/vnd.apple.mpegurl,audio/x-mpegurl,*/*;q=0.5",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 SNTalkBot-RadioResolver/2.0",
+            "Accept": "text/html,application/xhtml+xml,application/json,audio/*,application/vnd.apple.mpegurl,audio/x-mpegurl,*/*;q=0.5",
             "Icy-MetaData": "1",
         }
         visited = set()
-        queue = [(start, 0)]
+        queue = [(start, 0, None)]
         best_title = None
         fetches = 0
-        max_fetches = 16
-        while queue and fetches < max_fetches:
-            current, depth = queue.pop(0)
+        embedded_ydl_attempts = 0
+        max_embedded_ydl_attempts = 3
+        deadline = time.monotonic() + max(float(max_seconds), 1.0)
+        playlist_types = {
+            "audio/x-scpls", "application/pls+xml", "audio/x-mpegurl",
+            "audio/mpegurl", "application/x-mpegurl",
+        }
+
+        while queue and fetches < max_fetches and time.monotonic() < deadline:
+            current, depth, referer = queue.pop(0)
             if current in visited or depth > max_depth:
                 continue
             visited.add(current)
             fetches += 1
+            request_headers = dict(headers)
+            if referer:
+                request_headers["Referer"] = referer
+            remaining = max(deadline - time.monotonic(), 0.5)
+            read_timeout = min(8.0, max(1.0, remaining))
             try:
-                response = requests.get(current, headers=headers, timeout=(4, 6), allow_redirects=True, stream=True)
+                response = requests.get(
+                    current,
+                    headers=request_headers,
+                    timeout=(4, read_timeout),
+                    allow_redirects=True,
+                    stream=True,
+                )
                 response.raise_for_status()
             except Exception:
                 continue
+
             final_url = str(response.url or current)
             content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
             icy_name = str(response.headers.get("icy-name") or "").strip()
             if icy_name and not best_title:
                 best_title = icy_name
-            if icy_name and content_type in {"", "application/octet-stream", "binary/octet-stream"}:
+
+            # Strong URL/ICY signals let us avoid reading an endless stream body
+            # when a radio server uses a generic content-type.
+            if (
+                (icy_name and content_type in {"", "application/octet-stream", "binary/octet-stream"})
+                or (self._looks_like_direct_stream(final_url) and content_type not in {"text/html", "application/xhtml+xml", "application/json"})
+            ):
                 response.close()
-                return {"url": final_url, "title": best_title or final_url}
-            playlist_types = {
-                "audio/x-scpls", "application/pls+xml", "audio/x-mpegurl",
-                "audio/mpegurl", "application/x-mpegurl",
-            }
+                return {"url": final_url, "title": best_title or final_url, "referer": referer}
+
             if (content_type.startswith("audio/") and content_type not in playlist_types) or content_type in {
                 "application/ogg", "application/vnd.apple.mpegurl",
             }:
                 response.close()
-                return {"url": final_url, "title": best_title or final_url}
+                return {"url": final_url, "title": best_title or final_url, "referer": referer}
 
             try:
                 chunks = []
@@ -537,27 +712,75 @@ class Player(mpv.MPV):
                         continue
                     chunks.append(chunk)
                     total += len(chunk)
-                    if total >= 512 * 1024:
+                    if total >= 768 * 1024 or time.monotonic() >= deadline:
                         break
                 payload = b"".join(chunks)
                 encoding = response.encoding or "utf-8"
             finally:
                 response.close()
+
             text = payload.decode(encoding, errors="replace")
             if not best_title:
                 title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", text)
                 if title_match:
-                    best_title = re.sub(r"\s+", " ", title_match.group(1)).strip()
+                    best_title = re.sub(r"\s+", " ", html.unescape(title_match.group(1))).strip()
 
-            candidates = self._extract_stream_candidates(text, final_url)
-            for candidate in candidates:
-                score = self._stream_candidate_score(candidate)
-                if score >= 50 and not candidate.lower().split("?", 1)[0].endswith((".pls", ".m3u")):
-                    return {"url": candidate, "title": best_title or candidate}
+            # An HLS manifest is itself the stable playable URL. Do not mistake
+            # individual media segments inside it for separate station streams.
+            upper_text = text.lstrip().upper()
+            if upper_text.startswith("#EXTM3U") and "#EXT-X-" in upper_text[:65536]:
+                return {"url": final_url, "title": best_title or final_url, "referer": referer}
+
+            targets = self._extract_radio_targets(text, final_url)
+            for target in targets:
+                candidate = target["url"]
+                if target["direct"] and not self._looks_like_playlist(candidate):
+                    return {
+                        "url": candidate,
+                        "title": best_title or candidate,
+                        "referer": final_url,
+                    }
+
+            # If the page delegates playback to an iframe/embed, give yt-dlp a
+            # few bounded chances on those player URLs. The homepage Generic
+            # Extractor may be unsupported while the embedded provider has a
+            # dedicated yt-dlp extractor. Never do this for ordinary navigation.
+            if (
+                embedded_ydl_attempts < max_embedded_ydl_attempts
+                and hasattr(self, "ydl")
+                and hasattr(self, "_ydl_lock")
+                and time.monotonic() < deadline
+            ):
+                for target in targets:
+                    if target.get("kind") != "embed":
+                        continue
+                    embedded_ydl_attempts += 1
+                    candidate = target["url"]
+                    try:
+                        with self._ydl_lock:
+                            embedded_info = self.ydl.extract_info(candidate, download=False)
+                        embedded_url = (embedded_info or {}).get("url")
+                        if embedded_url:
+                            return {
+                                "url": str(embedded_url),
+                                "title": (embedded_info or {}).get("title") or best_title or candidate,
+                                "referer": final_url,
+                            }
+                    except Exception:
+                        pass
+                    if embedded_ydl_attempts >= max_embedded_ydl_attempts or time.monotonic() >= deadline:
+                        break
+
             if depth < max_depth:
-                for candidate in candidates[:12]:
-                    if candidate not in visited:
-                        queue.append((candidate, depth + 1))
+                followed = 0
+                for target in targets:
+                    candidate = target["url"]
+                    if not target["follow"] or candidate in visited:
+                        continue
+                    queue.append((candidate, depth + 1, final_url))
+                    followed += 1
+                    if followed >= 10:
+                        break
         return None
 
     def _play_resolved_radio(self, link):

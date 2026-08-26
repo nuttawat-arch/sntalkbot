@@ -1,4 +1,4 @@
-> **SNTalkBot 5.1.6:** All-in-One รุ่นปัจจุบัน — แยก Full/Player/Manager ชัดเจน, Queue/playlist/Related Radio, default YouTube cookies, dashboard `status`, recent `events` และ moderation ที่ตามทันการแก้ nickname/status/channel แบบ event-driven
+> **SNTalkBot 5.1.7:** All-in-One รุ่นปัจจุบัน — แยก Full/Player/Manager ชัดเจน, Queue/playlist/Related Radio, default YouTube cookies, dashboard `status`, recent `events` และ moderation ที่ตามทันการแก้ nickname/status/channel แบบ event-driven
 
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 
@@ -19,7 +19,7 @@
 - ชื่อคำสั่งที่ลงทะเบียนจริงไม่ซ้ำกัน และระบบจะหยุดทันทีด้วย error หากนักพัฒนาเพิ่มชื่อซ้ำในอนาคต
 - `help` ส่งหัวข้อก่อนหนึ่งข้อความ แล้วส่งคำสั่งพร้อมคำอธิบายทีละคำสั่ง หนึ่งคำสั่งต่อหนึ่ง TeamTalk private message
 - Player ใช้ `yt-dlp` โดยตรง รองรับ YouTube, YouTube Music, URL/stream, playlistchannel, queue, favorites, autoplay, history, seek, volumespeed, M1/M2/M3, audio filters และ download
-- URL วิทยุรองรับทั้ง direct stream และหน้าเว็บสถานี: หาก `yt-dlp` ไม่มี playable URL ระบบจะค้นหา stream จริงจาก `<audio>/<source>`, script/data attributes, `.pls/.m3u/.m3u8` และ Icecast/Shoutcast แบบ bounded fallback ก่อนส่งให้ mpv
+- URL/วิทยุใช้ `yt-dlp` ก่อนเสมอ แล้วจึง fallback แบบ bounded เมื่อไม่มี playable URL: รองรับ `<audio>/<source>`, iframe/embed, player config ใน HTML/JSON/JavaScript, URL ที่ escape/percent-encode/base64, `.pls/.m3u/.m3u8/.asx/.xspf`, HLS และ Icecast/Shoutcast; ไม่ crawl ลิงก์เว็บทั่วไป
 - `pp <playlist_link>` ต่อ playlist หลายชุดโดยไม่ตัดเพลงปัจจุบัน; Queue Mode เพิ่มทั้ง playlist ต่อท้าย FIFO และบอกช่วงคิว
 - Player/Full มี default YouTube cookies จากโปรเจกต์เดิม bootstrap เป็น `/app/data/cookies.txt` ครั้งแรก; ถ้าผู้ใช้แทน cookie เองใน persistent data ระบบจะเก็บไฟล์นั้นไว้และไม่ overwrite ตอนอัปเดต
 - มี worker prefetch ลิงก์ล่วงหน้าเพื่อไม่ให้การ extract ของ yt-dlp ไปบล็อก TeamTalk event thread
