@@ -2161,7 +2161,7 @@ class PlayerCog:
         else: self.player.is_stereo_echo = not self.player.is_stereo_echo
         self.player.update_filters()
         self.bot.config_handler.update_playback_settings({"is_stereo_echo": self.player.is_stereo_echo})
-        self._send_playback_message(self._("Stereo 3D 2 (Echo): {state}").format(state="ON" if self.player.is_stereo_echo else "OFF"))
+        self._send_playback_message(self._("Stereo 3D 2 (Extra Stereo): {state}").format(state="ON" if self.player.is_stereo_echo else "OFF"))
 
     def handle_bass_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID): return

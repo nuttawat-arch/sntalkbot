@@ -2565,6 +2565,23 @@ elif "ttstr(self.bot.get_idle_status_message())" not in general_status_source:
 else:
     ok("role status is restored consistently after login/playback/common bot-identity changes")
 
+# Music effects must use parameters accepted by current FFmpeg/libavfilter.
+_audio_source = (ROOT / "bot" / "player.py").read_text(encoding="utf-8")
+if "drytx=" in _audio_source or "dryrx=" in _audio_source:
+    fail("legacy invalid stereowiden drytx/dryrx parameters remain")
+elif "stereowiden=delay=12:feedback=0.25:crossfeed=0.20:drymix=0.85" not in _audio_source:
+    fail("current stereowiden filter preset is missing")
+elif "extrastereo=m=1.8:c=1" not in _audio_source:
+    fail("current Extra Stereo filter preset is missing")
+elif "bass=g=6:f=90:w=0.7" not in _audio_source:
+    fail("current bass/lowshelf filter preset is missing")
+elif 'af_val = "scaletempo2"' in _audio_source:
+    fail("legacy always-on scaletempo2 chain remains; mpv should manage pitch correction for speed changes")
+elif 'aformat=channel_layouts=stereo' not in _audio_source:
+    fail("stereo effects do not normalize input layout before stereo-only libavfilter effects")
+else:
+    ok("3d/3d2/bass use current FFmpeg libavfilter parameters and mpv-managed speed pitch correction")
+
 # Production builds must be reproducible: direct dependencies are pinned, not
 # floating across a future major release without a code/validator review.
 _expected_requirements = {

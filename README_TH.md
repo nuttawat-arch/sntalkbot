@@ -1,4 +1,4 @@
-> **SNTalkBot 5.1.15:** All-in-One รุ่นปัจจุบัน — แยก Full/Player/Manager ชัดเจน, Queue/playlist/Related Radio, default YouTube cookies, dashboard `status`, recent `events` และ moderation ที่ตามทันการแก้ nickname/status/channel แบบ event-driven
+> **SNTalkBot 5.1.17:** All-in-One รุ่นปัจจุบัน — แยก Full/Player/Manager ชัดเจน, Queue/playlist/Related Radio, default YouTube cookies, dashboard `status`, recent `events` และ moderation ที่ตามทันการแก้ nickname/status/channel แบบ event-driven
 
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 
@@ -12,6 +12,7 @@
 
 ## จุดสำคัญของรุ่นนี้
 
+- `3d`, `3d2` และ `bass` ใช้ FFmpeg/libavfilter ปัจจุบันผ่าน mpv; `3d2` คือ Extra Stereo ไม่ใช่ Echo และคำสั่งเดิมยังใช้ได้เพื่อ compatibility
 - Private และ Channel/Broadcast ใช้คำสั่งสั้นแบบไม่มี `/` เหมือนกัน; `ic` ควบคุมการดักทุก Channel, `ci` ควบคุมการตอบสนองปกติต่อ Channel, `filter` เปิด/ปิด word moderation ทุกภาษา และ `cm` ควบคุมข้อความ Player ที่ประกาศออก Channel
 - `status` เป็นแดชบอร์ดคำสั่งเดียวที่ปรับข้อมูลตามประเภทบอต: Player เน้น playback/queue/radio/cookies, Manager เน้น moderation/input/server controls และ Full รวมทั้งสองฝ่าย
 - Manager/Full มี `events [1-25]` สำหรับดูเหตุการณ์ TeamTalk ล่าสุดจาก event จริง เช่น user/channel/server/file/media/video/desktop และ audit ชื่อคำสั่งผู้ดูแล โดยไม่เก็บ argument หรือ secret

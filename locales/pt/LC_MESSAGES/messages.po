@@ -2040,7 +2040,7 @@ msgid "Stereo 3D 1: {state}"
 msgstr ""
 
 #: bot/modules/player.py:1697
-msgid "Stereo 3D 2 (Echo): {state}"
+msgid "Stereo 3D 2 (Extra Stereo): {state}"
 msgstr ""
 
 #: bot/help.py:65
@@ -2268,7 +2268,7 @@ msgid "Toggle the player fade effect."
 msgstr ""
 
 #: bot/help.py:94
-msgid "Toggle the second stereo/echo audio filter."
+msgid "Toggle the second Extra Stereo depth filter."
 msgstr ""
 
 #: bot/config_handler.py:102

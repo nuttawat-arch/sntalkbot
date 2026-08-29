@@ -1,4 +1,4 @@
-# Development Report — SNTalkBot 5.1.15
+# Development Report — SNTalkBot 5.1.17
 
 - Current matrix: Common 21 / Player 51 / Server Manager 49 / Full 121; aliases 52.
 - Playback lifecycle hardened across every media path with stale terminal-event protection and one retry before skip.

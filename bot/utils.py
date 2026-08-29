@@ -25,7 +25,7 @@ class BotUtils:
     """
     A class for standalone utility functions used by the bot.
     """
-    VERSION = "5.1.15"
+    VERSION = "5.1.17"
 
     @staticmethod
     def load_blacklist(filename="blacklist.txt"):

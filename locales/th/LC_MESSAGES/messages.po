@@ -2088,8 +2088,8 @@ msgid "Stereo 3D 1: {state}"
 msgstr "Stereo 3D แบบ 1: {state}"
 
 #: bot/modules/player.py:1774
-msgid "Stereo 3D 2 (Echo): {state}"
-msgstr "Stereo 3D แบบ 2 (Echo): {state}"
+msgid "Stereo 3D 2 (Extra Stereo): {state}"
+msgstr "Stereo 3D แบบ 2 (Extra Stereo): {state}"
 
 #: bot/help.py:65
 msgid "Stop playback only; keep queue, playlist, and current item."
@@ -2320,8 +2320,8 @@ msgid "Toggle the player fade effect."
 msgstr "เปิดหรือปิดเอฟเฟกต์เฟดของเครื่องเล่น"
 
 #: bot/help.py:94
-msgid "Toggle the second stereo/echo audio filter."
-msgstr "เปิดหรือปิดฟิลเตอร์สเตอริโอ/เอคโคชุดที่ 2"
+msgid "Toggle the second Extra Stereo depth filter."
+msgstr "เปิดหรือปิดฟิลเตอร์ Extra Stereo เพิ่มมิติสเตอริโอชุดที่ 2"
 
 #: bot/config_handler.py:102
 msgid "Token for your Telegram bot to enable notifications. Leave blank to disable."

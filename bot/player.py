@@ -431,15 +431,35 @@ class Player(mpv.MPV):
         self.radio_candidates = []
 
     def update_filters(self):
-        af_val = "scaletempo2"
+        """Apply optional music effects through the current FFmpeg/libavfilter bridge.
+
+        mpv already inserts scaletempo2 automatically when speed differs from
+        1.0 and audio-pitch-correction is enabled, so the effect chain should
+        contain only effects explicitly requested by the user.  The stereo
+        filters require stereo input; aformat performs the conversion once
+        before either stereo effect.
+        """
+        graph = []
+        if self.is_stereo_wide or self.is_stereo_echo:
+            graph.append("aformat=channel_layouts=stereo")
         if self.is_stereo_wide:
-            af_val += ",lavfi=[stereowiden=delay=4:crossfeed=0.3:drytx=0.8:dryrx=0.8,crystalizer=i=1.5,acompressor=threshold=-12dB:ratio=3:attack=5:release=50:makeup=2.5]"
+            # FFmpeg stereowiden: delay, feedback, crossfeed and drymix are the
+            # supported current parameters.  Keep values moderate so widening
+            # is audible without the old over-processed crystalizer/compressor
+            # chain.
+            graph.append("stereowiden=delay=12:feedback=0.25:crossfeed=0.20:drymix=0.85")
         if self.is_stereo_echo:
-            af_val += ",lavfi=[extrastereo=m=2.5]"
+            # Historical config key kept for compatibility.  The effect itself
+            # is Extra Stereo (channel-difference expansion), not an echo.
+            graph.append("extrastereo=m=1.8:c=1")
         if self.is_bass_boosted:
-            af_val += ",bass=g=15:f=50"
-        self.af = af_val
-        
+            # Use FFmpeg's current bass/lowshelf filter through lavfi.  A
+            # conservative +6 dB around 90 Hz gives useful bass lift while
+            # reducing clipping risk compared with the legacy +15 dB preset.
+            graph.append("bass=g=6:f=90:w=0.7")
+
+        self.af = f"lavfi=[{','.join(graph)}]" if graph else ""
+
         # Apply quality and buffer settings
         try:
             b_val = float(self.audio_buffer)

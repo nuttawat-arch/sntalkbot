@@ -124,7 +124,7 @@ class HelpCommands:
             'm2': self._('Set M2 Auto/Next mode: automatically play the next item.'),
             'm3': self._('Set M3 Repeat mode: repeat the current non-queue track.'),
             '3d on|off': self._('Toggle the first stereo widening/3D audio filter.'),
-            '3d2 on|off': self._('Toggle the second stereo/echo audio filter.'),
+            '3d2 on|off': self._('Toggle the second Extra Stereo depth filter.'),
             'bass on|off': self._('Toggle bass boost for music playback.'),
             'sp <speed>': self._('Set music playback speed.'),
             'f': self._('Toggle the player fade effect.'),
