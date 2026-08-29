@@ -19,19 +19,22 @@ COMMON_ALIASES = {
     "ad": "admins",
     "sr": "search",
     "ci": "channelinput",
+    "rs": "restart",
+    "sd": "shutdown",
+    "rep": "report",
+    "cl": "clearlog",
+    "lg": "language",
+    "vt": "voicetx",
+    "bc": "blockcmd",
+    "sc": "save",          # TTMediaBot legacy, bot-local in every profile
 }
 
 MANAGER_ALIASES = {
     "ic": "intercept",
+    "gb": "globalbroadcast",
     "w": "weather",
-    "rep": "report",
-    "rs": "restart",
-    "sd": "shutdown",
     "wb": "welcomebroadcast",
     "ma": "moveall",
-    "cl": "clearlog",
-    "lg": "language",
-    "vt": "voicetx",
     "prv": "private",
     "msgs": "messages",
     "wa": "whoall",
@@ -39,7 +42,6 @@ MANAGER_ALIASES = {
     "ac": "account",
     "acs": "accounts",
     "j": "join",
-    "bc": "blockcmd",
     "nn": "noname",
     "nt": "notify",
     "unt": "unotify",
@@ -49,7 +51,6 @@ MANAGER_ALIASES = {
     "tm": "ttsmode",
     "gv": "get_voices",
     "vc": "voice",
-    "sc": "save",          # TTMediaBot legacy, Manager/Full only
 }
 
 PLAYER_ALIASES = {
@@ -75,15 +76,16 @@ PLAYER_ALIASES = {
 # Keep this exactly equal to the union of the three role maps above.
 COMMAND_ALIASES = {
     "h": "help", "mi": "myinfo", "a": "about",
-    "cid": "gcid", "ad": "admins", "sr": "search", "ci": "channelinput",
-    "ic": "intercept", "w": "weather", "rep": "report", "rs": "restart",
-    "sd": "shutdown", "wb": "welcomebroadcast", "ma": "moveall",
-    "cl": "clearlog", "lg": "language", "vt": "voicetx", "prv": "private",
-    "msgs": "messages", "wa": "whoall", "us": "users", "ac": "account",
-    "acs": "accounts", "j": "join", "bc": "blockcmd",
+    "cid": "gcid", "ad": "admins", "sr": "search", "ci": "channelinput", "rs": "restart",
+    "sd": "shutdown", "rep": "report", "cl": "clearlog", "lg": "language",
+    "vt": "voicetx", "bc": "blockcmd", "sc": "save",
+    "ic": "intercept", "gb": "globalbroadcast", "w": "weather",
+    "wb": "welcomebroadcast", "ma": "moveall",
+    "wa": "whoall", "us": "users", "ac": "account",
+    "acs": "accounts", "j": "join",
     "nn": "noname", "nt": "notify", "unt": "unotify", "ft": "filter",
     "wc": "welcome", "rbt": "reboot", "tm": "ttsmode", "gv": "get_voices",
-    "vc": "voice", "sc": "save",
+    "vc": "voice", "prv": "private", "msgs": "messages",
     "ap": "autoplay", "ch": "channel", "pf": "playfav", "df": "delfav",
     "c": "select", "fl": "favorites", "sh": "shuffle",
     "cz": "csize", "gl": "l", "sb": "-", "sf": "+",

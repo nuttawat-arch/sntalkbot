@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import os
 import time
-from bot.utils import BotUtils as utils
+from bot.utils import BotUtils as utils, RestartSignal, ShutdownSignal
 
 
 
@@ -47,12 +47,134 @@ class GeneralCog:
         command_handler.register_command('dr', self.handle_direct_report_command)
         command_handler.register_command('gcid', self.handle_gcid_command)
         command_handler.register_command('status', self.handle_status_command)
+        command_handler.register_command('restart', self.handle_restart_command, admin_only=True)
+        command_handler.register_command('shutdown', self.handle_shutdown_command, admin_only=True)
         command_handler.register_command('channelinput', self.handle_channel_input_command, admin_only=True)
+        command_handler.register_command('lock', self.handle_lock_command, admin_only=True)
+        command_handler.register_command('blockcmd', self.handle_block_command, admin_only=True)
+        command_handler.register_command('language', self.handle_language_command, admin_only=True)
+        command_handler.register_command('clearlog', self.handle_clear_log_command, admin_only=True)
+        command_handler.register_command('cn', self.handle_change_name_command, admin_only=True)
+        command_handler.register_command('cs', self.handle_change_status, admin_only=True)
+        command_handler.register_command('cg', self.handle_change_gender, admin_only=True)
+        command_handler.register_command('save', self.save_bot_config, admin_only=True)
+        command_handler.register_command('voicetx', self.handle_voice_tx_command, admin_only=True)
+        command_handler.register_command('report', self.handle_report_command)
         if self.bot.server_management_enabled:
             command_handler.register_command('weather', self.handle_weather_command)
             command_handler.register_command('events', self.handle_events_command, admin_only=True)
-            command_handler.register_command('report', self.handle_report_command)
             command_handler.register_command('intercept', self.handle_intercept_command, admin_only=True)
+
+    def handle_restart_command(self, textmessage, *args):
+        """Restart this bot instance through the main launcher loop in every role."""
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Restarting..."))
+        raise RestartSignal()
+
+    def handle_block_command(self, textmessage, *args):
+        if not args:
+            value = ", ".join(x for x in sorted(self.bot.blocked_commands)) or self._("The list is empty")
+            self.bot.privateMessage(textmessage.nFromUserID, value)
+            return
+        token = args[0].strip().lower()
+        action = token[:1]
+        requested_name = token[1:].lstrip("/") if action in "+-" else token.lstrip("/")
+        name = self.bot.command_handler.resolve_name(requested_name)
+        if name not in self.bot.command_handler.commands:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Unknown command."))
+            return
+        if action == "+":
+            self.bot.blocked_commands.add(name)
+            message = self._("Command blocked: {command}").format(command=name)
+        elif action == "-":
+            self.bot.blocked_commands.discard(name)
+            message = self._("Command unblocked: {command}").format(command=name)
+        else:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: blockcmd +command or blockcmd -command"))
+            return
+        self.bot.bot_config["blocked_commands"] = sorted(self.bot.blocked_commands)
+        self.bot.config_handler.update_bot_settings({"blocked_commands": sorted(self.bot.blocked_commands)})
+        self.bot.privateMessage(textmessage.nFromUserID, message)
+
+    def handle_language_command(self, textmessage, *args):
+        if not args:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Current language: {language}").format(language=self.bot.bot_config.get("language", "en")))
+            return
+        language = args[0].strip()
+        locale_dir = os.path.join("locales", language, "LC_MESSAGES")
+        if not os.path.isdir(locale_dir):
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Language folder not found: {language}").format(language=language))
+            return
+        self.bot.bot_config["language"] = language
+        self.bot.config_handler.update_bot_settings({"language": language})
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Language saved as {language}. Use restart to reload all modules.").format(language=language))
+
+    def handle_voice_tx_command(self, textmessage, *args):
+        if not args or args[0].lower() not in ("on", "off"):
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: voicetx on|off"))
+            return
+        enabled = args[0].lower() == "on"
+        ok = self.bot.enableVoiceTransmission(enabled)
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Voice transmission: {state}").format(state="ON" if enabled else "OFF"))
+
+    def handle_change_name_command(self, textmessage, *args):
+        if not args:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: cn <new_name>"))
+            return
+        new_name = " ".join(args)
+        self.bot.bot_config["nickname"] = new_name
+        self.bot.doChangeNickname(ttstr(new_name))
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Bot name changed to '{new_name}'.").format(new_name=new_name))
+
+    def handle_change_status(self, textmessage, *args):
+        if not args:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: cs <new_status>"))
+            return
+        status_message = " ".join(args)
+        self.bot.bot_config["status_message"] = status_message
+        self.bot.doChangeStatus(
+            self.bot.bot_config['gender'],
+            ttstr(self.bot.get_idle_status_message()),
+        )
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Success"))
+
+    def handle_change_gender(self, textmessage, *args):
+        if not args:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: cg <m|f|n>"))
+            return
+        gender_mode = args[0].lower()
+        gender_map = {'m': 0, 'f': 256, 'n': 4096}
+        if gender_mode in gender_map:
+            self.bot.bot_config["gender"] = gender_map[gender_mode]
+            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self.bot.get_idle_status_message()))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Success"))
+        else:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Available modes are: m for male, f for female, n for neutral."))
+
+    def save_bot_config(self, textmessage, *args):
+        self.bot.config_handler.save_bot_config(self.bot.bot_config)
+        self.bot.config_handler.save_playback_config(self.bot.playback_config)
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Bot configuration saved."))
+
+    def handle_shutdown_command(self, textmessage, *args):
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Shutting down..."))
+        raise ShutdownSignal()
+
+    def handle_lock_command(self, textmessage, *args):
+        self.bot.commands_locked = not self.bot.commands_locked
+        if self.bot.commands_locked:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Commands locked. Only admins can use commands."))
+        else:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Commands unlocked. Commands available to everyone."))
+
+    def handle_clear_log_command(self, textmessage, *args):
+        data_dir = os.getenv("TTUTIL_DATA_DIR", ".")
+        log_file = os.path.join(data_dir, "sntalkbot.log")
+        if os.path.exists(log_file):
+            with open(log_file, "w", encoding="utf-8"):
+                pass
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Log cleared."))
+        else:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Log file not found."))
 
     @staticmethod
     def _format_uptime(seconds):
@@ -315,14 +437,15 @@ class GeneralCog:
             )
             return
         self.bot.privateMessage(sender_id, self._("Available Commands:"))
-        # Deliberately one TeamTalk message per command to avoid truncation.
-        for line in self.bot.help_commands.registered_lines(self.bot.command_handler):
-            self.bot.privateMessage(sender_id, line)
+        # Send a category heading followed by all related commands. One command
+        # stays one TeamTalk message to avoid truncation and keep screen-reader
+        # navigation predictable.
+        for category, lines in self.bot.help_commands.registered_groups(self.bot.command_handler):
+            self.bot.privateMessage(sender_id, f"=== {category} ===")
+            for line in lines:
+                self.bot.privateMessage(sender_id, line)
 
     def handle_help_command(self, textmessage, *args):
-        self._send_help(textmessage.nFromUserID, args[0] if args else None)
-
-    def handle_help_list_command(self, textmessage, *args):
         self._send_help(textmessage.nFromUserID, args[0] if args else None)
 
     def handle_report_command(self, textmessage, *args):

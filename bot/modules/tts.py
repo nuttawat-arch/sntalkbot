@@ -267,7 +267,6 @@ class TTSCog:
         command_handler.register_command('get_voices', self.list_voices_thread)
         command_handler.register_command('ttsmode', self.handle_ttsmode_command)
         command_handler.register_command('tts', self.handle_tts_command, admin_only=True)
-        command_handler.register_command('rb', self.handle_rb_command, admin_only=True)
 
     def on_user_parted(self, user):
         """Cleans up TTS state when a user leaves."""
@@ -379,8 +378,8 @@ class TTSCog:
         if user and user.nChannelID == self.bot.getMyChannelID():
             self.bot.startStreamingMediaFileToChannel(ttstr(filepath), streamer)
 
-    def speak_random_broadcast(self, text_to_speak, filename="random_broadcast.mp3"):
-        """Speak random broadcasts using Google standard gTTS or Edge TTS."""
+    def speak_global_broadcast(self, text_to_speak, filename="global_broadcast.mp3"):
+        """Speak a central Global Broadcast using Google standard gTTS or Edge TTS."""
         if self.speech_synthesis_in_progress:
             return 0
         if self._get_tts_mode() == "google":
@@ -470,7 +469,7 @@ class TTSCog:
         try:
             rate_value = int(args[0])
             if -100 <= rate_value <= 100:
-                self._get_user_settings(user_id, create=True)["rate"] = rate_value
+                self._set_user_setting(user_id, "rate", rate_value)
                 self.bot.privateMessage(user_id, self._("Rate set to {rate}.").format(rate=rate_value))
             else:
                 self.bot.privateMessage(user_id, self._("Invalid rate value. Rate should be between -100 and 100."))
@@ -488,7 +487,7 @@ class TTSCog:
         try:
             pitch_value = int(args[0])
             if -100 <= pitch_value <= 100:
-                self._get_user_settings(user_id, create=True)["pitch"] = pitch_value
+                self._set_user_setting(user_id, "pitch", pitch_value)
                 self.bot.privateMessage(user_id, self._("Pitch set to {pitch}.").format(pitch=pitch_value))
             else:
                 self.bot.privateMessage(user_id, self._("Invalid pitch value. Pitch should be between -100 and 100."))
@@ -506,7 +505,7 @@ class TTSCog:
         try:
             volume_value = float(args[0])
             if 0.1 <= volume_value <= 1.0:
-                self._get_user_settings(user_id, create=True)["volume"] = volume_value
+                self._set_user_setting(user_id, "volume", volume_value)
                 self.bot.privateMessage(user_id, self._("Volume set to {volume}.").format(volume=volume_value))
             else:
                 self.bot.privateMessage(user_id, self._("Invalid volume value. Volume should be between 0.1 and 1.0."))
@@ -527,10 +526,10 @@ class TTSCog:
             if not lang:
                 self.bot.privateMessage(user_id, self._("Unknown Google standard TTS language: {lang}. Use get_voices to list languages.").format(lang=value))
                 return
-            self._get_user_settings(user_id, create=True)["google_lang"] = lang
+            self._set_user_setting(user_id, "google_lang", lang)
             self.bot.privateMessage(user_id, self._("Google standard TTS language set to {lang}.").format(lang=lang))
         else:
-            self._get_user_settings(user_id, create=True)["voice"] = value
+            self._set_user_setting(user_id, "voice", value)
             self.bot.privateMessage(user_id, self._("Voice set to {voice_name}.").format(voice_name=value))
 
     def handle_speed_command(self, textmessage, *args):
@@ -544,7 +543,7 @@ class TTSCog:
         try:
             speed_value = float(args[0])
             if 0.25 <= speed_value <= 4.0:
-                self._get_user_settings(user_id, create=True)["speed"] = speed_value
+                self._set_user_setting(user_id, "speed", speed_value)
                 self.bot.privateMessage(user_id, self._("Speed set to {value}.").format(value=speed_value))
             else:
                 self.bot.privateMessage(user_id, self._("Invalid speed value. Use a number between 0.25 and 4.0."))
@@ -573,26 +572,10 @@ class TTSCog:
         state = self._("enabled") if self.bot.tts_enabled else self._("disabled")
         self.bot.privateMessage(user_id, self._("TTS has been {state}.").format(state=state))
 
-    def handle_rb_command(self, textmessage, *args):
-        user_id = textmessage.nFromUserID
-        if not args:
-            state = self._("enabled") if self.bot.tts_config.get("random_broadcast_enabled", False) else self._("disabled")
-            self.bot.privateMessage(user_id, self._("Random broadcasts are currently {state}.").format(state=state))
-            return
-        value = args[0].strip().lower()
-        if value not in ("on", "off"):
-            self.bot.privateMessage(user_id, self._("Invalid value. Use rb on or rb off."))
-            return
-        enabled = value == "on"
-        self.bot.tts_config["random_broadcast_enabled"] = enabled
-        self.bot.config_handler.save_tts_config(self.bot.tts_config)
-        state = self._("enabled") if enabled else self._("disabled")
-        self.bot.privateMessage(user_id, self._("Random broadcasts have been {state}.").format(state=state))
-
     def handle_ld_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
         current_setting = self._get_user_settings(user_id).get("lang_detection", False)
-        self._get_user_settings(user_id, create=True)["lang_detection"] = not current_setting
+        self._set_user_setting(user_id, "lang_detection", not current_setting)
         
         if not current_setting:
             self.bot.privateMessage(user_id, self._("Language detection is now ON."))
@@ -807,6 +790,20 @@ class TTSCog:
 
     def _get_user_settings(self, user_id, create=False):
         settings_key = self._get_user_settings_key(user_id)
+        if settings_key not in self.user_speech_settings:
+            if settings_key.startswith("user:"):
+                self.user_speech_settings[settings_key] = self.bot.state_store.get_preferences(settings_key)
+            elif create:
+                self.user_speech_settings[settings_key] = {}
         if create:
             return self.user_speech_settings.setdefault(settings_key, {})
         return self.user_speech_settings.get(settings_key, {})
+
+    def _set_user_setting(self, user_id, key, value):
+        settings_key = self._get_user_settings_key(user_id)
+        settings = self._get_user_settings(user_id, create=True)
+        settings[key] = value
+        # Registered TeamTalk usernames are stable identities; guest/nickname/ID
+        # settings stay session-local to avoid one guest inheriting another's profile.
+        if settings_key.startswith("user:"):
+            self.bot.state_store.set_preference(settings_key, key, value)

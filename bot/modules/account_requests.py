@@ -1,32 +1,25 @@
-import csv
-import os
 import re
 import secrets
-import smtplib
-import ssl
 import time
-from email.message import EmailMessage
 import logging
 from TeamTalk5 import TextMsgType, UserType, ttstr
 from bot.utils import BotUtils as utils
 
 
 class AccountRequestCog:
+    """Self-service TeamTalk account creation verified through Telegram.
+
+    Password and OTP exist only in this process while the request is active. The
+    persistent registry stores only identity/deduplication metadata in SQLite.
+    """
+
     def __init__(self, bot):
         self.bot = bot
         self._ = bot._
         self.active_requests = {}
         self.intent_keywords = [
-            "account",
-            "accounts",
-            "signup",
-            "sign up",
-            "register",
-            "registration",
-            "create account",
-            "new account",
-            "حساب",
-            "تسجيل",
+            "account", "accounts", "signup", "sign up", "register",
+            "registration", "create account", "new account", "حساب", "تسجيل",
         ]
 
     def register(self, command_handler):
@@ -34,12 +27,12 @@ class AccountRequestCog:
         command_handler.register_command("accounts", self.handle_accounts_command, admin_only=True)
 
     def on_user_parted(self, user):
+        # Sensitive workflow material deliberately does not persist.
         self.active_requests.pop(user.nUserID, None)
 
     def handle_message(self, textmessage):
         if textmessage.nMsgType != TextMsgType.MSGTYPE_USER:
             return False
-
         user_id = textmessage.nFromUserID
         message_text = utils.ensure_text(ttstr(textmessage.szMessage)).strip()
         if not message_text:
@@ -50,18 +43,12 @@ class AccountRequestCog:
                 return True
             self._handle_flow_message(user_id, message_text)
             return True
-
-        # Do not interpret a known command such as ``accounts on`` as
-        # free-form account-request intent.  CommandHandler will process it next.
         if self.bot.command_handler.is_command_candidate(message_text, textmessage):
             return False
-
         if self._is_account_intent(message_text):
-            if not self._ensure_service_available(user_id):
-                return True
-            self._start_flow(user_id)
+            if self._ensure_service_available(user_id):
+                self._start_flow(user_id)
             return True
-
         return False
 
     def handle_account_command(self, textmessage, *args):
@@ -79,57 +66,35 @@ class AccountRequestCog:
     def handle_accounts_command(self, textmessage, *args):
         user_id = textmessage.nFromUserID
         user = self.bot.getUser(user_id)
-        if not args:
+        value = args[0].strip().lower() if args else "status"
+        if value == "status":
             state = self._("enabled") if self.bot.account_request_config.get("enabled", False) else self._("disabled")
             message = self._("Account requests are currently {state}.").format(state=state)
-            self.bot.privateMessage(user_id, message)
-            if user and user.nChannelID == self.bot.getMyChannelID():
-                self.bot.send_message(message)
-            return
-        value = args[0].strip().lower()
-        if value not in ("on", "off"):
-            message = self._("Invalid value. Use accounts on or accounts off.")
-            self.bot.privateMessage(user_id, message)
-            if user and user.nChannelID == self.bot.getMyChannelID():
-                self.bot.send_message(message)
-            return
-        enabled = value == "on"
-        self.bot.account_request_config["enabled"] = enabled
-        if hasattr(self.bot.config_handler, "save_account_request_config"):
-            self.bot.config_handler.save_account_request_config(self.bot.account_request_config)
-        state = self._("enabled") if enabled else self._("disabled")
-        message = self._("Account requests have been {state}.").format(state=state)
+        elif value in ("on", "off"):
+            enabled = value == "on"
+            self.bot.account_request_config["enabled"] = enabled
+            self.bot.config_handler.save_account_request_config({"enabled": enabled})
+            state = self._("enabled") if enabled else self._("disabled")
+            message = self._("Account requests have been {state}.").format(state=state)
+        else:
+            message = self._("Invalid value. Use accounts on, accounts off, or accounts status.")
         self.bot.privateMessage(user_id, message)
         if user and user.nChannelID == self.bot.getMyChannelID():
             self.bot.send_message(message)
 
     def _is_account_intent(self, message_text):
         lowered = message_text.lower()
-        if not any(keyword in lowered for keyword in self.intent_keywords):
-            return False
-
-        return True
+        return any(keyword in lowered for keyword in self.intent_keywords)
 
     def _ensure_service_available(self, user_id):
         if not self.bot.account_request_config.get("enabled", False):
             self.bot.privateMessage(user_id, self.bot._("Account requests are disabled by the administrator."))
             return False
-        if not self._smtp_is_configured():
-            self.bot.account_request_config["enabled"] = False
+        if not self.bot.telegram_config.get("telegram_bot_token"):
             self.bot.privateMessage(
                 user_id,
-                self.bot._("Account requests are unavailable because email (SMTP) is not configured."),
+                self.bot._("Account requests are unavailable because Telegram is not configured."),
             )
-            return False
-        return True
-
-    def _smtp_is_configured(self):
-        smtp_host = self.bot.account_request_config.get("smtp_host", "").strip()
-        smtp_username = self.bot.account_request_config.get("smtp_username", "").strip()
-        smtp_from = self.bot.account_request_config.get("smtp_from", "").strip()
-        if not smtp_host:
-            return False
-        if not (smtp_from or smtp_username):
             return False
         return True
 
@@ -138,9 +103,11 @@ class AccountRequestCog:
         if not user:
             return
         ip_address = ttstr(user.szIPAddress)
-        reason = self._check_existing_account(ip_address=ip_address)
-        if reason:
-            self.bot.privateMessage(user_id, reason)
+        if self.bot.state_store.account_exists(ip_address=ip_address):
+            self.bot.privateMessage(
+                user_id,
+                self.bot._("Only one account is allowed per person. Our records show an account for your IP."),
+            )
             return
         self.active_requests[user_id] = {
             "stage": "username",
@@ -156,13 +123,12 @@ class AccountRequestCog:
         if not state:
             return
         stage = state["stage"]
-
         if stage == "username":
             self._handle_username(user_id, state, message_text)
         elif stage == "password":
             self._handle_password(user_id, state, message_text)
-        elif stage == "email":
-            self._handle_email(user_id, state, message_text)
+        elif stage == "telegram":
+            self._handle_telegram(user_id, state, message_text)
         elif stage == "otp":
             self._handle_otp(user_id, state, message_text)
 
@@ -174,6 +140,10 @@ class AccountRequestCog:
                 self.bot._("Invalid username. Use 3-32 characters: letters, numbers, dot, underscore, or dash."),
             )
             return
+        if self.bot.state_store.account_exists(username=username):
+            self.bot.privateMessage(user_id, self.bot._("This username is already registered."))
+            self.active_requests.pop(user_id, None)
+            return
         state["data"]["username"] = username
         state["stage"] = "password"
         self.bot.privateMessage(user_id, self.bot._("Great. Now send a password for the account."))
@@ -183,59 +153,65 @@ class AccountRequestCog:
         if len(password) < 6:
             self.bot.privateMessage(user_id, self.bot._("Password is too short. Please send at least 6 characters."))
             return
+        # Never write the TeamTalk password to disk/database. It is needed only
+        # once for doNewUserAccount() after OTP verification.
         state["data"]["password"] = password
-        state["stage"] = "email"
-        self.bot.privateMessage(user_id, self.bot._("Thanks. Now send your email address."))
+        state["stage"] = "telegram"
+        self.bot.privateMessage(
+            user_id,
+            self.bot._("Now send the Telegram chat ID that should receive your verification code."),
+        )
 
-    def _handle_email(self, user_id, state, message_text):
-        email = message_text.strip()
-        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-            self.bot.privateMessage(user_id, self.bot._("Invalid email address. Please send a valid email."))
+    def _handle_telegram(self, user_id, state, message_text):
+        chat_id = message_text.strip()
+        if not re.match(r"^-?\d+$", chat_id):
+            self.bot.privateMessage(user_id, self.bot._("Invalid Telegram chat ID. Please send the numeric chat ID."))
             return
-
-        username = state["data"].get("username")
-        ip_address = state.get("ip_address")
-        reason = self._check_existing_account(username=username, email=email, ip_address=ip_address)
-        if reason:
-            self.bot.privateMessage(user_id, reason)
+        if self.bot.state_store.account_exists(telegram_chat_id=chat_id):
+            self.bot.privateMessage(user_id, self.bot._("This Telegram account is already linked to an account request."))
             self.active_requests.pop(user_id, None)
             return
-
-        state["data"]["email"] = email
+        state["data"]["telegram_chat_id"] = chat_id
         success, error_message = self._send_otp(state)
         if not success:
             self.bot.privateMessage(
                 user_id,
-                error_message or self.bot._("Failed to send verification email. Please try again later."),
+                error_message or self.bot._("Failed to send the Telegram verification code. Please try again later."),
             )
             self.active_requests.pop(user_id, None)
             return
         state["stage"] = "otp"
-        self.bot.privateMessage(user_id, self.bot._("A verification code has been sent. Please enter the 6-digit code."))
+        self.bot.privateMessage(user_id, self.bot._("A verification code was sent to Telegram. Please enter the 6-digit code."))
+
+    def _send_otp(self, state):
+        code = f"{secrets.randbelow(1000000):06d}"
+        expiry = int(self.bot.account_request_config.get("otp_expiry_seconds", 600) or 600)
+        state["otp"] = code
+        state["otp_expires_at"] = time.time() + max(60, expiry)
+        chat_id = state["data"].get("telegram_chat_id")
+        username = state["data"].get("username", "")
+        minutes = max(1, expiry // 60)
+        message = self.bot._(
+            "TeamTalk account verification for {username}\nCode: {code}\nExpires in {minutes} minute(s)."
+        ).format(username=username, code=code, minutes=minutes)
+        if not utils.send_telegram_notification(
+            self.bot.telegram_config.get("telegram_bot_token"), chat_id, message
+        ):
+            state.pop("otp", None)
+            state.pop("otp_expires_at", None)
+            return False, self.bot._("Telegram could not deliver the verification code. Make sure you have started the bot and try again.")
+        return True, None
 
     def _handle_otp(self, user_id, state, message_text):
         code = message_text.strip()
-        max_attempts = self.bot.account_request_config.get("max_attempts", 3)
-        if not re.match(r"^\d{6}$", code):
+        max_attempts = int(self.bot.account_request_config.get("max_attempts", 3) or 3)
+        if not re.match(r"^\d{6}$", code) or code != state.get("otp") or time.time() > state.get("otp_expires_at", 0):
             state["attempts"] += 1
             if state["attempts"] >= max_attempts:
                 self.bot.privateMessage(user_id, self.bot._("Too many invalid attempts. Please start again."))
                 self.active_requests.pop(user_id, None)
-                return
-            self.bot.privateMessage(user_id, self.bot._("Invalid code. Please enter the 6-digit code."))
-            return
-
-        verified, error_message = self._verify_otp(state, code)
-        if not verified:
-            state["attempts"] += 1
-            if state["attempts"] >= max_attempts:
-                self.bot.privateMessage(user_id, self.bot._("Too many invalid attempts. Please start again."))
-                self.active_requests.pop(user_id, None)
-                return
-            self.bot.privateMessage(
-                user_id,
-                error_message or self.bot._("Invalid code. Please enter the 6-digit code."),
-            )
+            else:
+                self.bot.privateMessage(user_id, self.bot._("Invalid or expired code. Please enter the active 6-digit code."))
             return
 
         success, error_message = self._register_account(state)
@@ -243,88 +219,9 @@ class AccountRequestCog:
             self.bot.privateMessage(user_id, self.bot._("Success! Your account has been created."))
             self._notify_admins(state)
         else:
-            self.bot.privateMessage(
-                user_id,
-                error_message or self.bot._("Account creation failed. Please try again later."),
-            )
+            self.bot.privateMessage(user_id, error_message or self.bot._("Account creation failed. Please try again later."))
+        # Drop password + OTP immediately with the whole request object.
         self.active_requests.pop(user_id, None)
-
-    def _send_otp(self, state):
-        smtp_host = self.bot.account_request_config.get("smtp_host", "").strip()
-        smtp_port = self.bot.account_request_config.get("smtp_port", 587)
-        smtp_username = self.bot.account_request_config.get("smtp_username", "").strip()
-        smtp_password = self.bot.account_request_config.get("smtp_password", "")
-        smtp_use_tls = self.bot.account_request_config.get("smtp_use_tls", True)
-        smtp_use_ssl = self.bot.account_request_config.get("smtp_use_ssl", False)
-        smtp_tls_verify = self.bot.account_request_config.get("smtp_tls_verify", True)
-        smtp_from = self.bot.account_request_config.get("smtp_from", "").strip() or smtp_username
-        smtp_from_name = self.bot.account_request_config.get("smtp_from_name", "").strip()
-        smtp_subject = self.bot.account_request_config.get("smtp_subject", "").strip() or self.bot._("Your verification code")
-        smtp_timeout = self.bot.account_request_config.get("smtp_timeout", 15)
-        otp_expiry_seconds = self.bot.account_request_config.get("otp_expiry_seconds", 600)
-
-        if not smtp_host or not smtp_from:
-            return False, self.bot._("Email service is not configured.")
-
-        email = state["data"]["email"]
-        code = f"{secrets.randbelow(1000000):06d}"
-        expires_at = time.time() + otp_expiry_seconds
-        state["otp"] = code
-        state["otp_expires_at"] = expires_at
-
-        message = self._build_verification_email(
-            to_address=email,
-            from_address=smtp_from,
-            from_name=smtp_from_name,
-            subject=smtp_subject,
-            code=code,
-            expires_in_seconds=otp_expiry_seconds,
-            username=state["data"].get("username", "there"),
-        )
-        try:
-            if smtp_tls_verify:
-                context = ssl.create_default_context()
-            else:
-                context = ssl._create_unverified_context()
-            if smtp_use_ssl:
-                with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=smtp_timeout, context=context) as smtp:
-                    if smtp_username:
-                        smtp.login(smtp_username, smtp_password)
-                    smtp.send_message(message)
-            else:
-                with smtplib.SMTP(smtp_host, smtp_port, timeout=smtp_timeout) as smtp:
-                    smtp.ehlo()
-                    if smtp_use_tls:
-                        smtp.starttls(context=context)
-                        smtp.ehlo()
-                    if smtp_username:
-                        smtp.login(smtp_username, smtp_password)
-                    smtp.send_message(message)
-        except Exception as exc:
-            logging.error(
-                "SMTP send failed: host=%s port=%s user=%s from=%s to=%s tls=%s ssl=%s error=%s",
-                smtp_host,
-                smtp_port,
-                smtp_username or "",
-                smtp_from,
-                email,
-                smtp_use_tls,
-                smtp_use_ssl,
-                exc,
-            )
-            return False, self.bot._("Failed to send verification email. Please try again later.")
-        return True, None
-
-    def _verify_otp(self, state, code):
-        expected = state.get("otp")
-        expires_at = state.get("otp_expires_at", 0)
-        if not expected:
-            return False, self.bot._("No verification code is active. Please start again.")
-        if time.time() > expires_at:
-            return False, self.bot._("Verification code expired. Please start again.")
-        if code != expected:
-            return False, self.bot._("Invalid code. Please enter the 6-digit code.")
-        return True, None
 
     def _register_account(self, state):
         username = state["data"]["username"]
@@ -336,91 +233,30 @@ class AccountRequestCog:
         account.uUserRights = 0
         if not self.bot.doNewUserAccount(account):
             return False, self.bot._("Account creation failed. Please try again later.")
-        self._record_new_account(state)
-        return True, None
-
-    def _record_new_account(self, state):
-        user_data_file = self.bot.account_request_config.get("user_data_file", "")
-        if not user_data_file:
-            return
-        try:
-            directory = os.path.dirname(user_data_file)
-            if directory:
-                os.makedirs(directory, exist_ok=True)
-            with open(user_data_file, "a", newline="", encoding="utf-8") as handle:
-                writer = csv.writer(handle)
-                writer.writerow(
-                    [
-                        state["data"].get("username", ""),
-                        state["data"].get("password", ""),
-                        state["data"].get("email", ""),
-                        state.get("ip_address", ""),
-                    ]
-                )
-        except OSError:
-            return
-
-    def _build_verification_email(self, to_address, from_address, from_name, subject, code, expires_in_seconds, username):
-        minutes = max(1, int(expires_in_seconds // 60))
-        message = EmailMessage()
-        message["To"] = to_address
-        if from_name:
-            message["From"] = f"{from_name} <{from_address}>"
-        else:
-            message["From"] = from_address
-        message["Subject"] = subject
-        message.set_content(
-            self.bot._(
-                "Dear {username},\n\n"
-                "Thank you for your request to create a Blindmasters account. "
-                "Your verification code is:\n\n"
-                "{code}\n\n"
-                "This code expires in {minutes} minute(s). If you did not request this, "
-                "you can safely ignore this email.\n\n"
-                "Best regards,\n"
-                "Blindmasters"
-            ).format(code=code, minutes=minutes, username=username)
+        self.bot.state_store.record_account(
+            username,
+            telegram_chat_id=state["data"].get("telegram_chat_id"),
+            ip_address=state.get("ip_address"),
         )
-        return message
-
-
-    def _check_existing_account(self, username=None, email=None, ip_address=None):
-        user_data_file = self.bot.account_request_config.get("user_data_file", "")
-        if not user_data_file or not os.path.isfile(user_data_file):
-            return None
-        try:
-            with open(user_data_file, newline="", encoding="utf-8") as handle:
-                reader = csv.reader(handle)
-                for row in reader:
-                    if username and len(row) > 0 and row[0].strip().lower() == username.lower():
-                        return self.bot._("This username is already registered.")
-                    if email and len(row) > 2 and row[2].strip().lower() == email.lower():
-                        return self.bot._("This email address is already registered.")
-                    if ip_address and len(row) > 3 and row[3].strip() == ip_address:
-                        return self.bot._("Only one account is allowed per person. Our records show an account for your IP.")
-        except OSError:
-            return None
-        return None
+        return True, None
 
     def _notify_admins(self, state):
         ip_address = state.get("ip_address") or ""
         username = state["data"].get("username", "")
-        email = state["data"].get("email", "")
+        chat_id = state["data"].get("telegram_chat_id", "")
         country, city = utils.get_user_location(ip_address)
-        user = self.bot.getUserByUsername(ttstr(username))
-        nickname = ttstr(user.szNickname) if user else ""
         message = self.bot._(
-            "New account created via bot.\nUsername: {username}\nEmail: {email}\nIP: {ip}\nLocation: {location}\nNickname: {nickname}"
+            "New account created via bot.\nUsername: {username}\nTelegram chat: {chat}\nLocation: {location}"
         ).format(
             username=username,
-            email=email,
-            ip=ip_address,
+            chat=chat_id,
             location=", ".join([value for value in [city, country] if value]) or "Unknown",
-            nickname=nickname or "Unknown",
         )
         for server_user in self.bot.getServerUsers():
             if self.bot.is_authorized_user(ttstr(server_user.szUsername)) or server_user.uUserType == UserType.USERTYPE_ADMIN:
                 self.bot.privateMessage(server_user.nUserID, message)
-        token = self.bot.account_request_config.get("telegram_bot_token")
-        chat_id = self.bot.account_request_config.get("telegram_chat_id")
-        utils.send_telegram_notification(token, chat_id, message)
+        admin_chat = self.bot.telegram_config.get("default_chat_id")
+        if admin_chat and str(admin_chat) != str(chat_id):
+            utils.send_telegram_notification(
+                self.bot.telegram_config.get("telegram_bot_token"), admin_chat, message
+            )

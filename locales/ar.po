@@ -1158,10 +1158,6 @@ msgstr ""
 msgid "Jail Flood Count"
 msgstr ""
 
-#: bot/gui.py:44
-msgid "Random Message Interval"
-msgstr ""
-
 #: bot/gui.py:45
 msgid "Character Limit for Nicknames"
 msgstr ""

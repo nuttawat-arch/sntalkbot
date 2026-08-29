@@ -1,48 +1,23 @@
 # -*- coding: utf-8 -*-
-"""Runtime state snapshot shared by the file bridge and local realtime API.
+"""Realtime snapshot builder for the local loopback API.
 
-The JSON file remains the compatibility/fallback transport. TTUHelper 1.5+ can
-also give each instance a token-protected loopback HTTP port for sub-second web
-updates without exposing a public bot endpoint.
+No runtime status file is written. High-frequency state is read from the live
+TeamTalk/Player objects when the API is queried. Persistent state belongs in
+SQLite via :mod:`bot.state_store`.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import json
 import os
 from pathlib import Path
-import tempfile
-import threading
 import time
 
 from bot.utils import BotUtils as utils
 
 
-class RuntimeStateWriter:
-    def __init__(self, bot, interval: float = 2.0):
+class RuntimeSnapshotBuilder:
+    def __init__(self, bot):
         self.bot = bot
-        try:
-            self.interval = max(1.0, min(float(interval or 2.0), 30.0))
-        except (TypeError, ValueError):
-            self.interval = 2.0
-        data_dir = Path(os.getenv("TTUTIL_DATA_DIR", "/app/data"))
-        override = os.getenv("SNTALKBOT_RUNTIME_STATE_FILE", "").strip()
-        self.path = Path(override) if override else data_dir / "runtime_status.json"
-        self._stop = threading.Event()
-        self._thread = None
-
-    def start(self):
-        if self._thread and self._thread.is_alive():
-            return
-        self._thread = threading.Thread(target=self._run, name="SNTalkBotRuntimeState", daemon=True)
-        self._thread.start()
-
-    def stop(self):
-        self._stop.set()
-        thread = self._thread
-        if thread and thread.is_alive() and thread is not threading.current_thread():
-            thread.join(timeout=1.0)
-        self._write(final=True)
 
     @staticmethod
     def _project_version():
@@ -60,14 +35,17 @@ class RuntimeStateWriter:
     def _queue_snapshot(self, player):
         result = []
         lock = getattr(player, "queue_lock", None)
+        queue_obj = getattr(player, "queue", []) or []
         if lock is None:
-            entries = list(getattr(player, "queue", []) or [])
+            queue_count = len(queue_obj)
             queue_index = int(getattr(player, "queue_index", -1) or -1)
+            entries = queue_obj[: min(queue_count, 250)]
         else:
             with lock:
-                entries = list(getattr(player, "queue", []) or [])
+                queue_count = len(queue_obj)
                 queue_index = int(getattr(player, "queue_index", -1) or -1)
-        for index, item in enumerate(entries[:250]):
+                entries = queue_obj[: min(queue_count, 250)]
+        for index, item in enumerate(entries):
             if not isinstance(item, dict):
                 item = {"title": str(item)}
             result.append({
@@ -79,7 +57,7 @@ class RuntimeStateWriter:
                 "added_by_user_id": self._primitive(item.get("added_by_user_id")),
                 "added_at": self._primitive(item.get("added_at")),
             })
-        return result, len(entries), queue_index
+        return result, queue_count, queue_index
 
     def build_snapshot(self):
         bot = self.bot
@@ -275,29 +253,7 @@ class RuntimeStateWriter:
         } for item in events]
         return snapshot
 
-    def _write(self, final=False):
-        try:
-            payload = self.build_snapshot()
-            if final:
-                payload["connected"] = False
-                payload["stopped_at"] = datetime.now(timezone.utc).isoformat()
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            fd, temp_path = tempfile.mkstemp(prefix="runtime_status.", suffix=".json", dir=str(self.path.parent))
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    json.dump(payload, handle, ensure_ascii=False, separators=(",", ":"))
-                    handle.write("\n")
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.chmod(temp_path, 0o640)
-                os.replace(temp_path, self.path)
-            finally:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-        except Exception:
-            # Management visibility must never be able to break the bot runtime.
-            return
 
-    def _run(self):
-        while not self._stop.wait(self.interval):
-            self._write()
+
+# Backward import alias for third-party extensions; this object never writes files.
+RuntimeStateWriter = RuntimeSnapshotBuilder

@@ -1,3 +1,10 @@
+# Development Report — SNTalkBot 5.1.14
+
+- Current matrix: Common 21 / Player 51 / Server Manager 49 / Full 121; aliases 52.
+- Playback lifecycle hardened across every media path with stale terminal-event protection and one retry before skip.
+- Central Global Broadcast added as Manager/Full-only, disabled by default, loopback/API-driven, with legacy global-text duplicate suppression.
+- Regression runtime tests cover stale EOF, Queue retry/skip and Voice TX force-stop.
+
 # Development Report — SNTalkBot 5.1.7 (Dynamic URL / Nested Radio Resolver)
 
 ## ปัญหาที่แก้

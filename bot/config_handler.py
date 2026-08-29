@@ -51,11 +51,10 @@ class ConfigHandler:
             {'section': 'bot', 'key': 'nickname', 'type': 'text', 'prompt': self._("Bot's Nickname"), 'help_text': self._("The name the bot will display in the channel."), 'required': True},
             {'section': 'bot', 'key': 'client_name', 'type': 'text', 'prompt': self._("Bot's Client Name"), 'help_text': self._("The client name shown in the user info (e.g., 'SN TalkBot v2.3')."), 'default': "SN TalkBot"},
             {'section': 'bot', 'key': 'gender', 'type': 'choice', 'prompt': self._("Bot's Gender"), 'help_text': self._("This affects the bot's default icon."), 'options': {'Male': '0', 'Female': '256', 'Neutral': '4096'}, 'default': 'Male'},
-            {'section': 'bot', 'key': 'default_channel', 'type': 'text', 'prompt': self._("Default Channel"), 'help_text': self._("The full path of the channel the bot should join after login (e.g., '/chatting'). The default is the root channel (/)."), 'default': "/"},
+            {'section': 'bot', 'key': 'default_channel', 'type': 'text', 'prompt': self._("Default Channel ID or Path"), 'help_text': self._("Enter a TeamTalk Channel ID (for example 8, including a value copied from gcid/cid) or keep the historical full channel path format (for example '/chatting'). The default is the root channel (/)."), 'default': "/"},
             {'section': 'bot', 'key': 'channel_password', 'type': 'text', 'prompt': self._("Channel Password"), 'help_text': self._("The password for the default channel, if required.")},
             {'section': 'bot', 'key': 'status_message', 'type': 'text', 'prompt': self._("Status Message"), 'help_text': self._("An optional status message for the bot.")},
             {'section': 'bot', 'key': 'welcome_broadcast', 'type': 'bool', 'prompt': self._("Send Welcome Broadcast?"), 'help_text': self._("Send a public welcome message when a user logs in."), 'default': True},
-            {'section': 'bot', 'key': 'random_message_interval', 'type': 'int', 'prompt': self._("Random Message Interval (minutes)"), 'help_text': self._("Interval in minutes for sending random broadcast messages from messages.txt. Set to 0 to disable."), 'default': 0},
 
             {'type': 'header', 'text': self._("Audio and Playback Settings")},
             {'section': 'playback', 'key': 'input_device', 'type': 'device', 'device_type': 'input', 'prompt': self._("Input Device"), 'help_text': self._("The audio device for voice transmission.")},
@@ -175,6 +174,8 @@ class ConfigHandler:
         self.config.read(self.config_file, encoding="utf-8")
         self._migrate_legacy_server_port()
         self._migrate_google_standard_tts()
+        self._migrate_telegram_settings()
+        self._migrate_legacy_broadcast_settings()
         self._migrate_missing_optional_settings()
 
         missing_items = self._validate_config()
@@ -263,6 +264,80 @@ class ConfigHandler:
                 self.config.write(configfile)
 
 
+    def _migrate_telegram_settings(self):
+        """Use [telegram] as the single source and remove obsolete SMTP secrets."""
+        changed = False
+        if not self.config.has_section("telegram"):
+            self.config.add_section("telegram")
+            changed = True
+        telegram = self.config["telegram"]
+        if not self.config.has_section("account_requests"):
+            self.config.add_section("account_requests")
+            changed = True
+        account = self.config["account_requests"]
+        if not telegram.get("telegram_bot_token", "").strip() and account.get("telegram_bot_token", "").strip():
+            telegram["telegram_bot_token"] = account.get("telegram_bot_token", "").strip()
+            changed = True
+        if not telegram.get("default_chat_id", "").strip() and account.get("telegram_chat_id", "").strip():
+            telegram["default_chat_id"] = account.get("telegram_chat_id", "").strip()
+            changed = True
+        legacy_keys = (
+            "telegram_bot_token", "telegram_chat_id", "smtp_host", "smtp_port",
+            "smtp_username", "smtp_password", "smtp_use_tls", "smtp_use_ssl",
+            "smtp_tls_verify", "smtp_from", "smtp_from_name", "smtp_subject",
+            "smtp_timeout", "user_data_file",
+        )
+        for key in legacy_keys:
+            if key in account:
+                del account[key]
+                changed = True
+        if changed:
+            with open(self.config_file, "w", encoding="utf-8") as configfile:
+                self.config.write(configfile)
+
+    def _migrate_legacy_broadcast_settings(self):
+        """Fold pre-5.1.13 announcement settings into Central Global Broadcast.
+
+        The old messages.txt/random-message scheduler no longer exists. Preserve
+        useful administrator intent without auto-enabling a new network-visible
+        feature: migrate the old interval and TTS toggle, then drop obsolete keys.
+        """
+        changed = False
+        if not self.config.has_section("global_broadcast"):
+            self.config.add_section("global_broadcast")
+            changed = True
+        central = self.config["global_broadcast"]
+
+        if self.config.has_section("bot") and "random_message_interval" in self.config["bot"]:
+            raw = self.config["bot"].get("random_message_interval", "0").strip()
+            try:
+                old_interval = int(raw)
+            except (TypeError, ValueError):
+                old_interval = 0
+            central_interval = central.get("interval_minutes", "").strip()
+            central_enabled = central.get("enabled", "False").strip().lower() in {"1", "true", "yes", "on"}
+            if old_interval > 0 and not central_enabled and central_interval in {"", "60"}:
+                central["interval_minutes"] = str(max(1, min(10080, old_interval)))
+            del self.config["bot"]["random_message_interval"]
+            changed = True
+
+        if self.config.has_section("tts") and "random_broadcast_enabled" in self.config["tts"]:
+            if not central.get("tts_enabled", "").strip():
+                try:
+                    central["tts_enabled"] = "True" if self.config["tts"].getboolean("random_broadcast_enabled", False) else "False"
+                except ValueError:
+                    central["tts_enabled"] = "False"
+            del self.config["tts"]["random_broadcast_enabled"]
+            changed = True
+
+        central.setdefault("enabled", "False")
+        central.setdefault("interval_minutes", "60")
+        central.setdefault("tts_enabled", "False")
+        if changed:
+            with open(self.config_file, "w", encoding="utf-8") as configfile:
+                self.config.write(configfile)
+            print("Migrated legacy broadcast settings to [global_broadcast]; Central Broadcast remains disabled until explicitly enabled.")
+
     @staticmethod
     def _serialize_default(item):
         """Return a config.ini-safe default for one CONFIG_STRUCTURE item."""
@@ -283,37 +358,39 @@ class ConfigHandler:
         return "" if value is None else str(value)
 
     def _migrate_missing_optional_settings(self):
-        """Add newly introduced optional settings without invoking the setup wizard.
+        """Merge optional keys from config_default.ini without touching identity.
 
-        Releases may add optional config keys after users already have persistent
-        Docker data. Those additions must be backwards compatible: use the schema
-        default (or an empty/auto value for optional text/device fields), write the
-        merged file once, and reserve the interactive wizard for genuinely required
-        missing values.
+        config_default.ini is the authoritative release schema. Existing values
+        always win. Placeholder CHANGE_ME values are never copied into a live
+        instance, so required server identity remains subject to normal validation.
         """
         changed = False
         migrated = []
-        for item in self.CONFIG_STRUCTURE:
-            section = item.get("section")
-            key = item.get("key")
-            if not section or not key or item.get("required", False):
-                continue
-            if self.config.has_section(section) and self.config.has_option(section, key):
-                continue
-
-            value = self._serialize_default(item)
-            if value is None:
-                continue
-            if not self.config.has_section(section):
-                self.config.add_section(section)
-            self.config.set(section, key, value)
-            migrated.append(f"[{section}] {key}={value}")
-            changed = True
+        default_file = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "config_default.ini",
+        )
+        defaults = configparser.ConfigParser()
+        if os.path.isfile(default_file):
+            defaults.read(default_file, encoding="utf-8")
+            for section in defaults.sections():
+                if not self.config.has_section(section):
+                    self.config.add_section(section)
+                    changed = True
+                for key, value in defaults[section].items():
+                    if self.config.has_option(section, key):
+                        continue
+                    if str(value).strip().upper() == "CHANGE_ME":
+                        continue
+                    self.config.set(section, key, value)
+                    migrated.append(f"[{section}] {key}")
+                    changed = True
 
         if changed:
             with open(self.config_file, "w", encoding="utf-8") as configfile:
                 self.config.write(configfile)
-            print("Migrated missing optional config settings: " + "; ".join(migrated))
+            if migrated:
+                print("Migrated missing optional config settings: " + "; ".join(migrated))
 
     def _validate_config(self):
         """
@@ -588,7 +665,6 @@ class ConfigHandler:
             "jail_channel": sec.get("jail_channel", "jail/"),
             "jail_timer_seconds": sec.getint("jail_timer_seconds", 10),
             "jail_flood_count": sec.getint("jail_flood_count", 5),
-            "random_message_interval": sec.getint("random_message_interval", 0),
             "char_limit": sec.getint("char_limit", 0),
             "char_limit_mode": sec.getint("char_limit_mode", 1),
             "blacklist_mode": sec.getint("blacklist_mode", 1),
@@ -634,6 +710,8 @@ class ConfigHandler:
             "speed": sec.getfloat("speed", 1.0),
             "fade_enabled": sec.getboolean("fade_enabled", True),
             "queue_mode": sec.getboolean("queue_mode", False),
+            "persist_queue": sec.getboolean("persist_queue", True),
+            "resume_queue_on_start": sec.getboolean("resume_queue_on_start", False),
             "play_mode": sec.getint("play_mode", 2),
             "autoplay_enabled": sec.getboolean("autoplay_enabled", True),
             "announce_tracks": sec.getboolean("announce_tracks", True),
@@ -677,9 +755,41 @@ class ConfigHandler:
         # Environment variables are intentionally supported so Docker/helper deployments
         # can keep secrets out of GitHub, Docker images, and per-instance config files.
         token = os.getenv("SNTALKBOT_TELEGRAM_BOT_TOKEN") or self.config.get("telegram", "telegram_bot_token", fallback="")
+        default_chat_id = os.getenv("SNTALKBOT_TELEGRAM_DEFAULT_CHAT_ID") or self.config.get("telegram", "default_chat_id", fallback="")
         return {
             "telegram_bot_token": str(token or "").strip(),
+            "default_chat_id": str(default_chat_id or "").strip(),
         }
+
+    def get_updates_config(self):
+        section = 'updates'
+        return {
+            'enabled': self.config.getboolean(section, 'enabled', fallback=False),
+            'repository': self.config.get(section, 'repository', fallback='nuttawat-arch/sntalkbot').strip(),
+            'broadcast_enabled': self.config.getboolean(section, 'broadcast_enabled', fallback=True),
+            'telegram_enabled': self.config.getboolean(section, 'telegram_enabled', fallback=False),
+            'polling_fallback': self.config.getboolean(section, 'polling_fallback', fallback=False),
+            'check_interval_minutes': self.config.getint(section, 'check_interval_minutes', fallback=360),
+            'initial_delay_seconds': self.config.getint(section, 'initial_delay_seconds', fallback=20),
+        }
+
+    def get_global_broadcast_config(self):
+        section = "global_broadcast"
+        try:
+            interval = self.config.getint(section, "interval_minutes", fallback=60)
+        except (ValueError, TypeError):
+            interval = 60
+        return {
+            "enabled": self.config.getboolean(section, "enabled", fallback=False),
+            "interval_minutes": max(1, min(10080, int(interval))),
+            "tts_enabled": self.config.getboolean(section, "tts_enabled", fallback=False),
+        }
+
+    def save_global_broadcast_config(self, values):
+        updates = dict(values or {})
+        if "interval_minutes" in updates:
+            updates["interval_minutes"] = max(1, min(10080, int(updates["interval_minutes"])))
+        self._update_section("global_broadcast", updates)
 
     def get_exclusion_config(self):
         return {
@@ -700,14 +810,11 @@ class ConfigHandler:
         if not self.config.has_section("account_requests"):
             return {"enabled": False}
         sec = self.config["account_requests"]
-        int_keys = {"smtp_port": 587, "smtp_timeout": 15, "otp_expiry_seconds": 600, "max_attempts": 3}
-        bool_keys = {"enabled": False, "smtp_use_tls": True, "smtp_use_ssl": False, "smtp_tls_verify": True}
-        result = {k: v for k, v in sec.items()}
-        for key, default in int_keys.items():
-            result[key] = sec.getint(key, default)
-        for key, default in bool_keys.items():
-            result[key] = sec.getboolean(key, default)
-        return result
+        return {
+            "enabled": sec.getboolean("enabled", False),
+            "otp_expiry_seconds": max(60, sec.getint("otp_expiry_seconds", 600)),
+            "max_attempts": max(1, sec.getint("max_attempts", 3)),
+        }
 
     def save_account_request_config(self, values):
         self._update_section("account_requests", values)
@@ -724,7 +831,7 @@ class ConfigHandler:
 
     def get_tts_config(self):
         if not self.config.has_section("tts"):
-            return {"mode": "google", "google_lang": "th", "google_tld": "com", "google_slow": False, "google_speed": 1.0, "random_broadcast_enabled": False}
+            return {"mode": "google", "google_lang": "th", "google_tld": "com", "google_slow": False, "google_speed": 1.0}
         sec = self.config["tts"]
         result = {k: v for k, v in sec.items()}
         result["mode"] = sec.get("mode", "google")
@@ -732,7 +839,6 @@ class ConfigHandler:
         result["google_tld"] = sec.get("google_tld", "com")
         result["google_slow"] = sec.getboolean("google_slow", False)
         result["google_speed"] = sec.getfloat("google_speed", 1.0)
-        result["random_broadcast_enabled"] = sec.getboolean("random_broadcast_enabled", False)
         return result
 
     def save_tts_config(self, values):

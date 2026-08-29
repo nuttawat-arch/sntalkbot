@@ -4,7 +4,6 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 import sys
-import threading
 
 import TeamTalk5 as teamtalk
 import mpv
@@ -14,7 +13,7 @@ from bot.account import Account
 from bot.config_handler import ConfigHandler
 from bot.help import HelpCommands
 from bot.sntalkbot import SNTalkBot
-from bot.utils import BotUtils as utils, RestartSignal, ShutdownSignal
+from bot.utils import RestartSignal, ShutdownSignal
 
 
 
@@ -115,16 +114,6 @@ def main():
             logging.exception("Failed to initialize bot")
             print(f"FATAL: failed to initialize bot: {exc}")
             return 1
-
-        if bot.server_management_enabled and bot.bot_config.get("random_message_interval", 0) > 0:
-            messages = utils.load_messages("messages.txt")
-            if messages:
-                threading.Thread(
-                    target=bot.send_broadcast_messages_at_intervals,
-                    args=(messages,),
-                    daemon=True,
-                    name="TTBot_RandomMessages",
-                ).start()
 
         restart = False
         while True:

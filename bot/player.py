@@ -14,7 +14,7 @@ import yt_dlp
 from bot.prefetch import LinkPrefetcher
 
 class Player(mpv.MPV):
-    def __init__(self, config_handler, cookiefile=None, *args, **kwargs):
+    def __init__(self, config_handler, cookiefile=None, state_store=None, *args, **kwargs):
         # Linux/Docker launchers set TTUTIL_MPV_AO=pulse so MPV sends audio to
         # the virtual PulseAudio sink. Leave it unset on desktop systems to let
         # mpv choose the native audio output automatically.
@@ -22,7 +22,8 @@ class Player(mpv.MPV):
         if mpv_ao and "ao" not in kwargs:
             kwargs["ao"] = mpv_ao
         super().__init__(ytdl=False, vo='null', video=False, *args, **kwargs)
-        self.config_handler = config_handler # <-- STORE THE INJECTED INSTANCE
+        self.config_handler = config_handler
+        self.state_store = state_store
         self.playback_config = self.config_handler.get_playback_config()
         self.is_playing=False
         self.volume=self.playback_config['default_volume']
@@ -33,8 +34,22 @@ class Player(mpv.MPV):
         self.collection_results = []
         self.current_collection_index = 0
         self.collection_source = None
-        self.queue = []
-        self.queue_index = -1
+        persist_queue = bool(self.playback_config.get("persist_queue", True))
+        if self.state_store is not None:
+            self.queue = self.state_store.queue()
+            if not persist_queue:
+                self.queue.clear()
+                self.state_store.set_meta("queue_index", -1)
+            try:
+                restored_index = int(self.state_store.get_meta("queue_index", -1))
+            except (TypeError, ValueError):
+                restored_index = -1
+            if restored_index >= len(self.queue) or restored_index < -1:
+                restored_index = -1
+            self.queue_index = restored_index
+        else:
+            self.queue = []
+            self.queue_index = -1
         # Queue mutations may come from yt-dlp worker threads at the exact moment
         # mpv reports playback-end. Keep ordering deterministic across that boundary.
         self.queue_lock = threading.RLock()
@@ -53,6 +68,29 @@ class Player(mpv.MPV):
         self._ydl_lock = threading.Lock()
         self.recent_history = {}
         self.end_callback = None
+        self._intentional_stop = False
+        self._end_dispatch_lock = threading.Lock()
+        self._end_event_handled = True
+        self._mpv_end_event_registered = False
+        self.last_end_reason = None
+        self.last_end_error = 0
+        # A new external item can start before libmpv delivers the terminal event
+        # for the previous one. Keep a monotonically increasing generation and a
+        # short handoff grace so a late EOF/ERROR cannot terminate the fresh item.
+        self.playback_epoch = 0
+        self.active_playback_epoch = 0
+        self.active_playback_started = 0.0
+        self._terminal_handoff_grace = 0.85
+        # python-mpv/libmpv reports asynchronous load/playback failures through
+        # END_FILE. yt-dlp extraction can succeed even when mpv later rejects the
+        # resolved media, so relying only on play() exceptions or idle-active can
+        # leave a Queue item stalled. Register one permanent END_FILE listener and
+        # keep idle-active only as a compatibility fallback for older bindings.
+        try:
+            self.event_callback('END_FILE')(self._on_end_file_event)
+            self._mpv_end_event_registered = True
+        except Exception as exc:
+            print(f"MPV END_FILE callback unavailable; using idle-active fallback: {exc}")
         self._temp_cache = {}
         self.cookiefile = (
             cookiefile
@@ -177,6 +215,18 @@ class Player(mpv.MPV):
     def __setattr__(self, name, value):
         if name == "media_title":
             object.__setattr__(self, "_media_title", value)
+            return
+        if name == "queue_index":
+            value = int(value)
+            object.__setattr__(self, name, value)
+            try:
+                store = object.__getattribute__(self, "state_store")
+                playback = object.__getattribute__(self, "playback_config")
+            except Exception:
+                store = None
+                playback = {}
+            if store is not None and bool(playback.get("persist_queue", True)):
+                store.set_meta("queue_index", value)
             return
         super().__setattr__(name, value)
 
@@ -783,6 +833,102 @@ class Player(mpv.MPV):
                         break
         return None
 
+    def _arm_end_detection(self):
+        """Arm exactly one terminal callback for a new external playback generation."""
+        with self._end_dispatch_lock:
+            self.playback_epoch = int(getattr(self, "playback_epoch", 0) or 0) + 1
+            self.active_playback_epoch = self.playback_epoch
+            self.active_playback_started = time.monotonic()
+            self._intentional_stop = False
+            self._end_event_handled = False
+            self.last_end_reason = None
+            self.last_end_error = 0
+            return self.active_playback_epoch
+
+    def _cancel_end_detection(self):
+        """Disarm terminal handling after a synchronous load failure."""
+        with self._end_dispatch_lock:
+            self._end_event_handled = True
+
+    def _dispatch_end_once(self, reason="eof", error=0):
+        """Dispatch one natural/error playback end, deduplicating mpv events.
+
+        END_FILE and the legacy idle-active observer can both arrive for one
+        item. A lock/armed bit prevents double queue advancement. Intentional
+        stop/restart events are never treated as completed media.
+        """
+        with self._end_dispatch_lock:
+            if self._intentional_stop or self._end_event_handled:
+                return False
+            self._end_event_handled = True
+            self.last_end_reason = str(reason or "eof")
+            try:
+                self.last_end_error = int(error or 0)
+            except (TypeError, ValueError):
+                self.last_end_error = 0
+        # Hold the transition flag across the callback so a concurrent Queue
+        # append cannot mistake this tiny end boundary for an idle fresh Queue.
+        self.playback_end_transition = True
+        try:
+            self.is_playing = False
+            if not self._mpv_end_event_registered:
+                try:
+                    self.unobserve_property('idle-active', self._on_idle_active)
+                except Exception:
+                    pass
+            if self.end_callback:
+                self.end_callback()
+        finally:
+            self.playback_end_transition = False
+        return True
+
+    def _terminal_event_looks_stale(self):
+        """Return True when a late terminal event belongs to the previous item.
+
+        During stop->play handoff libmpv may deliver the old EOF/ERROR after the
+        new file is already active. There is no stable media-id on every python-mpv
+        binding, so correlate the event with the current transport: inside the short
+        handoff window, an END_FILE while mpv reports *not idle* cannot describe the
+        newly armed item and must be ignored. A genuinely broken new item becomes
+        idle, so its immediate ERROR is still handled and retried/skipped normally.
+        """
+        grace = float(getattr(self, "_terminal_handoff_grace", 0.85) or 0.85)
+        try:
+            age = max(0.0, time.monotonic() - float(getattr(self, "active_playback_started", 0.0) or 0.0))
+        except Exception:
+            age = grace + 1.0
+        if age > grace:
+            return False
+        try:
+            return bool(self.idle_active) is False
+        except Exception:
+            return False
+
+    def _on_end_file_event(self, event):
+        """Handle libmpv END_FILE; ERROR means the current item is unplayable.
+
+        libmpv reasons: EOF=0, RESTARTED=1, ABORTED=2, QUIT=3, ERROR=4,
+        REDIRECT=5. Only EOF/ERROR represent a terminal item for our external
+        queue. ABORTED/RESTARTED are expected during explicit transport changes.
+        """
+        data = getattr(event, "data", None)
+        reason = getattr(data, "reason", None)
+        error = getattr(data, "error", 0)
+        try:
+            reason = int(reason)
+        except (TypeError, ValueError):
+            return
+        if reason not in (0, 4):
+            return
+        if self._terminal_event_looks_stale():
+            print("Ignoring stale MPV END_FILE from previous playback generation")
+            return
+        if reason == 4:
+            if self._dispatch_end_once("error", error):
+                print(f"MPV playback error for current item (error={error})")
+        else:
+            self._dispatch_end_once("eof", error)
+
     def _play_resolved_radio(self, link):
         resolved = self._resolve_radio_webpage(link)
         if not resolved:
@@ -791,10 +937,17 @@ class Player(mpv.MPV):
         if not direct:
             return False
         self.media_title = resolved.get("title") or str(link)
+        self._arm_end_detection()
         self.is_playing = True
-        self.play(str(direct))
+        try:
+            self.play(str(direct))
+        except Exception:
+            self._cancel_end_detection()
+            self.is_playing = False
+            raise
         self.current_link = str(link)
-        self.observe_property('idle-active', self._on_idle_active)
+        if not self._mpv_end_event_registered:
+            self.observe_property('idle-active', self._on_idle_active)
         self.add_to_recent_history(self.media_title, self.current_link)
         return True
 
@@ -823,8 +976,14 @@ class Player(mpv.MPV):
             if self._requires_temp_download(info, link):
                 temp_path = self._download_temp_media(info, link)
                 self._cache_temp_file(link, temp_path, ttl_seconds=240)
+                self._arm_end_detection()
                 self.is_playing = True
-                self.play(temp_path)
+                try:
+                    self.play(temp_path)
+                except Exception:
+                    self._cancel_end_detection()
+                    self.is_playing = False
+                    raise
             else:
                 direct_link = info.get('url')
                 if not direct_link:
@@ -833,14 +992,22 @@ class Player(mpv.MPV):
                         if self._play_resolved_radio(link):
                             return
                     raise ValueError("No playable URL found for the requested link.")
+                self._arm_end_detection()
                 self.is_playing = True
-                self.play(direct_link)
+                try:
+                    self.play(direct_link)
+                except Exception:
+                    self._cancel_end_detection()
+                    self.is_playing = False
+                    raise
             self.current_link = link
-            self.observe_property('idle-active', self._on_idle_active) 
+            if not self._mpv_end_event_registered:
+                self.observe_property('idle-active', self._on_idle_active)
             self.add_to_recent_history(self.media_title, link)
 
         except Exception as e:
             print(f"Error playing stream: {e}")
+            self._cancel_end_detection()
             self.is_playing = False
             raise e
 
@@ -860,7 +1027,7 @@ class Player(mpv.MPV):
                 time.sleep(step_delay)
         except Exception:
             pass
-        self.stop()
+        self.stop_transport()
         if original_volume is not None:
             self.volume = original_volume
 
@@ -1018,6 +1185,27 @@ class Player(mpv.MPV):
             results.append({"title": title, "link": playlist_link})
         return results
 
+
+    def stop_transport(self):
+        """Stop mpv intentionally without treating END_FILE/idle as completion."""
+        with self._end_dispatch_lock:
+            self._intentional_stop = True
+            self._end_event_handled = True
+        if not self._mpv_end_event_registered:
+            try:
+                self.unobserve_property('idle-active', self._on_idle_active)
+            except Exception:
+                pass
+        self.is_playing = False
+        try:
+            super().stop()
+        except Exception:
+            # python-mpv may surface stop through command() on older bindings.
+            try:
+                self.command('stop')
+            except Exception:
+                pass
+
     def pause_stream(self):
         self.pause=True
 
@@ -1032,23 +1220,28 @@ class Player(mpv.MPV):
             raise(ValueError)
 
     def _on_idle_active(self, name, value):
-        """Callback function for 'idle-active' property change."""
-        if value is True and self.is_playing:
-            # Mark the whole mpv idle transition before exposing is_playing=False.
-            # Queue additions can arrive from another TeamTalk/thread-pool thread
-            # at this exact boundary; without this guard a newly appended item can
-            # be mistaken for a fresh idle queue and jump ahead of older entries.
-            self.playback_end_transition = True
+        """Compatibility fallback when python-mpv END_FILE callbacks are unavailable."""
+        if value is not True:
+            return
+        if self._intentional_stop:
+            self.is_playing = False
             try:
-                self.is_playing = False
-
-                # Stop observing idle-active to prevent further triggers.
                 self.unobserve_property('idle-active', self._on_idle_active)
+            except Exception:
+                pass
+            return
+        if self._terminal_event_looks_stale():
+            return
+        self._dispatch_end_once("idle", 0)
 
-                if self.end_callback:
-                    self.end_callback()
-            finally:
-                self.playback_end_transition = False
+    def transport_is_active(self):
+        """Best-effort real mpv transport state, independent of our callback flag."""
+        if bool(self.is_playing) or bool(getattr(self, "pause", False)):
+            return True
+        try:
+            return not bool(self.idle_active)
+        except Exception:
+            return False
 
     def set_output_device(self):
         """Select mpv output by index or native device name; ``auto`` keeps mpv's default."""

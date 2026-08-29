@@ -1082,10 +1082,6 @@ msgstr ""
 msgid "Intercept All Channel Messages?"
 msgstr ""
 
-#: bot/config_handler.py:58
-msgid "Interval in minutes for sending random broadcast messages from messages.txt. Set to 0 to disable."
-msgstr ""
-
 #: bot/config_handler.py:429
 msgid "Invalid choice number."
 msgstr ""
@@ -1230,10 +1226,6 @@ msgstr ""
 msgid "Invalid value. Use accounts on or accounts off."
 msgstr ""
 
-#: bot/modules/tts.py:584
-msgid "Invalid value. Use rb on or rb off."
-msgstr ""
-
 #: bot/modules/tts.py:569
 msgid "Invalid value. Use tts on or tts off."
 msgstr ""
@@ -1343,7 +1335,7 @@ msgid "List currently connected users with account type, location, and status."
 msgstr ""
 
 #: bot/help.py:73
-msgid "List items in current queue."
+msgid "List the queue in pages of 50 items; omit page to show the current queue page."
 msgstr ""
 
 #: bot/help.py:140
@@ -1790,18 +1782,6 @@ msgstr ""
 msgid "Queue {position} was not added from a search, so it has no alternate search results."
 msgstr ""
 
-#: bot/config_handler.py:58
-msgid "Random Message Interval (minutes)"
-msgstr ""
-
-#: bot/modules/tts.py:580
-msgid "Random broadcasts are currently {state}."
-msgstr ""
-
-#: bot/modules/tts.py:590
-msgid "Random broadcasts have been {state}."
-msgstr ""
-
 #: bot/modules/tts.py:465
 msgid "Rate is only available in Microsoft mode. For Google TTS, please use speed"
 msgstr ""
@@ -2115,7 +2095,7 @@ msgid "Stereo 3D 2 (Echo): {state}"
 msgstr ""
 
 #: bot/help.py:65
-msgid "Stop playback and clear queue."
+msgid "Stop playback only; keep queue, playlist, and current item."
 msgstr ""
 
 #: bot/sntalkbot.py:563

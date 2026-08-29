@@ -1,4 +1,4 @@
-> **SNTalkBot 5.1.7:** All-in-One รุ่นปัจจุบัน — แยก Full/Player/Manager ชัดเจน, Queue/playlist/Related Radio, default YouTube cookies, dashboard `status`, recent `events` และ moderation ที่ตามทันการแก้ nickname/status/channel แบบ event-driven
+> **SNTalkBot 5.1.14:** All-in-One รุ่นปัจจุบัน — แยก Full/Player/Manager ชัดเจน, Queue/playlist/Related Radio, default YouTube cookies, dashboard `status`, recent `events` และ moderation ที่ตามทันการแก้ nickname/status/channel แบบ event-driven
 
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 
@@ -426,7 +426,7 @@ Runtime `help` แสดงเฉพาะคำสั่งที่ถูก r
 - **Server Manager**: คำสั่งจัดการเซิร์ฟเวอร์ + TTS แบบเดิม (`say`, `tts`, `ttsmode`, `voice`, `get_voices` ฯลฯ); ไม่มี Music Player/queue
 - **Full Bot**: รวมทั้งสองชุด โดย Player TTS ใช้ชื่อคำสั่ง `p...` แยกจาก Manager TTS จึงไม่ชนกัน
 
-`report <message>` เป็นรายงานไปยังแอดมิน TeamTalk และมีเฉพาะ Manager/Full ส่วน `dr <message>` ส่งตรงถึงระบบรายงานผู้พัฒนา SNTalkBot ทางการและมีทุกโหมด
+`report <message>` เป็นรายงานไปยังแอดมิน TeamTalk และเป็น Common ใช้ได้ทุกโหมด เช่นเดียวกับ `dr <message>` ที่ส่งตรงถึงระบบรายงานผู้พัฒนา SNTalkBot ทางการ
 
 คำสั่งหลักยังมีชื่อเดียวต่อฟังก์ชัน แต่มีคำสั่งย่อที่ตั้งใจไว้สำหรับพิมพ์เร็ว เช่น `h` → `help`, `rs` → `restart`, `sd` → `shutdown` และคำสั่งย่ออื่น ๆ จะแสดงต่อท้ายใน `help` โดยไม่ลงทะเบียน handler ซ้ำ
 
@@ -546,8 +546,13 @@ Player announcement ใช้ audio stream แยกจากเพลงแล�
 
 ## SNTalkBot Web Manager / Realtime Runtime Bridge (5.1.0)
 
-เมื่อรันใน Docker/TTUHelper บอตจะเขียน snapshot สถานะที่ `/app/data/runtime_status.json` ทุกประมาณ 2 วินาที เพื่อให้เว็บจัดการที่อยู่บน host อ่านข้อมูลสดได้ผ่าน volume เดิม โดยไม่เปิด HTTP port ใหม่ในแต่ละ instance
+เมื่อรันใน Docker/TTUHelper สถานะสดจะถูกอ่านจากหน่วยความจำของบอตผ่าน local Realtime API ที่ bind เฉพาะ `127.0.0.1` และมี Bearer token แยกต่อ instance; Web Manager ส่งต่อข้อมูลนี้ผ่าน SSE โดยไม่เขียนไฟล์ snapshot เป็นระยะ ส่วน state ที่ต้องอยู่รอดข้าม restart ใช้ `state.sqlite3` แบบ WAL ใน persistent data
 
 ข้อมูลที่เปิดให้ Web Manager อ่านมีเฉพาะข้อมูลการทำงาน เช่น role, uptime, server address/port, nickname/status, ห้องปัจจุบัน, จำนวนผู้ใช้ออนไลน์, speaking/media/video/desktop counts, Player title/mode/queue/ผู้เพิ่มคิว และ activity ล่าสุด ข้อมูลลับ เช่น TeamTalk password, channel password, API token, license key และค่า cookies จะไม่ถูกเขียนลง snapshot
 
 SNTalkBot ยังทำงานได้ตามปกติแม้ไม่มี Web Manager; bridge นี้เป็น additive local management integration เท่านั้น
+
+
+### Channel ID / path compatibility
+
+ค่า `default_channel` รับได้ทั้ง TeamTalk Channel ID เช่น `8`/`"8"` และพาธห้องรูปแบบเดิม เช่น `/music` ในช่องเดียวกัน ค่า `teamtalk.channel` แบบตัวเลขจาก TTMediaBot รุ่นเก่าจะถูกนำเข้าใช้งานต่อได้โดยไม่ต้องให้ผู้ใช้แปลงเป็นชื่อห้องเอง และสามารถใช้คำสั่ง `gcid`/`cid` ดู Channel ID แล้วนำตัวเลขมาใส่ได้โดยตรง

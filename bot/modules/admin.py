@@ -1,8 +1,8 @@
 from TeamTalk5 import BanType, BannedUser, UserAccount, UserType, TextMsgType, TextMessage, ttstr
-from bot.utils import BotUtils as utils, RestartSignal, ShutdownSignal
+from bot.utils import BotUtils as utils
 import TeamTalk5 as teamtalk
 import time
-from threading import Thread
+from threading import Thread, Event
 import paramiko
 import re
 import os
@@ -14,12 +14,94 @@ class AdminCog:
     def __init__(self, bot):
         self.bot = bot
         self._ = bot._        
-        self.duration_kicks = {}
-        self.pending_kicks = {}
-        self.banned_users = {}
-        self.duration_bans = {}
-        self.user_strikes = {}
-        self.pending_admin_alerts = []
+        # Timed moderation is persistent. A single scheduler handles all
+        # expiry work; no per-user sleep threads or RAM-only ban/kick maps.
+        self._moderation_stop = Event()
+        self._moderation_wakeup = Event()
+        self._moderation_thread = None
+        if getattr(bot, "state_store", None) is not None:
+            self._moderation_thread = Thread(
+                target=self._moderation_scheduler_loop,
+                name="sntalkbot-moderation-scheduler",
+                daemon=True,
+            )
+            self._moderation_thread.start()
+
+    def shutdown(self):
+        self._moderation_stop.set()
+        self._moderation_wakeup.set()
+        thread = getattr(self, "_moderation_thread", None)
+        if thread and thread.is_alive():
+            thread.join(timeout=2.0)
+
+    def _unban_rule(self, rule):
+        """Remove a persisted server-side ban. Return True only when queued."""
+        subject_type = str(rule.get("subject_type") or "")
+        subject_value = str(rule.get("subject_value") or "")
+        try:
+            if subject_type == "ip":
+                result = self.bot.doUnBanUser(ttstr(subject_value), 0)
+            elif subject_type == "username":
+                banned_user = BannedUser()
+                banned_user.szUsername = ttstr(subject_value)
+                banned_user.uBanTypes = BanType.BANTYPE_USERNAME
+                result = self.bot.doUnbanUserEx(banned_user)
+            else:
+                return True
+            return result != -1
+        except Exception as exc:
+            print(f"Timed moderation unban failed for {subject_type}:{subject_value}: {exc}")
+            return False
+
+    def _expire_moderation_rules(self):
+        expired = self.bot.state_store.expired_moderation()
+        delete_ids = []
+        retry_needed = False
+        for rule in expired:
+            if rule["action"] != "ban":
+                delete_ids.append(rule["id"])
+                continue
+            if self._unban_rule(rule):
+                delete_ids.append(rule["id"])
+                self.bot.send_message(
+                    self._("Timed ban expired for {target}.").format(
+                        target=rule["subject_value"]
+                    )
+                )
+            else:
+                # Keep the row so a reconnect/restart can retry rather than
+                # silently turning a temporary server ban into a permanent one.
+                retry_needed = True
+        self.bot.state_store.delete_moderation_ids(delete_ids)
+        return retry_needed
+
+    def _moderation_scheduler_loop(self):
+        while not self._moderation_stop.is_set():
+            retry_needed = False
+            try:
+                retry_needed = self._expire_moderation_rules()
+                next_expiry = self.bot.state_store.next_moderation_expiry()
+            except Exception as exc:
+                print(f"Timed moderation scheduler error: {exc}")
+                next_expiry = None
+                retry_needed = True
+
+            if retry_needed:
+                wait_for = 5.0
+            elif next_expiry is None:
+                wait_for = 60.0
+            else:
+                wait_for = max(0.1, min(60.0, next_expiry - time.time()))
+            self._moderation_wakeup.wait(wait_for)
+            self._moderation_wakeup.clear()
+
+    def _save_moderation_rule(self, action, subject_type, subject_value, duration_seconds, ban_type=0):
+        if duration_seconds <= 0:
+            raise ValueError("duration must be greater than zero")
+        self.bot.state_store.upsert_moderation(
+            action, subject_type, subject_value, time.time() + duration_seconds, int(ban_type or 0)
+        )
+        self._moderation_wakeup.set()
 
     def register(self, command_handler):
         """Registers all the admin commands."""
@@ -31,76 +113,17 @@ class AdminCog:
         command_handler.register_command('udk', self.handle_duration_kick_by_username, admin_only=True)
         command_handler.register_command('bm', self.handle_admin_broadcast, admin_only=True)
         command_handler.register_command('clear', self.handle_clear_command, admin_only=True)
-        command_handler.register_command('cn', self.handle_change_name_command, admin_only=True)
-        command_handler.register_command('save', self.save_bot_config, admin_only=True)
-        command_handler.register_command('cs', self.handle_change_status, admin_only=True)
-        command_handler.register_command('cg', self.handle_change_gender, admin_only=True)
         command_handler.register_command('new', self.handle_new_account_command, admin_only=True)
-        command_handler.register_command('lock', self.handle_lock_command, admin_only=True)
         command_handler.register_command('join', self.handle_join_command, admin_only=True)
         command_handler.register_command('moveall', self.handle_moveall_command, admin_only=True)
         command_handler.register_command('k', self.handle_kick_channel_command, admin_only=True)
         command_handler.register_command('ks', self.handle_kick_server_command, admin_only=True)
-        command_handler.register_command('bot', self.handle_global_broadcast_command, admin_only=True)
-        command_handler.register_command('sbot', self.handle_server_broadcast_command, admin_only=True)
-        command_handler.register_command('superbot', self.handle_host_broadcast_command, admin_only=True)
+        command_handler.register_command('globalbroadcast', self.handle_central_global_broadcast_command, admin_only=True)
         command_handler.register_command('filter', self.handle_filter_toggle_command, admin_only=True)
         command_handler.register_command('welcome', self.handle_welcome_toggle_command, admin_only=True)
         command_handler.register_command('welcomebroadcast', self.handle_welcome_broadcast_toggle_command, admin_only=True)
-        command_handler.register_command('restart', self.handle_restart_command, admin_only=True)
-        command_handler.register_command('clearlog', self.handle_clear_log_command, admin_only=True)
         command_handler.register_command('vpn', self.handle_vpn_toggle_command, admin_only=True)
         command_handler.register_command('noname', self.handle_noname_toggle_command, admin_only=True)
-        command_handler.register_command('shutdown', self.handle_shutdown_command, admin_only=True)
-        command_handler.register_command('blockcmd', self.handle_block_command, admin_only=True)
-        command_handler.register_command('language', self.handle_language_command, admin_only=True)
-        command_handler.register_command('voicetx', self.handle_voice_tx_command, admin_only=True)
-
-    def handle_block_command(self, textmessage, *args):
-        if not args:
-            value = ", ".join(x for x in sorted(self.bot.blocked_commands)) or self._("The list is empty")
-            self.bot.privateMessage(textmessage.nFromUserID, value)
-            return
-        token = args[0].strip().lower()
-        action = token[:1]
-        requested_name = token[1:].lstrip("/") if action in "+-" else token.lstrip("/")
-        name = self.bot.command_handler.resolve_name(requested_name)
-        if name not in self.bot.command_handler.commands:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Unknown command."))
-            return
-        if action == "+":
-            self.bot.blocked_commands.add(name)
-            message = self._("Command blocked: {command}").format(command=name)
-        elif action == "-":
-            self.bot.blocked_commands.discard(name)
-            message = self._("Command unblocked: {command}").format(command=name)
-        else:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: blockcmd +command or blockcmd -command"))
-            return
-        self.bot.bot_config["blocked_commands"] = sorted(self.bot.blocked_commands)
-        self.bot.config_handler.update_bot_settings({"blocked_commands": sorted(self.bot.blocked_commands)})
-        self.bot.privateMessage(textmessage.nFromUserID, message)
-
-    def handle_language_command(self, textmessage, *args):
-        if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Current language: {language}").format(language=self.bot.bot_config.get("language", "en")))
-            return
-        language = args[0].strip()
-        locale_dir = os.path.join("locales", language, "LC_MESSAGES")
-        if not os.path.isdir(locale_dir):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Language folder not found: {language}").format(language=language))
-            return
-        self.bot.bot_config["language"] = language
-        self.bot.config_handler.update_bot_settings({"language": language})
-        self.bot.privateMessage(textmessage.nFromUserID, self._("Language saved as {language}. Use restart to reload all modules.").format(language=language))
-
-    def handle_voice_tx_command(self, textmessage, *args):
-        if not args or args[0].lower() not in ("on", "off"):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: voicetx on|off"))
-            return
-        enabled = args[0].lower() == "on"
-        ok = self.bot.enableVoiceTransmission(enabled)
-        self.bot.privateMessage(textmessage.nFromUserID, self._("Voice transmission: {state}").format(state="ON" if enabled else "OFF"))
 
     def handle_user_login_checks(self, user):
         """Handles all administrative checks when a user logs in."""
@@ -115,52 +138,16 @@ class AdminCog:
             if jail_channel_id:
                 self.bot.doMoveUser(user_id, jail_channel_id)
 
-        # 2. Check for pending duration kicks (by nickname and username)
-        if nickname.lower() in self.pending_kicks:
-            _, duration, end_time = self.pending_kicks[nickname.lower()]
-            if time.time() < end_time:
-                self.bot.kick_user(user_id)
-                user_data = (nickname, ip_address, username)
-                self.duration_kicks[user_data] = (duration, end_time)
-            del self.pending_kicks[nickname.lower()]
-            return # User was kicked, stop processing
+        # 2. Persistent timed moderation. Rules are keyed by the stable
+        # nickname/username/IP selectors used by the original commands.
+        rules = self.bot.state_store.matching_moderation(
+            nickname=nickname, username=username, ip_address=ip_address
+        )
+        if rules:
+            self.bot.kick_user(user_id)
+            return
 
-        if username.lower() in self.pending_kicks:
-            _, duration, end_time = self.pending_kicks[username.lower()]
-            if time.time() < end_time:
-                self.bot.kick_user(user_id)
-                user_data = (nickname, ip_address, username)
-                self.duration_kicks[user_data] = (duration, end_time)
-            del self.pending_kicks[username.lower()]
-            return # User was kicked, stop processing
-
-        # 3. Check for active duration kicks
-        for user_data, (duration, end_time) in list(self.duration_kicks.items()):
-            if time.time() < end_time:
-                if user_data[0] == nickname or user_data[1] == ip_address or (user_data[2] and user_data[2] == username):
-                    self.bot.kick_user(user_id)
-                    return # User was kicked, stop processing
-            else:
-                del self.duration_kicks[user_data] # Clean up expired kick
-
-        # 4. Check for active duration bans
-        if ip_address in self.duration_bans:
-            _, end_time = self.duration_bans[ip_address]
-            if time.time() < end_time:
-                self.bot.kick_user(user_id)
-                return
-            else:
-                del self.duration_bans[ip_address]
-    
-        if username in self.duration_bans:
-            _, end_time = self.duration_bans[username]
-            if time.time() < end_time:
-                self.bot.kick_user(user_id)
-                return
-            else:
-                del self.duration_bans[username]
-            
-        # 5. Check the canonical multilingual blacklist only while the master
+        # 3. Check the canonical multilingual blacklist only while the master
         # word filter is enabled. The same helper is also reused by the real
         # TeamTalk USER_UPDATE event so renaming after login cannot bypass it.
         if self.check_user_profile_for_blacklist(user):
@@ -245,15 +232,9 @@ class AdminCog:
         return admins
 
     def handle_admin_login(self, user):
-        if not self.pending_admin_alerts:
-            return
-        username = utils.ensure_text(ttstr(user.szUsername)).lower()
-        authorized = [u.strip().lower() for u in self.bot.accounts_config["authorized_users"]]
-        if user.uUserType != UserType.USERTYPE_ADMIN and username not in authorized:
-            return
-        for notice in self.pending_admin_alerts:
-            self.bot.privateMessage(user.nUserID, notice)
-        self.pending_admin_alerts = []
+        # Kept as an event-compatible no-op. The old pending_admin_alerts list
+        # had no producer and therefore was dead RAM-only state.
+        return
 
     def handle_reboot_command(self, textmessage, *args):
         self.bot.send_broadcast_message(self._("Attention, The server is rebooting..."))
@@ -313,54 +294,84 @@ class AdminCog:
                 raise ValueError("Invalid format")
             nickname, duration_str = parts[0], parts[1]
             duration_seconds = self.parse_duration_string(duration_str)
+            if duration_seconds <= 0:
+                raise ValueError("Duration must be positive")
             user = self.bot.getUserByName(nickname)
-            if user:
-                self.ban_user(user.nUserID, ban_type)
-                self.bot.send_message(self._("{nickname} has been banned for {duration}.").format(nickname=ttstr(user.szNickname), duration=duration_str))
-                Thread(target=self.remove_ban_after_duration, args=(user, duration_seconds, ban_type)).start()
-                self.bot.kick_user(user.nUserID)
+            if not user:
+                self.bot.privateMessage(
+                    textmessage.nFromUserID,
+                    self._("User '{nickname}' not found.").format(nickname=nickname),
+                )
+                return
+            if not self.ban_user(user.nUserID, ban_type):
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Unable to create the ban."))
+                return
+            if ban_type == BanType.BANTYPE_IPADDR:
+                subject_type, subject_value = "ip", ttstr(user.szIPAddress)
             else:
-                self.bot.privateMessage(textmessage.nFromUserID, self._("User '{nickname}' not found.").format(nickname=nickname))
+                subject_type, subject_value = "username", ttstr(user.szUsername)
+            self._save_moderation_rule(
+                "ban", subject_type, subject_value, duration_seconds, ban_type
+            )
+            self.bot.send_message(
+                self._("{nickname} has been banned for {duration}.").format(
+                    nickname=ttstr(user.szNickname), duration=duration_str
+                )
+            )
+            self.bot.kick_user(user.nUserID)
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid format. Usage: db <nickname> <duration> (e.g., 1h:30m:10s)"))
+            self.bot.privateMessage(
+                textmessage.nFromUserID,
+                self._("Invalid format. Usage: db <nickname> <duration> (e.g., 1h:30m:10s)"),
+            )
 
     def handle_duration_kick_nickname(self, textmessage, *args):
         try:
-            args_str = " ".join(args)
-            parts = args_str.rsplit(" ", 1)
+            parts = " ".join(args).rsplit(" ", 1)
             if len(parts) != 2:
                 raise ValueError("Invalid format")
             nickname, duration_str = parts[0], parts[1]
             duration_seconds = self.parse_duration_string(duration_str)
+            self._save_moderation_rule("kick", "nickname", nickname, duration_seconds)
             user = self.bot.getUserByName(nickname)
             if user:
                 self.bot.kick_user(user.nUserID)
-                self.bot.send_message(self._("{nickname} has been kicked for {duration}.").format(nickname=ttstr(user.szNickname), duration=duration_str))
-                user_data = (ttstr(user.szNickname), ttstr(user.szIPAddress), ttstr(user.szUsername))
-                self.duration_kicks[user_data] = (duration_seconds, time.time() + duration_seconds)
+                self.bot.send_message(
+                    self._("{nickname} has been kicked for {duration}.").format(
+                        nickname=ttstr(user.szNickname), duration=duration_str
+                    )
+                )
             else:
-                self.pending_kicks[nickname.lower()] = ("nickname", duration_seconds, time.time() + duration_seconds)
-                self.bot.send_message(self._("User '{nickname}' not found. They will be kicked when they log in for {duration}.").format(nickname=nickname, duration=duration_str))
+                self.bot.send_message(
+                    self._("User '{nickname}' not found. They will be kicked when they log in for {duration}.").format(
+                        nickname=nickname, duration=duration_str
+                    )
+                )
         except (ValueError, IndexError):
             self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid format. Usage: dk <nickname> <duration>"))
 
     def handle_duration_kick_by_username(self, textmessage, *args):
         try:
-            args_str = " ".join(args)
-            parts = args_str.rsplit(" ", 1)
+            parts = " ".join(args).rsplit(" ", 1)
             if len(parts) != 2:
                 raise ValueError("Invalid format")
             username, duration_str = parts[0], parts[1]
             duration_seconds = self.parse_duration_string(duration_str)
+            self._save_moderation_rule("kick", "username", username, duration_seconds)
             user = self.bot.getUserByUsername(ttstr(username))
             if user and user.nUserID != 0:
                 self.bot.kick_user(user.nUserID)
-                self.bot.send_message(self._("User with username '{username}' has been kicked for {duration}.").format(username=username, duration=duration_str))
-                user_data = (ttstr(user.szNickname), ttstr(user.szIPAddress), ttstr(user.szUsername))
-                self.duration_kicks[user_data] = (duration_seconds, time.time() + duration_seconds)
+                self.bot.send_message(
+                    self._("User with username '{username}' has been kicked for {duration}.").format(
+                        username=username, duration=duration_str
+                    )
+                )
             else:
-                self.pending_kicks[username.lower()] = ("username", duration_seconds, time.time() + duration_seconds)
-                self.bot.send_message(self._("User with username '{username}' not found. They will be kicked when they log in for {duration}.").format(username=username, duration=duration_str))
+                self.bot.send_message(
+                    self._("User with username '{username}' not found. They will be kicked when they log in for {duration}.").format(
+                        username=username, duration=duration_str
+                    )
+                )
         except (ValueError, IndexError):
             self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid format. Usage: udk <username> <duration>"))
 
@@ -380,62 +391,6 @@ class AdminCog:
             except (ValueError, IndexError):
                 raise ValueError(f"Invalid duration part: {part}")
         return duration_seconds
-
-    def remove_ban_after_duration(self, user, duration_seconds, ban_type):
-        time.sleep(duration_seconds)
-        if ban_type == BanType.BANTYPE_IPADDR:
-            self.bot.doUnBanUser(user.szIPAddress, 0)
-            self.bot.send_message(self._("{nickname} (IP ban) has been unbanned.").format(nickname=ttstr(user.szNickname)))
-        else:
-            banned_user = BannedUser()
-            banned_user.szUsername = user.szUsername
-            banned_user.uBanTypes = BanType.BANTYPE_USERNAME
-            self.bot.doUnbanUserEx(banned_user)
-            self.bot.send_message(self._("{nickname} (Username ban) has been unbanned.").format(nickname=ttstr(user.szNickname)))
-
-
-    def handle_change_name_command(self, textmessage, *args):
-        if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: cn <new_name>"))
-            return
-        new_name = " ".join(args)
-        self.bot.bot_config["nickname"] = new_name
-        self.bot.doChangeNickname(ttstr(new_name))
-        self.bot.privateMessage(textmessage.nFromUserID, self._("Bot name changed to '{new_name}'.").format(new_name=new_name))
-
-    def handle_change_status(self, textmessage, *args):
-        if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: cs <new_status>"))
-            return
-        status_message = " ".join(args)
-        self.bot.bot_config["status_message"] = status_message
-        self.bot.doChangeStatus(
-            self.bot.bot_config['gender'],
-            ttstr(self.bot.get_idle_status_message()),
-        )
-        self.bot.privateMessage(textmessage.nFromUserID, self._("Success"))
-
-    def handle_change_gender(self, textmessage, *args):
-        if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: cg <m|f|n>"))
-            return
-        gender_mode = args[0].lower()
-        gender_map = {'m': 0, 'f': 256, 'n': 4096}
-        if gender_mode in gender_map:
-            self.bot.bot_config["gender"] = gender_map[gender_mode]
-            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self.bot.get_idle_status_message()))
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Success"))
-        else:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Available modes are: m for male, f for female, n for neutral."))
-            
-    def save_bot_config(self, textmessage, *args):
-        self.bot.config_handler.save_bot_config(self.bot.bot_config)
-        self.bot.config_handler.save_playback_config(self.bot.playback_config)
-        self.bot.privateMessage(textmessage.nFromUserID, self._("Bot configuration saved."))
-
-    def handle_shutdown_command(self, textmessage, *args):
-        self.bot.privateMessage(textmessage.nFromUserID, self._("Shutting down..."))
-        raise ShutdownSignal()
 
     def handle_new_account_command(self, textmessage, *args):
         try:
@@ -457,13 +412,6 @@ class AdminCog:
         except ValueError:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command format. Usage: new <username> <password> [rights separated by space]"))
 
-    def handle_lock_command(self, textmessage, *args):
-        self.bot.commands_locked = not self.bot.commands_locked
-        if self.bot.commands_locked:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Commands locked. Only admins can use commands."))
-        else:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Commands unlocked. Commands available to everyone."))
-
     def handle_clear_command(self, textmessage, *args):
         target = " ".join(args)
         if target:
@@ -472,52 +420,41 @@ class AdminCog:
             self.clear_all()
 
     def clear_for_target(self, target):
-        found = False
-        target_lower = target.lower()
-        if target in self.banned_users:
-            self.unban_user(self.banned_users[target])
-            self.bot.send_message(self._("Cleared ban for {target}.").format(target=target))
-            found = True
-        
-        for user_data, (duration, end_time) in list(self.duration_kicks.items()):
-            nickname, ip_address, username = user_data
-            if target in (nickname, ip_address, username):
-                del self.duration_kicks[user_data]
-                self.bot.send_message(self._("Cleared duration kick for {target}.").format(target=target))
-                found = True
-        
-        if target_lower in self.pending_kicks:
-            del self.pending_kicks[target_lower]
-            self.bot.send_message(self._("Cleared pending kick for {target}.").format(target=target))
-            found = True
-            
-        if not found:
-            self.bot.send_message(self._("Target '{target}' not found in active bans or kicks.").format(target=target))
+        target_key = self.bot.state_store.normalize_key(target)
+        rules = [
+            rule for rule in self.bot.state_store.list_moderation()
+            if rule["subject_value"] == target_key
+        ]
+        if not rules:
+            self.bot.send_message(
+                self._("Target '{target}' not found in active bans or kicks.").format(target=target)
+            )
+            return
+        delete_ids = []
+        for rule in rules:
+            if rule["action"] == "ban" and not self._unban_rule(rule):
+                continue
+            delete_ids.append(rule["id"])
+        self.bot.state_store.delete_moderation_ids(delete_ids)
+        self._moderation_wakeup.set()
+        if delete_ids:
+            self.bot.send_message(self._("Cleared timed moderation for {target}.").format(target=target))
+        if len(delete_ids) != len(rules):
+            self.bot.send_message(self._("Some server bans could not be cleared yet and will be retried."))
 
     def clear_all(self):
-        if not self.banned_users and not self.duration_kicks and not self.pending_kicks:
+        rules = self.bot.state_store.list_moderation()
+        if not rules:
             self.bot.send_message(self._("There are no active bans or kicks to clear."))
             return
-        
-        for ban_key in list(self.banned_users.keys()):
-            self.unban_user(self.banned_users[ban_key])
-        
-        self.duration_kicks.clear()
-        self.pending_kicks.clear()
-        self.bot.send_message(self._("Cleared all bans and duration kicks."))
-
-    def unban_user(self, banned_user_obj):
-        try:
-            if banned_user_obj.uBanTypes == BanType.BANTYPE_IPADDR:
-                self.bot.doUnBanUser(banned_user_obj.szIPAddress, 0)
-                if banned_user_obj.szIPAddress in self.banned_users:
-                    del self.banned_users[banned_user_obj.szIPAddress]
-            elif banned_user_obj.uBanTypes == BanType.BANTYPE_USERNAME:
-                self.bot.doUnbanUserEx(banned_user_obj)
-                if banned_user_obj.szUsername in self.banned_users:
-                    del self.banned_users[banned_user_obj.szUsername]
-        except Exception as e:
-            print(f"Error during unban: {e}")
+        delete_ids = []
+        for rule in rules:
+            if rule["action"] == "ban" and not self._unban_rule(rule):
+                continue
+            delete_ids.append(rule["id"])
+        self.bot.state_store.delete_moderation_ids(delete_ids)
+        self._moderation_wakeup.set()
+        self.bot.send_message(self._("Cleared all timed bans and duration kicks that could be removed."))
 
     def handle_admin_broadcast(self, textmessage, *args):
         if not args:
@@ -610,28 +547,45 @@ class AdminCog:
         else:
             self.bot.privateMessage(textmessage.nFromUserID, self._("User not found."))
 
-    def handle_global_broadcast_command(self, textmessage, *args):
-        if not args: return
-        msg = " ".join(args)
-        self.bot.send_broadcast_message(f"[GLOBAL] {msg}")
-
-    def handle_server_broadcast_command(self, textmessage, *args):
-        if not args: return
-        msg = " ".join(args)
-        self.bot.send_broadcast_message(f"[SERVER] {msg}")
-
-    def handle_host_broadcast_command(self, textmessage, *args):
-        if not args: return
-        msg = " ".join(args)
-        self.bot.send_broadcast_message(f"[HOST] {msg}")
-
-    def handle_tts_toggle_command(self, textmessage, *args):
-        arg = args[0] if args else ""
-        if arg == "on": self.bot.tts_enabled = True
-        elif arg == "off": self.bot.tts_enabled = False
-        else: self.bot.tts_enabled = not self.bot.tts_enabled
-        self.bot.config_handler.update_bot_settings({"tts_enabled": self.bot.tts_enabled})
-        self.bot.send_message(self._("TTS: {state}").format(state="ON" if self.bot.tts_enabled else "OFF"))
+    def handle_central_global_broadcast_command(self, textmessage, *args):
+        """Configure the per-instance gate for Web Manager central broadcasts."""
+        cfg = dict(getattr(self.bot, "global_broadcast_config", {}) or {})
+        cfg.setdefault("enabled", False)
+        cfg.setdefault("interval_minutes", 60)
+        cfg.setdefault("tts_enabled", False)
+        arg = str(args[0] if args else "status").strip().lower()
+        if arg in ("on", "off"):
+            cfg["enabled"] = arg == "on"
+        elif arg == "interval":
+            if len(args) < 2:
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: globalbroadcast interval <1-10080>"))
+                return
+            try:
+                minutes = int(str(args[1]).strip())
+            except ValueError:
+                minutes = 0
+            if minutes < 1 or minutes > 10080:
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Global Broadcast interval must be 1-10080 minutes."))
+                return
+            cfg["interval_minutes"] = minutes
+        elif arg == "tts":
+            if len(args) < 2 or str(args[1]).strip().lower() not in ("on", "off"):
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: globalbroadcast tts on|off"))
+                return
+            cfg["tts_enabled"] = str(args[1]).strip().lower() == "on"
+        elif arg != "status":
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: globalbroadcast on|off|status|interval <minutes>|tts on|off"))
+            return
+        self.bot.global_broadcast_config = cfg
+        self.bot.config_handler.save_global_broadcast_config(cfg)
+        self.bot.privateMessage(
+            textmessage.nFromUserID,
+            self._("Central Global Broadcast: {state}; interval: {minutes} minute(s); TTS: {tts}.").format(
+                state="ON" if cfg["enabled"] else "OFF",
+                minutes=cfg["interval_minutes"],
+                tts="ON" if cfg["tts_enabled"] else "OFF",
+            ),
+        )
 
     def handle_filter_toggle_command(self, textmessage, *args):
         arg = args[0].strip().lower() if args else ""
@@ -688,20 +642,6 @@ class AdminCog:
                 state=self._("enabled") if self.bot.welcome_broadcast else self._("disabled")
             ),
         )
-
-    def handle_restart_command(self, textmessage, *args):
-        self.bot.privateMessage(textmessage.nFromUserID, self._("Restarting..."))
-        raise RestartSignal()
-
-    def handle_clear_log_command(self, textmessage, *args):
-        data_dir = os.getenv("TTUTIL_DATA_DIR", ".")
-        log_file = os.path.join(data_dir, "sntalkbot.log")
-        if os.path.exists(log_file):
-            with open(log_file, "w", encoding="utf-8"):
-                pass
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Log cleared."))
-        else:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Log file not found."))
 
     def handle_vpn_toggle_command(self, textmessage, *args):
         arg = args[0] if args else ""

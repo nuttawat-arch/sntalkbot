@@ -25,17 +25,7 @@ class BotUtils:
     """
     A class for standalone utility functions used by the bot.
     """
-    VERSION = "5.1.7"
-
-    @staticmethod
-    def load_messages(filename="messages.txt"):
-        """Loads messages from a file, stripping whitespace."""
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                messages = [line.strip() for line in f]
-            return messages
-        except FileNotFoundError:
-            return ["Welcome, {name}!"]
+    VERSION = "5.1.14"
 
     @staticmethod
     def load_blacklist(filename="blacklist.txt"):
@@ -78,6 +68,38 @@ class BotUtils:
         if inner is not None and inner is not value and isinstance(inner, (str, bytes, bytearray, memoryview)):
             return BotUtils.ensure_text(inner)
         return str(value)
+
+    @staticmethod
+    def parse_channel_reference(value):
+        """Classify a TeamTalk channel reference as an ID or a path.
+
+        Legacy TTMediaBot stored ``teamtalk.channel`` as either an integer ID
+        or a channel path.  SNTalkBot stores config.ini values as text, so a
+        migrated integer arrives at runtime as ``"8"``.  Accept that textual
+        form (and an explicitly quoted ``'8'``/``"8"`` pasted from a UI) as the
+        same channel ID without rewriting the persisted configuration.  All
+        non-numeric values keep the historical path behavior unchanged.
+        """
+        if isinstance(value, bool):
+            # bool is a subclass of int in Python but is never a valid channel ID.
+            return "path", BotUtils.ensure_text(value).strip() or "/"
+        if isinstance(value, int):
+            return ("id", int(value)) if int(value) > 0 else ("path", str(value))
+
+        text = BotUtils.ensure_text(value).strip()
+        if not text:
+            return "path", "/"
+
+        numeric = text
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+            candidate = text[1:-1].strip()
+            if candidate.isdecimal():
+                numeric = candidate
+        if numeric.isdecimal():
+            channel_id = int(numeric)
+            if channel_id > 0:
+                return "id", channel_id
+        return "path", text
 
     @staticmethod
     def normalize_moderation_text(value):
@@ -124,29 +146,6 @@ class BotUtils:
             if re.search(pattern, normalized, re.IGNORECASE | re.UNICODE):
                 return True
         return False
-
-    @staticmethod
-    def check_for_updates(gettext_func):
-        """Check the SNTalkBot GitHub VERSION file and only notify.
-
-        Docker deployments should be updated with `ttuhelper update`; native Git
-        deployments should use `git pull`. This function intentionally does not
-        download or overwrite source files automatically.
-        """
-        _ = gettext_func
-        update_url = "https://raw.githubusercontent.com/nuttawat-arch/sntalkbot/main/VERSION"
-        try:
-            print(_("Checking for updates..."))
-            response = requests.get(update_url, timeout=10)
-            response.raise_for_status()
-            server_version = response.text.strip()
-            if server_version and server_version != BotUtils.VERSION:
-                print(_("A different SNTalkBot version is available on GitHub: {server_version}. Current version: {version}").format(server_version=server_version, version=BotUtils.VERSION))
-            else:
-                print(_("No updates found. You are running the latest version: {version}").format(version=BotUtils.VERSION))
-        except requests.exceptions.RequestException as e:
-            print(_("Failed to check for updates: {error}").format(error=e))
-
 
     @staticmethod
     def generate_password(length=None):

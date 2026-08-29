@@ -17,8 +17,17 @@ class PlayerCog:
         self.player = bot.player
         self._ = bot._        
         self.download_in_progress = False
-        self.upload_timers = {}
-        self.loading_new_track = False        
+        self.loading_new_track = False
+        self._deferred_playback_end = False
+        # Playback failure state is scoped to one logical item, not one mpv load.
+        # This allows exactly one retry for transient errors without carrying the
+        # retry budget into the next queue/playlist/radio item.
+        self._failure_lock = threading.RLock()
+        self._playback_context = None
+        self._failure_key = None
+        self._failure_count = 0
+        self._deletion_stop = threading.Event()
+        self._deletion_wakeup = threading.Event()        
         self.autoplay_enabled = bool(self.bot.playback_config.get("autoplay_enabled", self.player.play_mode == 2))
         self.pending_channel_tabs = {}
         self.pending_playlist_tabs = {}
@@ -28,22 +37,85 @@ class PlayerCog:
         os.makedirs(data_dir, exist_ok=True)
         self.favorites_file = os.path.join(data_dir, "favorites.json")
         self.favorites = self.load_favorites()
+        self._deletion_worker = threading.Thread(
+            target=self._deletion_worker_loop, daemon=True, name="SNTalkBot_FileDeletion"
+        )
+        self._deletion_worker.start()
 
     def load_favorites(self):
-        if os.path.exists(self.favorites_file):
+        store = getattr(self.bot, "state_store", None)
+        if store is None:
+            return []
+        current = store.load_favorites()
+        # One-time import from pre-SQLite releases. Successful import removes the
+        # mutable JSON source so there is one canonical store afterwards.
+        if not current and os.path.exists(self.favorites_file):
             try:
-                with open(self.favorites_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                with open(self.favorites_file, 'r', encoding='utf-8') as handle:
+                    legacy = json.load(handle)
+                if isinstance(legacy, list):
+                    store.save_favorites(legacy)
+                    current = store.load_favorites()
+                    os.remove(self.favorites_file)
             except Exception:
-                return []
-        return []
+                pass
+        return current
 
     def save_favorites(self):
         try:
-            with open(self.favorites_file, 'w', encoding='utf-8') as f:
-                json.dump(self.favorites, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            print(f"Error saving favorites: {e}")
+            self.bot.state_store.save_favorites(self.favorites)
+        except Exception as exc:
+            print(f"Error saving favorites: {exc}")
+
+    def shutdown(self):
+        self._deletion_stop.set()
+        self._deletion_wakeup.set()
+        worker = getattr(self, "_deletion_worker", None)
+        if worker and worker.is_alive() and worker is not threading.current_thread():
+            worker.join(timeout=1.0)
+
+    def _deletion_worker_loop(self):
+        store = self.bot.state_store
+        while not self._deletion_stop.is_set():
+            now = time.time()
+            for row in store.due_deletions(now=now, limit=100):
+                if self._delete_scheduled_row(row):
+                    store.delete_deletion(row["id"])
+                else:
+                    # TeamTalk may be reconnecting or the filesystem may be
+                    # temporarily unavailable. Keep the persistent job and retry
+                    # instead of turning a transient failure into leaked files.
+                    store.reschedule_deletion(row["id"], time.time() + 30.0)
+            next_at = store.next_deletion_time()
+            if next_at is None:
+                timeout = 60.0
+            else:
+                timeout = max(0.05, min(60.0, next_at - time.time()))
+            self._deletion_wakeup.wait(timeout)
+            self._deletion_wakeup.clear()
+
+    def _delete_scheduled_row(self, row):
+        filename = str(row.get("local_path") or "")
+        channel_id = int(row.get("channel_id") or 0)
+        remote_name = str(row.get("remote_name") or os.path.basename(filename))
+        remote_ok = True
+        local_ok = True
+        try:
+            if channel_id and remote_name:
+                file_id = self.get_file_id_by_name(channel_id, remote_name)
+                if file_id:
+                    result = self.bot.doDeleteFile(channel_id, file_id)
+                    remote_ok = result != -1
+        except Exception as exc:
+            remote_ok = False
+            print(self._("Error deleting remote file: {e}").format(e=str(exc)))
+        try:
+            if filename and os.path.exists(filename):
+                os.remove(filename)
+        except OSError as exc:
+            local_ok = False
+            print(self._("Error deleting file: {e}").format(e=str(exc)))
+        return remote_ok and local_ok
 
     # ---------------- Queue state machine ----------------
     # Do not use mpv's is_playing flag alone to decide whether a newly-added
@@ -69,6 +141,7 @@ class PlayerCog:
             if user_id is not None:
                 entry["added_by_user_id"] = int(user_id)
             entry["added_at"] = queued_at
+            entry.setdefault("_queue_token", f"{queued_at}-{time.time_ns()}-{len(normalized)}")
             normalized.append(entry)
         items = normalized
         if not items:
@@ -92,6 +165,131 @@ class PlayerCog:
                 self.player.queue_index = 0
                 self.player.queue_transition = True
         return start_position, end_position, should_start
+
+    def _finish_loading_transition(self):
+        """Finish a track-load transition and replay any terminal event that arrived during it."""
+        self.loading_new_track = False
+        if getattr(self, "_deferred_playback_end", False):
+            self._deferred_playback_end = False
+            self.bot.io_pool.submit(self.on_playback_end)
+
+    def _ensure_failure_state(self):
+        """Lazily initialize retry state for normal runtime and validator fixtures."""
+        lock = getattr(self, "_failure_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._failure_lock = lock
+        if not hasattr(self, "_failure_key"):
+            self._failure_key = None
+        if not hasattr(self, "_failure_count"):
+            self._failure_count = 0
+        if not hasattr(self, "_playback_context"):
+            self._playback_context = None
+        return lock
+
+    def _set_playback_context(self, kind, link, token=None):
+        key = (str(kind or "normal"), str(token or ""), str(link or ""))
+        with self._ensure_failure_state():
+            if key != self._failure_key:
+                self._failure_key = key
+                self._failure_count = 0
+            self._playback_context = {
+                "kind": key[0], "token": key[1], "link": key[2], "key": key,
+            }
+        return key
+
+    def _reset_failure_budget(self):
+        with self._ensure_failure_state():
+            self._failure_count = 0
+
+    def _claim_one_retry(self):
+        with self._ensure_failure_state():
+            context = dict(self._playback_context or {})
+            if not context or not context.get("link"):
+                return None
+            if self._failure_count >= 1:
+                return None
+            self._failure_count += 1
+            return context
+
+    def _queue_token(self, index):
+        with self.player.queue_lock:
+            if index < 0 or index >= len(self.player.queue):
+                return ""
+            entry = self.player.queue[index]
+            token = str(entry.get("_queue_token") or "")
+            if not token:
+                token = f"legacy-{time.time_ns()}"
+                entry["_queue_token"] = token
+            return token
+
+    def _mark_sync_play_error(self, exc):
+        """Convert a synchronous play_stream exception into the normal end path."""
+        self._deferred_playback_end = False
+        self.player.is_playing = False
+        self.player.last_end_reason = "error"
+        try:
+            code = int(getattr(exc, "errno", 0) or -1)
+        except Exception:
+            code = -1
+        self.player.last_end_error = code
+
+    def _retry_current_playback_once(self):
+        context = self._claim_one_retry()
+        if not context:
+            return False
+        title = self.player.media_title or context.get("link") or self._("Unknown")
+        self._send_playback_message(
+            self._("Playback error for {title}. Retrying the same item once before skipping...").format(title=title)
+        )
+        self.bot.io_pool.submit(self._retry_playback_context_task, context)
+        return True
+
+    def _retry_playback_context_task(self, context):
+        link = str(context.get("link") or "")
+        if not link:
+            return
+        self.loading_new_track = True
+        error = None
+        try:
+            self.player.stop_transport()
+            self.player.current_link = link
+            self.bot.enableVoiceTransmission(True)
+            # Keep the same context key so this replay consumes the one retry
+            # budget rather than resetting it.
+            self._set_playback_context(context.get("kind"), link, context.get("token"))
+            self.player.play_stream(link)
+            self.bot.doChangeStatus(
+                ttstr(self.bot.bot_config['gender']),
+                ttstr(self._("Playing: {title}").format(title=self.player.media_title)),
+            )
+            self._prefetch_next_for_current()
+        except Exception as exc:
+            error = exc
+            self._mark_sync_play_error(exc)
+        finally:
+            self._finish_loading_transition()
+        if error is not None:
+            self.bot.io_pool.submit(self.on_playback_end)
+
+    def _teamtalk_voice_tx_active(self):
+        """Read our actual TeamTalk voice state when SDK state is available."""
+        try:
+            user = self.bot.getUser(self.bot.getMyUserID())
+            if not user:
+                return False
+            flag = int(self.bot._state_flag("USERSTATE_VOICE") or 0)
+            state = int(getattr(user, "uUserState", 0) or 0)
+            return bool(flag and state & flag)
+        except Exception:
+            return False
+
+    def _transport_or_voice_active(self):
+        try:
+            transport = bool(self.player.transport_is_active())
+        except Exception:
+            transport = bool(self.player.is_playing or getattr(self.player, "pause", False))
+        return transport or self._teamtalk_voice_tx_active()
 
     def _after_queue_enqueue(self, should_start):
         """Start a newly-reserved first queue item only after its queue announcement.
@@ -136,11 +334,11 @@ class PlayerCog:
                 return
             self.loading_new_track = True
             try:
-                self.player.stop()
+                self.player.stop_transport()
                 self.player.current_link = None
                 self.bot.enableVoiceTransmission(False)
             finally:
-                self.loading_new_track = False
+                self._finish_loading_transition()
             if user_id:
                 self.bot.privateMessage(user_id, self._("You've reached the end of the list."))
             return
@@ -182,9 +380,11 @@ class PlayerCog:
         # exhausted or manually-abandoned playlist must not resume behind it.
         self.player.clear_collection()
         self.loading_new_track = True
+        play_error = None
         try:
-            self.player.stop()
+            self.player.stop_transport()
             self.player.current_link = item["link"]
+            self._set_playback_context("radio", item["link"], self.player.radio_index)
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(item["link"])
             if announce_private and user_id:
@@ -193,12 +393,15 @@ class PlayerCog:
                 self._send_playback_message(self._("Autoplaying related track: {title}").format(title=item.get("title", self.player.media_title)))
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
             self._announce_track(self.player.media_title)
-            return True
         except Exception as exc:
-            self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=item.get('title', 'Unknown'), e=str(exc)))
-            return False
+            play_error = exc
+            self._send_playback_message(self._("Error playing {title}: {e}").format(title=item.get('title', 'Unknown'), e=str(exc)))
+            self._mark_sync_play_error(exc)
         finally:
-            self.loading_new_track = False
+            self._finish_loading_transition()
+        if play_error is not None:
+            self.bot.io_pool.submit(self.on_playback_end)
+        return True
 
     def _ensure_radio_seed(self):
         if self.player.radio_history and 0 <= self.player.radio_index < len(self.player.radio_history):
@@ -565,15 +768,20 @@ class PlayerCog:
         self.loading_new_track = True
         try:
             if self.player.is_playing:
-                self.player.stop()
+                self.player.stop_transport()
             self.player.current_link = link
+            self._set_playback_context("direct", link, f"request-{time.time_ns()}")
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(link)
         except Exception as e:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Error playing stream: {e}").format(e=str(e)))
+            self._mark_sync_play_error(e)
+            self._finish_loading_transition()
+            self.bot.io_pool.submit(self.on_playback_end)
             return
         finally:
-            self.loading_new_track = False
+            if self.loading_new_track:
+                self._finish_loading_transition()
         user_nickname = self._nickname(textmessage.nFromUserID)
         self._send_playback_message(self._("{nickname} requested playing from a URL").format(nickname=user_nickname))
         self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
@@ -721,17 +929,19 @@ class PlayerCog:
         self.loading_new_track = True
         try:
             if self.player.is_playing:
-                self.player.stop()
+                self.player.stop_transport()
             self.player.current_link = first_video["link"]
+            self._set_playback_context("collection", first_video["link"], f"{collection_type}:0")
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(first_video["link"])
         except Exception as e:
             play_error = e
-            self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=first_video['title'], e=str(e)))
+            self._send_playback_message(self._("Error playing {title}: {e}").format(title=first_video['title'], e=str(e)))
+            self._mark_sync_play_error(e)
         finally:
-            self.loading_new_track = False
+            self._finish_loading_transition()
         if play_error is not None:
-            self.on_playback_end()
+            self.bot.io_pool.submit(self.on_playback_end)
             return
         self._prefetch_next_for_current()
         user_nickname = self._nickname(user_id)
@@ -855,12 +1065,48 @@ class PlayerCog:
                         self.player.fade_out_and_stop()
                         self.bot.enableVoiceTransmission(False)
                     finally:
-                        self.loading_new_track = False
+                        self._finish_loading_transition()
                 self.player.clear_collection()
                 self.bot.privateMessage(textmessage.nFromUserID, self._("Searching..."))
                 self.bot.io_pool.submit(self._search_and_play_task, query, textmessage.nFromUserID)
-        else: # This is a pause/resume request
-            self.handle_pause_resume_command(textmessage)
+        else: # Restart the current item from the beginning. Pause/resume is x.
+            self._restart_current_item(textmessage.nFromUserID)
+
+    def _restart_current_item(self, user_id):
+        if self.player.queue_mode and self.player.queue:
+            with self.player.queue_lock:
+                index = self.player.queue_index
+                if index < 0 or index >= len(self.player.queue):
+                    index = 0
+                    self.player.queue_index = 0
+            self._play_from_queue(index)
+            return
+        link = self.player.current_link
+        if not link:
+            self.bot.privateMessage(user_id, self._("Nothing is currently available to play."))
+            return
+        self.loading_new_track = True
+        play_error = None
+        try:
+            self.player.stop_transport()
+            self.player.current_link = link
+            self._set_playback_context("restart", link, f"manual-{time.time_ns()}")
+            self.bot.enableVoiceTransmission(True)
+            self.player.play_stream(link)
+            self.bot.doChangeStatus(
+                ttstr(self.bot.bot_config['gender']),
+                ttstr(self._("Playing: {title}").format(title=self.player.media_title)),
+            )
+            self._announce_track(self.player.media_title)
+            self._prefetch_next_for_current()
+        except Exception as exc:
+            play_error = exc
+            self.bot.privateMessage(user_id, self._("Error playing track: {error}").format(error=str(exc)))
+            self._mark_sync_play_error(exc)
+        finally:
+            self._finish_loading_transition()
+        if play_error is not None:
+            self.bot.io_pool.submit(self.on_playback_end)
 
     def handle_ytmusic_search_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -881,7 +1127,7 @@ class PlayerCog:
                     self.player.fade_out_and_stop()
                     self.bot.enableVoiceTransmission(False)
                 finally:
-                    self.loading_new_track = False
+                    self._finish_loading_transition()
             self.player.clear_collection()
             self.bot.privateMessage(textmessage.nFromUserID, self._("Searching YouTube Music..."))
             self.bot.io_pool.submit(self._search_and_play_task, query, textmessage.nFromUserID, source='ytmusic')
@@ -899,12 +1145,14 @@ class PlayerCog:
             first_video = results[0]
             self.player.reset_radio_history(first_video, source)
             self.player.current_link = first_video['link']
+            self._set_playback_context("search", first_video['link'], f"{source}:0")
             self.bot.enableVoiceTransmission(True)
             try:
                 self.player.play_stream(first_video['link'])
             except Exception as e:
-                self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=first_video['title'], e=str(e)))
-                self.on_playback_end()
+                self._send_playback_message(self._("Error playing {title}: {e}").format(title=first_video['title'], e=str(e)))
+                self._mark_sync_play_error(e)
+                self.bot.io_pool.submit(self.on_playback_end)
                 return
             self._prefetch_next_for_current()
             user_nickname = self._nickname(user_id)
@@ -956,8 +1204,9 @@ class PlayerCog:
             # playlist/channel/radio behind that could resume after cq/q off.
             self.player.clear_collection()
             self.player.clear_radio_history()
-            self.player.stop()
+            self.player.stop_transport()
             self.player.current_link = video['link']
+            self._set_playback_context("queue", video['link'], str(video.get("_queue_token") or self._queue_token(index)))
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(video['link'])
             # As soon as current playback is live, prepare the next FIFO items.
@@ -967,15 +1216,20 @@ class PlayerCog:
             self._announce_track(self.player.media_title)
         except Exception as e:
             error = e
-            self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=video.get('title', 'Unknown'), e=str(e)))
+            self._send_playback_message(self._("Error playing {title}: {e}").format(title=video.get('title', 'Unknown'), e=str(e)))
+            self._mark_sync_play_error(e)
         finally:
-            self.loading_new_track = False
+            # A synchronous play_stream exception already has an explicit skip
+            # path below. Drop any duplicate terminal event that raced with it.
+            if error is not None:
+                self._deferred_playback_end = False
             with self.player.queue_lock:
                 self.player.queue_transition = False
+            self._finish_loading_transition()
         if error is not None:
-            # Failed queue items are removed one-at-a-time, exactly like completed
-            # items, so one bad URL cannot stall or wipe the rest of the queue.
-            self._advance_queue_after_current(remember=False)
+            # Send synchronous failures through the same retry/skip state machine
+            # used by asynchronous END_FILE errors.
+            self.bot.io_pool.submit(self.on_playback_end)
 
     def handle_pause_resume_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -1082,27 +1336,18 @@ class PlayerCog:
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
 
-        if self.player.is_playing or self.player.queue:
-            # Explicit stop is the one operation that clears the entire pending
-            # queue. Suppress mpv's end callback so it cannot start another item.
+        if self._transport_or_voice_active():
+            # Stop transport only. Queue/playlist/search/current link remain intact so
+            # p can restart the same item from 00:00; cq is the explicit queue clear.
             self.loading_new_track = True
             try:
-                self.player.stop()
-                self.player.current_link = None
-                self.player.search_results = []
-                self.player.current_search_index = 0
-                self.player.clear_collection()
-                with self.player.queue_lock:
-                    self.player.queue = []
-                    self.player.queue_index = -1
-                    self.player.queue_transition = False
-                    self.player.queue_history = []
-                self.player.clear_radio_history()
+                self.player.stop_transport()
+                self.player.pause = False
                 self.bot.enableVoiceTransmission(False)
             finally:
-                self.loading_new_track = False
+                self._finish_loading_transition()
             user_nickname = self._nickname(textmessage.nFromUserID)
-            self._send_playback_message(self._("{nickname} stopped the playback and cleared queue").format(nickname=user_nickname))
+            self._send_playback_message(self._("{nickname} stopped the playback").format(nickname=user_nickname))
             status_msg = self.bot.get_idle_status_message()
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
         else:
@@ -1131,15 +1376,38 @@ class PlayerCog:
     def on_playback_end(self):
         """Advance without losing queue order at the mpv end-of-track boundary."""
         if self.loading_new_track:
+            self._deferred_playback_end = True
             return
 
         # Queue always has priority. A completed queued item is removed exactly
         # once; if the previous track was non-queue, pending queue starts at item 1.
+        end_reason = str(getattr(self.player, "last_end_reason", "") or "").lower()
+        end_error = int(getattr(self.player, "last_end_error", 0) or 0)
+
+        # Any player failure gets one retry of the *same logical item* before
+        # Queue/Playlist/Radio state is advanced. This covers synchronous yt-dlp
+        # failures and asynchronous libmpv END_FILE errors with one rule.
+        if end_reason == "error" and self._retry_current_playback_once():
+            return
+        if end_reason != "error":
+            self._reset_failure_budget()
         with self.player.queue_lock:
             queue_has_current = self.player.queue_index >= 0 and bool(self.player.queue)
             queue_has_pending = bool(self.player.queue)
+            failed_title = None
+            if queue_has_current and end_reason == "error":
+                try:
+                    failed_title = str(self.player.queue[self.player.queue_index].get("title") or self._("Unknown"))
+                except Exception:
+                    failed_title = self._("Unknown")
         if queue_has_current or (self.player.queue_mode and queue_has_pending):
-            if self._advance_queue_after_current(remember=queue_has_current):
+            if failed_title is not None:
+                self._send_playback_message(
+                    self._("Playback failed for {title} (player error {error}). Skipping to the next queue item...").format(
+                        title=failed_title, error=end_error
+                    )
+                )
+            if self._advance_queue_after_current(remember=queue_has_current and end_reason != "error"):
                 return
             if queue_has_current:
                 self.bot.enableVoiceTransmission(False)
@@ -1159,6 +1427,12 @@ class PlayerCog:
         # Explicit playlists/channels/favorites keep their authored order. Ordinary
         # search playback deliberately does NOT auto-walk search results anymore.
         if self.player.play_mode == 3 and self.player.current_link:
+            if end_reason == "error":
+                # Repeat-one must not loop a permanently broken item forever.
+                self.bot.enableVoiceTransmission(False)
+                status_msg = self.bot.get_idle_status_message()
+                self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
+                return
             self.bot.io_pool.submit(self._repeat_current_track)
             return
         if (self.player.play_mode == 2 or self.autoplay_enabled) and self.player.collection_results and self._has_next_in_active_list():
@@ -1180,15 +1454,18 @@ class PlayerCog:
             return
         self.loading_new_track = True
         try:
+            self._set_playback_context("repeat", link, "m3")
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(link)
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
             self._announce_track(self.player.media_title)
         except Exception as exc:
-            self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=self.player.media_title or "Unknown", e=str(exc)))
-            self.bot.enableVoiceTransmission(False)
+            self._send_playback_message(self._("Error playing {title}: {e}").format(title=self.player.media_title or "Unknown", e=str(exc)))
+            self._mark_sync_play_error(exc)
         finally:
-            self.loading_new_track = False
+            self._finish_loading_transition()
+        if str(getattr(self.player, "last_end_reason", "") or "").lower() == "error":
+            self.bot.io_pool.submit(self.on_playback_end)
 
     def handle_autoplay_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -1271,8 +1548,9 @@ class PlayerCog:
         
         play_error = None
         try:
-            self.player.stop()
+            self.player.stop_transport()
             self.player.current_link = next_video['link']
+            self._set_playback_context("collection", next_video['link'], f"{self.player.collection_source}:{self._get_active_index()}")
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(next_video['link'])
             if announce_private and user_id:
@@ -1284,11 +1562,12 @@ class PlayerCog:
             self._prefetch_next_for_current()
         except Exception as e:
             play_error = e
-            self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=next_video.get('title', 'Unknown'), e=str(e)))
+            self._send_playback_message(self._("Error playing {title}: {e}").format(title=next_video.get('title', 'Unknown'), e=str(e)))
+            self._mark_sync_play_error(e)
         finally:
-            self.loading_new_track = False
+            self._finish_loading_transition()
         if play_error is not None:
-            self.on_playback_end()
+            self.bot.io_pool.submit(self.on_playback_end)
 
     def _play_previous_from_active_list(self, user_id=None, announce_private=False):
         results, _ = self._get_active_results()
@@ -1309,8 +1588,9 @@ class PlayerCog:
         
         play_error = None
         try:
-            self.player.stop()
+            self.player.stop_transport()
             self.player.current_link = prev_video['link']
+            self._set_playback_context("collection", prev_video['link'], f"{self.player.collection_source}:{self._get_active_index()}")
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(prev_video['link'])
             if announce_private and user_id:
@@ -1319,11 +1599,12 @@ class PlayerCog:
             self._prefetch_next_for_current()
         except Exception as e:
             play_error = e
-            self._send_playback_message(self._("Error playing {title}: {e}. Skipping...").format(title=prev_video.get('title', 'Unknown'), e=str(e)))
+            self._send_playback_message(self._("Error playing {title}: {e}").format(title=prev_video.get('title', 'Unknown'), e=str(e)))
+            self._mark_sync_play_error(e)
         finally:
-            self.loading_new_track = False
+            self._finish_loading_transition()
         if play_error is not None:
-            self.on_playback_end()
+            self.bot.io_pool.submit(self.on_playback_end)
 
     def _prefetch_next_for_current(self):
         # Queue Mode is independent from playlist/collection state.  A queued
@@ -1424,12 +1705,11 @@ class PlayerCog:
             self.bot.privateMessage(user_id, self._("File {filename} downloaded. Uploading...").format(filename=filename_only))
             
             if self.bot.bot_config['video_deletion_timer'] > 0:
-                self.upload_timers[filename] = threading.Timer(
-                    self.bot.bot_config['video_deletion_timer'] * 60, 
-                    self.delete_uploaded_file, 
-                    args=(filename, channel_id)
+                expires_at = time.time() + (self.bot.bot_config['video_deletion_timer'] * 60)
+                self.bot.state_store.schedule_deletion(
+                    filename, channel_id, filename_only, expires_at
                 )
-                self.upload_timers[filename].start()
+                self._deletion_wakeup.set()
 
         except Exception as e:
             self.bot.privateMessage(user_id, self._("Error downloading or uploading: {e}").format(e=str(e)))
@@ -1437,16 +1717,12 @@ class PlayerCog:
             self.download_in_progress = False
 
     def delete_uploaded_file(self, filename, channel_id):
-        """Deletes the uploaded audio file after the timer expires."""
-        try:
-            file_id = self.get_file_id_by_name(channel_id, os.path.basename(filename)) 
-            if file_id:
-                self.bot.doDeleteFile(channel_id, file_id)
-            if os.path.exists(filename):
-                os.remove(filename)
-            del self.upload_timers[filename]
-        except Exception as e:
-            print(self._("Error deleting file: {e}").format(e=str(e)))
+        """Compatibility helper: perform one deletion immediately."""
+        self._delete_scheduled_row({
+            "local_path": filename,
+            "channel_id": channel_id,
+            "remote_name": os.path.basename(filename),
+        })
 
     def get_file_id_by_name(self, channel_id, filename):
         """Gets the file ID from the TeamTalk server based on filename."""
@@ -1478,14 +1754,42 @@ class PlayerCog:
         self.bot.privateMessage(textmessage.nFromUserID, self._("Queue system is {state}.").format(state=state))
 
     def handle_queue_list_command(self, textmessage, *args):
-        if not self.player.queue:
+        total = len(self.player.queue)
+        if total == 0:
             self.bot.privateMessage(textmessage.nFromUserID, self._("The queue is empty."))
             return
-        
-        lines = [self._("Current Queue:")]
+
+        # Queue storage has no application-level item limit. Listing is paged
+        # only to keep TeamTalk messages and screen readers responsive.
+        page_size = 50
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        if args:
+            try:
+                page = int(args[0])
+            except (TypeError, ValueError):
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: ql [page]"))
+                return
+        elif self.player.queue_index >= 0:
+            page = self.player.queue_index // page_size + 1
+        else:
+            page = 1
+        if page < 1 or page > total_pages:
+            self.bot.privateMessage(
+                textmessage.nFromUserID,
+                self._("Queue page must be between 1 and {pages}.").format(pages=total_pages),
+            )
+            return
+
+        start = (page - 1) * page_size
+        end = min(total, start + page_size)
+        lines = [
+            self._("Current Queue: page {page}/{pages}, {total} item(s)").format(
+                page=page, pages=total_pages, total=total
+            )
+        ]
         now = int(time.time())
-        for i, video in enumerate(self.player.queue):
-            prefix = "-> " if i == self.player.queue_index else f"{i+1}. "
+        for offset, video in enumerate(self.player.queue[start:end], start=start):
+            prefix = "-> " if offset == self.player.queue_index else f"{offset+1}. "
             added_by = str(video.get("added_by") or self._("Unknown"))
             try:
                 age_seconds = max(0, now - int(video.get("added_at") or now))
@@ -1503,9 +1807,8 @@ class PlayerCog:
                 title=video.get("title", self._("Unknown")), nickname=added_by, age=age
             )
             lines.append(prefix + detail)
-        
-        msg = "\n".join(lines)
-        for chunk in self.bot._split_private_message(msg):
+
+        for chunk in self.bot._split_private_message("\n".join(lines)):
             self.bot.privateMessage(textmessage.nFromUserID, chunk)
 
     def handle_queue_check_command(self, textmessage, *args):
@@ -1535,12 +1838,18 @@ class PlayerCog:
                     idx = candidate
             else:
                 needle = selector.casefold()
-                exact = [i for i, item in enumerate(self.player.queue) if str(item.get("title", "")).casefold() == needle]
-                partial = [i for i, item in enumerate(self.player.queue) if needle in str(item.get("title", "")).casefold()]
-                if exact:
-                    idx = exact[0]
-                elif partial:
-                    idx = partial[0]
+                first_partial = None
+                # Stream the queue instead of building two index arrays. This
+                # stays bounded in Python memory even for very large queues.
+                for i, item in enumerate(self.player.queue):
+                    title_key = str(item.get("title", "")).casefold()
+                    if title_key == needle:
+                        idx = i
+                        break
+                    if first_partial is None and needle in title_key:
+                        first_partial = i
+                if idx is None:
+                    idx = first_partial
             if idx is None:
                 removed = None
                 was_current = False
@@ -1568,11 +1877,11 @@ class PlayerCog:
             else:
                 self.loading_new_track = True
                 try:
-                    self.player.stop()
+                    self.player.stop_transport()
                     self.player.current_link = None
                     self.bot.enableVoiceTransmission(False)
                 finally:
-                    self.loading_new_track = False
+                    self._finish_loading_transition()
 
     def handle_clear_queue_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -1580,9 +1889,10 @@ class PlayerCog:
         # cq removes queued entries only; unlike s it does not stop the audio that
         # is already playing. If that audio was a queue item it becomes detached.
         with self.player.queue_lock:
-            self.player.queue = []
+            self.player.queue.clear()
             self.player.queue_index = -1
             self.player.queue_transition = False
+            self.player.queue_history = []
         self.bot.privateMessage(textmessage.nFromUserID, self._("Queue cleared."))
 
     def handle_playing_info_command(self, textmessage, *args):
@@ -1621,23 +1931,29 @@ class PlayerCog:
             return False
         video = self.player.search_results[index]
         self.loading_new_track = True
+        play_error = None
         try:
             self.player.clear_collection()
             self.player.current_search_index = index
             self.player.reset_radio_history(video, video.get("source") or "youtube")
-            self.player.stop()
+            self.player.stop_transport()
             self.player.current_link = video["link"]
+            self._set_playback_context("search", video["link"], f"result:{index}")
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(video["link"])
             self.bot.privateMessage(user_id, self._("Playing search result: {title}").format(title=video['title']))
             self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
             self._announce_track(self.player.media_title)
-            return True
         except Exception as exc:
+            play_error = exc
             self.bot.privateMessage(user_id, self._("Error playing track: {error}").format(error=str(exc)))
-            return False
+            self._mark_sync_play_error(exc)
         finally:
-            self.loading_new_track = False
+            self._finish_loading_transition()
+        if play_error is not None:
+            self.bot.io_pool.submit(self.on_playback_end)
+            return False
+        return True
 
     def _change_queue_search_selection(self, textmessage, delta, args):
         """Change the search candidate attached to one queued search item.
@@ -1805,18 +2121,20 @@ class PlayerCog:
         self.loading_new_track = True
         try:
             if self.player.is_playing:
-                self.player.stop()
+                self.player.stop_transport()
             self.player.current_link = first_video["link"]
+            self._set_playback_context("collection", first_video["link"], f"favorites:{index}")
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(first_video["link"])
             self._send_playback_message(self._("Playing from favorites: {title}").format(title=self.player.media_title))
         except Exception as e:
             play_error = e
             self._send_playback_message(self._("Error playing {title}: {e}").format(title=first_video['title'], e=str(e)))
+            self._mark_sync_play_error(e)
         finally:
-            self.loading_new_track = False
+            self._finish_loading_transition()
         if play_error is not None:
-            self.on_playback_end()
+            self.bot.io_pool.submit(self.on_playback_end)
 
     def handle_delfav_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -1924,7 +2242,7 @@ class PlayerCog:
         try:
             self._set_active_index(index)
             item = results[index]
-            self.player.stop()
+            self.player.stop_transport()
             self.player.current_link = item["link"]
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(item["link"])
@@ -1934,7 +2252,7 @@ class PlayerCog:
         except Exception as exc:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Error playing track: {error}").format(error=str(exc)))
         finally:
-            self.loading_new_track = False
+            self._finish_loading_transition()
 
     def handle_favorites_list_command(self, textmessage, *args):
         if not self.favorites:
@@ -1951,9 +2269,12 @@ class PlayerCog:
             self.bot.privateMessage(textmessage.nFromUserID, self._("The queue is empty."))
             return
         start = max(self.player.queue_index + 1, 0)
-        pending = self.player.queue[start:]
-        random.shuffle(pending)
-        self.player.queue[start:] = pending
+        if hasattr(self.player.queue, "shuffle_from"):
+            self.player.queue.shuffle_from(start)
+        else:
+            pending = self.player.queue[start:]
+            random.shuffle(pending)
+            self.player.queue[start:] = pending
         self.bot.privateMessage(textmessage.nFromUserID, self._("The unplayed queue has been shuffled."))
         self._prefetch_next_for_current()
 

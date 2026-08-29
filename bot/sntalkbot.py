@@ -26,8 +26,10 @@ from concurrent.futures import ThreadPoolExecutor
 from bot.player import Player
 from bot.bot_identity import effective_status_message
 from bot.activity import ActivityLog
-from bot.dashboard_state import RuntimeStateWriter
+from bot.dashboard_state import RuntimeSnapshotBuilder
 from bot.http_api import LocalStatusApi
+from bot.state_store import StateStore
+from bot.update_notifier import UpdateNotifier
 
 
 class SNTalkBot(TeamTalk):
@@ -47,6 +49,7 @@ class SNTalkBot(TeamTalk):
         self.exclusion_config = self.config_handler.get_exclusion_config()
         self.accounts_config = self.config_handler.get_accounts_config()
         self.account_request_config = self.config_handler.get_account_request_config()
+        self.global_broadcast_config = self.config_handler.get_global_broadcast_config()
         self.weather_config = self.config_handler.get_weather_config()
         self.tts_config = self.config_handler.get_tts_config()
         self.groq_config = self.config_handler.get_groq_config()
@@ -80,10 +83,16 @@ class SNTalkBot(TeamTalk):
         # hold stale SDK structures or interfere with playback.
         self.activity = ActivityLog(max_items=200)
         self.started_at = self.activity.started_at
+        self.state_store = StateStore()
         self._user_profile_snapshots = {}
         self._channel_snapshots = {}
         self._user_state_snapshots = {}
-        self.player = Player(self.config_handler, cookiefile=self.cookiefile) if self.player_enabled else None
+        self.player = Player(self.config_handler, cookiefile=self.cookiefile, state_store=self.state_store) if self.player_enabled else None
+        self._startup_queue_resume_pending = bool(
+            self.player is not None
+            and self.playback_config.get("resume_queue_on_start", False)
+            and len(self.player.queue) > 0
+        )
         self.command_handler = CommandHandler(self)
         self.commands_locked = self.bot_config.get("is_locked", False)
         self.tts_enabled = self.bot_config.get("tts_enabled", True)
@@ -96,12 +105,10 @@ class SNTalkBot(TeamTalk):
         # entry is required by validation to exist in blacklist.txt as well.
         self.bad_words = utils.load_blacklist("blacklist.txt")
             
-        self.random_tts_thread = None
-        self.random_tts_messages = []
         self.initialize_connection()
         self._register_cogs()
-        self.runtime_state_writer = RuntimeStateWriter(self)
-        self.runtime_state_writer.start()
+        self.update_notifier = UpdateNotifier(self)
+        self.runtime_snapshot_builder = RuntimeSnapshotBuilder(self)
         self.local_status_api = LocalStatusApi(self)
         self.local_status_api.start()
 
@@ -168,7 +175,6 @@ class SNTalkBot(TeamTalk):
             translation.install()
             self._ = gettext.gettext
 
-       # utils.check_for_updates(self._)
         try:
             print(self._("Initializing audio devices..."))
             input_device = self._resolve_input_device(self.playback_config.get('input_device', 'auto'))
@@ -198,14 +204,20 @@ class SNTalkBot(TeamTalk):
         try:
             if getattr(self, "local_status_api", None) is not None:
                 self.local_status_api.stop()
-            if getattr(self, "runtime_state_writer", None) is not None:
-                self.runtime_state_writer.stop()
+            if getattr(self, "player_cog", None) is not None and hasattr(self.player_cog, "shutdown"):
+                self.player_cog.shutdown()
+            if getattr(self, "admin_cog", None) is not None and hasattr(self.admin_cog, "shutdown"):
+                self.admin_cog.shutdown()
+            if getattr(self, "update_notifier", None) is not None:
+                self.update_notifier.shutdown()
             if self.player is not None:
                 self.player.close_player()            
             self.disconnect()            
             self.closeTeamTalk()
             self.io_pool.shutdown(wait=False)
             self.quick_task_pool.shutdown(wait=False)
+            if getattr(self, "state_store", None) is not None:
+                self.state_store.close()
             print("Shutdown complete.")
         except Exception as e:
             logging.error(f"Error during shutdown: {e}")
@@ -440,6 +452,11 @@ class SNTalkBot(TeamTalk):
         with self._event_bootstrap_lock:
             self._event_bootstrap_ready = True
             self._event_bootstrap_timer = None
+        if getattr(self, "user_manager", None) is not None:
+            try:
+                self.user_manager.reconcile_private_channels()
+            except Exception:
+                logging.exception("Private-channel reconciliation failed")
         print(self._("Initial TeamTalk user synchronization complete; live login welcomes are enabled."))
 
     def _begin_event_bootstrap(self):
@@ -503,7 +520,13 @@ class SNTalkBot(TeamTalk):
         print(self._("Logged in successfully"))
         self.record_activity("system", "login", "Bot logged in to TeamTalk")
         self._begin_event_bootstrap()
-        channel_id = self.getChannelIDFromPath(ttstr(self.bot_config['default_channel']))
+        channel_kind, channel_ref = utils.parse_channel_reference(self.bot_config.get('default_channel', '/'))
+        if channel_kind == "id":
+            # Legacy TTMediaBot behavior: a numeric channel value is already a
+            # TeamTalk Channel ID and must not be sent through path resolution.
+            channel_id = int(channel_ref)
+        else:
+            channel_id = self.getChannelIDFromPath(ttstr(channel_ref))
 
         if channel_id == 0 or channel_id is None:
             print(self._("Error: Could not get channel ID for default channel."))
@@ -515,7 +538,6 @@ class SNTalkBot(TeamTalk):
             ttstr(self.bot_config["gender"]),
             ttstr(self.get_idle_status_message()),
         )
-        self._maybe_start_random_tts_broadcast()
 
     def onCmdMyselfKickedFromChannel(self, channelid, user):
         self.record_activity("system", "kicked", f"Bot was kicked from channel {int(channelid or 0)}", channel_id=int(channelid or 0))
@@ -627,13 +649,23 @@ class SNTalkBot(TeamTalk):
 
     def onCmdUserJoinedChannel(self, user: User):
         user_id = int(getattr(user, "nUserID", 0) or 0)
+        if (
+            user_id == int(self.getMyUserID() or 0)
+            and self._startup_queue_resume_pending
+            and self.player_cog is not None
+            and self.player is not None
+            and len(self.player.queue) > 0
+        ):
+            self._startup_queue_resume_pending = False
+            index = self.player.queue_index if 0 <= self.player.queue_index < len(self.player.queue) else 0
+            # URL extraction/network work must not block TeamTalk's callback thread.
+            self.quick_task_pool.submit(self.player_cog._play_from_queue, index)
         is_live = self._is_live_join_event(user)
         snapshot = self._profile_snapshot(user)
         if snapshot is not None:
             self._user_profile_snapshots[user_id] = snapshot
         if self.jail_cog is not None:
             self.jail_cog.handle_user_join_channel(user)
-        self._maybe_start_random_tts_broadcast()
 
         if is_live:
             nickname = (snapshot or {}).get("nickname") or (snapshot or {}).get("username") or "Unknown"
@@ -949,10 +981,12 @@ class SNTalkBot(TeamTalk):
         self.doTextMessage(message)
 
     def send_broadcast_message(self, message_text):
-        message = TextMessage()
-        message.nMsgType = TextMsgType.MSGTYPE_BROADCAST
-        message.szMessage = ttstr(message_text)
-        self.doTextMessage(message)
+        """Send a global text broadcast using TeamTalk-safe UTF-8 chunks."""
+        for chunk in self._split_private_message(message_text):
+            message = TextMessage()
+            message.nMsgType = TextMsgType.MSGTYPE_BROADCAST
+            message.szMessage = ttstr(chunk)
+            self.doTextMessage(message)
 
     def kick_user(self, user_id):
         user = self.getUser(user_id)
@@ -964,69 +998,26 @@ class SNTalkBot(TeamTalk):
         self.doKickUser(user_id, 0)
         return True
 
-    def send_broadcast_messages_at_intervals(self, messages):
-        random.seed()
-        while True:
-            if self.bot_config["random_message_interval"] > 0:
-                message = random.choice(messages)
-                nickname = self.get_random_nickname()
+    def queue_global_broadcast_tts(self, message_text):
+        """Queue optional TTS for the same Central Global Broadcast message.
 
-                message = message.format(name=ttstr(nickname))
-                self.send_broadcast_message(message)
-                time.sleep(self.bot_config["random_message_interval"] * 60)
-
-    def get_random_nickname(self):
-        online_users = [u for u in self.getServerUsers() if u.nUserID != self.getMyUserID()]
-        if online_users:
-            random_user = random.choice(online_users)
-            return random_user.szNickname
-        else:
-            return "Someone"
-
-    def _maybe_start_random_tts_broadcast(self):
-        if not self.server_management_enabled:
-            return
-        if self.tts_cog is None:
-            return
-        if self.random_tts_thread and self.random_tts_thread.is_alive():
-            return
-        if self.bot_config.get("random_message_interval", 0) <= 0:
-            return
-        if not self.tts_enabled:
-            return
-        if not self.tts_config.get("random_broadcast_enabled", False):
-            return
-        if (self.tts_config.get("mode") or "microsoft").strip().lower() not in ("microsoft", "google"):
-            return
-        if not self.random_tts_messages:
-            self.random_tts_messages = utils.load_messages("messages.txt")
-        if not self.random_tts_messages:
-            return
-        self.random_tts_thread = threading.Thread(
-            target=self._random_tts_broadcast_loop,
-            daemon=True,
-            name="TTBot_RandomTTSBroadcast",
-        )
-        self.random_tts_thread.start()
-
-    def _random_tts_broadcast_loop(self):
-        random.seed()
-        interval_minutes = self.bot_config.get("random_message_interval", 0)
-        if interval_minutes <= 0:
-            return
-        while True:
-            if not self.tts_enabled:
-                time.sleep(5)
-                continue
-            if not self._has_other_users_in_channel():
-                time.sleep(5)
-                continue
-            message = random.choice(self.random_tts_messages)
-            nickname = self.get_random_nickname()
-            message = message.format(name=ttstr(nickname))
-            if self.tts_cog is not None:
-                self.tts_cog.speak_random_broadcast(message)
-            time.sleep(interval_minutes * 60)
+        There is intentionally no second message source or scheduler. Text and
+        speech share the Web Manager SQLite message feed, while the per-instance
+        ``[global_broadcast] tts_enabled`` switch controls whether this bot also
+        speaks each delivered central message.
+        """
+        cfg = dict(getattr(self, "global_broadcast_config", {}) or {})
+        if not bool(cfg.get("tts_enabled", False)):
+            return False
+        if not bool(getattr(self, "tts_enabled", False)) or self.tts_cog is None:
+            return False
+        if not self._has_other_users_in_channel():
+            return False
+        text = str(message_text or "").strip()
+        if not text:
+            return False
+        self.quick_task_pool.submit(self.tts_cog.speak_global_broadcast, text)
+        return True
 
     def _has_other_users_in_channel(self):
         channel_id = self.getMyChannelID()

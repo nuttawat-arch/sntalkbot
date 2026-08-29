@@ -1,6 +1,7 @@
 import random
 import string
-from threading import Lock
+import time
+from threading import Lock, Thread
 from TeamTalk5 import Channel, ChannelType, Codec, OPUS_APPLICATION_VOIP, UserType, ttstr
 from .utils import BotUtils as utils
 
@@ -13,10 +14,10 @@ class UserManager:
         self._ = bot._        
         self.private_channels = {}
         self.private_channel_lock = Lock()
-        self.notifications = {}
-        self.username_notifications = {}
-        self.user_messages = {}
         self.user_ip_info = {}
+        for row in self.bot.state_store.list_private_channels():
+            key = tuple(sorted((row["user_a"], row["user_b"])))
+            self.private_channels[key] = row["channel_name"]
 
     def register(self, command_handler):
         """Registers all commands related to user management."""
@@ -46,22 +47,26 @@ class UserManager:
         if not fresh_login:
             return
 
-        # 1. Handle Notifications
-        if nickname in self.notifications:
-            chat_id = self.notifications[nickname]["telegram_chat_id"]
-            utils.send_telegram_notification(self.bot.telegram_config['telegram_bot_token'], chat_id, self._("Hello. Important: The user {name} has logged in.").format(name=nickname))
-            del self.notifications[nickname]
-        if username in self.username_notifications:
-            chat_id = self.username_notifications[username]["telegram_chat_id"]
-            utils.send_telegram_notification(self.bot.telegram_config['telegram_bot_token'], chat_id, self._("Hello. Important: The user {username} has logged in.").format(username=username))
-            del self.username_notifications[username]
+        # 1. Handle one-shot Telegram notifications from the persistent store.
+        token = self.bot.telegram_config.get("telegram_bot_token", "")
+        notices = []
+        notices.extend(self.bot.state_store.pop_notifications_for("nickname", nickname))
+        if username:
+            notices.extend(self.bot.state_store.pop_notifications_for("username", username))
+        for notice in notices:
+            utils.send_telegram_notification(
+                token, notice.get("telegram_chat_id"),
+                self._("Hello. Important: the user {name} has logged in.").format(name=nickname or username),
+            )
 
-        # 2. Deliver Pending Messages
-        if username in self.user_messages:
-            for msg_data in self.user_messages[username]:
-                self.bot.privateMessage(user.nUserID, self._("You have a message from {sender_nickname} ({sender_username}): {message}").format(**msg_data))
-            del self.user_messages[username]
-        
+        # 2. Deliver pending messages from SQLite, then delete them transactionally.
+        if username:
+            for msg_data in self.bot.state_store.pop_offline_messages(username):
+                self.bot.privateMessage(
+                    user.nUserID,
+                    self._("You have a message from {sender_nickname} ({sender_username}): {message}").format(**msg_data),
+                )
+
         # 3. Handle randomized public login welcome broadcasts.
         # This is intentionally independent from welcome_mode, which controls
         # the optional static message sent when a user joins the bot's channel.
@@ -221,75 +226,104 @@ class UserManager:
         else:
             self.bot.privateMessage(user_id, self._("No country information available for users."))
 
+    def _subscriber_key(self, user_id):
+        user = self.bot.getUser(user_id)
+        if user:
+            username = ttstr(user.szUsername).strip()
+            if username:
+                return f"user:{username.casefold()}"
+        return f"id:{int(user_id)}"
+
+    def _notification_args(self, args):
+        values = list(args)
+        if not values:
+            raise ValueError
+        default_chat = str(self.bot.telegram_config.get("default_chat_id") or "").strip()
+        chat_id = default_chat
+        # Numeric last argument is interpreted as a Telegram chat ID. This keeps
+        # old command syntax working while allowing a configured default.
+        if len(values) >= 2 and str(values[-1]).lstrip("-").isdigit():
+            chat_id = str(values.pop()).strip()
+        target = " ".join(values).strip()
+        if not target or not chat_id:
+            raise ValueError
+        if target.startswith("@"):
+            return "username", target[1:], chat_id
+        return "nickname", target, chat_id
+
     def handle_notify_command(self, textmessage, *args):
         try:
-            full_args = " ".join(args)
-            last_space_index = full_args.rfind(" ")
-            if last_space_index == -1: raise ValueError
-            
-            nickname = full_args[:last_space_index]
-            telegram_chat_id = full_args[last_space_index + 1:]
-
-            self.notifications[nickname] = {
-                "user_id": textmessage.nFromUserID,
-                "telegram_chat_id": telegram_chat_id
-            }
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Alright. You will be notified when {name} logs in.").format(name=nickname))
+            target_type, target, chat_id = self._notification_args(args)
+            self.bot.state_store.add_notification(
+                self._subscriber_key(textmessage.nFromUserID), target_type, target, chat_id
+            )
+            self.bot.privateMessage(
+                textmessage.nFromUserID,
+                self._("Alright. You will be notified when {name} logs in.").format(name=target),
+            )
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: notify <nickname> <telegram_chat_id>"))
+            self.bot.privateMessage(
+                textmessage.nFromUserID,
+                self._("Invalid command. Usage: notify <nickname|@username> [telegram_chat_id]"),
+            )
 
     def handle_unotify_command(self, textmessage, *args):
         try:
-            full_args = " ".join(args)
-            last_space_index = full_args.rfind(" ")
-            if last_space_index == -1: raise ValueError
-
-            username = full_args[:last_space_index]
-            telegram_chat_id = full_args[last_space_index + 1:]
-
-            self.username_notifications[username] = {
-                "user_id": textmessage.nFromUserID,
-                "telegram_chat_id": telegram_chat_id
-            }
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Alright. You will be notified when {username} logs in.").format(username=username))
+            target_type, target, chat_id = self._notification_args(args)
+            removed = self.bot.state_store.remove_notification(
+                self._subscriber_key(textmessage.nFromUserID), target_type, target, chat_id
+            )
+            if removed:
+                self.bot.privateMessage(
+                    textmessage.nFromUserID,
+                    self._("Notification for {name} has been removed.").format(name=target),
+                )
+            else:
+                self.bot.privateMessage(
+                    textmessage.nFromUserID,
+                    self._("No matching notification subscription was found."),
+                )
         except (ValueError, IndexError):
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: unotify <username> <telegram_chat_id>"))
+            self.bot.privateMessage(
+                textmessage.nFromUserID,
+                self._("Invalid command. Usage: unotify <nickname|@username> [telegram_chat_id]"),
+            )
 
     def handle_tell_command(self, textmessage, *args):
         try:
             target_username = args[0]
             message = " ".join(args[1:])
-            if not target_username or not message: raise ValueError()
-
+            if not target_username or not message:
+                raise ValueError()
             sender = self.bot.getUser(textmessage.nFromUserID)
+            if not sender:
+                raise ValueError()
             sender_username = ttstr(sender.szUsername)
             sender_nickname = ttstr(sender.szNickname)
-            
-            if target_username not in self.user_messages:
-                self.user_messages[target_username] = []
-                
-            self.user_messages[target_username].append({
-                "sender_username": sender_username,
-                "sender_nickname": sender_nickname,
-                "message": message
-            })
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Your message for {target_username} has been saved.").format(target_username=target_username))
+            self.bot.state_store.add_offline_message(
+                target_username, sender_username, sender_nickname, message
+            )
+            self.bot.privateMessage(
+                textmessage.nFromUserID,
+                self._("Your message for {target_username} has been saved.").format(target_username=target_username),
+            )
         except (ValueError, IndexError):
             self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: msg <username> <message>"))
-            
+
     def handle_messages_command(self, textmessage, *args):
         sender = self.bot.getUser(textmessage.nFromUserID)
-        sender_username = ttstr(sender.szUsername)
-        messages_found = False
-        
-        for target, messages in self.user_messages.items():
-            for msg_data in messages:
-                if msg_data["sender_username"] == sender_username:
-                    self.bot.privateMessage(textmessage.nFromUserID, self._("Pending message to {target}: {message}").format(target=target, message=msg_data['message']))
-                    messages_found = True
-        
-        if not messages_found:
+        sender_username = ttstr(sender.szUsername) if sender else ""
+        rows = self.bot.state_store.sent_offline_messages(sender_username) if sender_username else []
+        if not rows:
             self.bot.privateMessage(textmessage.nFromUserID, self._("You have no pending messages."))
+            return
+        for row in rows:
+            self.bot.privateMessage(
+                textmessage.nFromUserID,
+                self._("Pending message to {target}: {message}").format(
+                    target=row["target_username"], message=row["message"]
+                ),
+            )
 
     def handle_users_command(self, textmessage, *args):
         recipient_id = textmessage.nFromUserID
@@ -328,8 +362,10 @@ class UserManager:
         second_name = ttstr(second_name_str)
         
         with self.private_channel_lock:
+            sender_key = sender_name.casefold()
+            second_key = second_name.casefold()
             for users in self.private_channels.keys():
-                if sender_name in users or second_name in users:
+                if sender_key in users or second_key in users:
                     sender_user = self.bot.getUserByName(sender_name)
                     if sender_user:
                         self.bot.privateMessage(sender_user.nUserID, self._("Either you or {second_name} is already in a private channel.").format(second_name=second_name))
@@ -360,8 +396,10 @@ class UserManager:
             channel.audiocodec.u.opus.nApplication = OPUS_APPLICATION_VOIP
             
             self.bot.doMakeChannel(channel)
-            channel_key = tuple(sorted((sender_name, second_name)))
-            self.private_channels[channel_key] = channel
+            channel_key = tuple(sorted((sender_name.casefold(), second_name.casefold())))
+            channel_name = ttstr(channel.szName)
+            self.private_channels[channel_key] = channel_name
+            self.bot.state_store.save_private_channel(sender_name, second_name, channel_name)
 
             self.bot.privateMessage(sender_user.nUserID, self._("Joining private channel. Password: {password}").format(password=password))
             self.bot.privateMessage(second_user.nUserID, self._("Joining private channel. Password: {password}").format(password=password))
@@ -383,18 +421,36 @@ class UserManager:
             Thread(target=move_users_to_channel).start()
 
     def cleanup_private_channel(self, user):
-        user_nickname = ttstr(user.szNickname)
+        user_nickname = ttstr(user.szNickname).casefold()
         with self.private_channel_lock:
-            channel_key_to_delete = None
-            for key in self.private_channels:
-                if user_nickname in key:
-                    channel_key_to_delete = key
-                    break
-            
-            if channel_key_to_delete:
-                channel_obj = self.private_channels[channel_key_to_delete]
-                channel_path = f"/{ttstr(channel_obj.szName)}"
-                channel_id = self.bot.getChannelIDFromPath(ttstr(channel_path))
-                if channel_id != 0:
+            channel_key_to_delete = next(
+                (key for key in self.private_channels if user_nickname in key), None
+            )
+            if not channel_key_to_delete:
+                return
+            channel_name = self.private_channels[channel_key_to_delete]
+            channel_id = self.bot.getChannelIDFromPath(ttstr(f"/{channel_name}"))
+            if channel_id:
+                self.bot.doRemoveChannel(channel_id)
+            del self.private_channels[channel_key_to_delete]
+            self.bot.state_store.delete_private_channel("\x1f".join(sorted(channel_key_to_delete)))
+
+    def reconcile_private_channels(self):
+        """Drop stale metadata and empty channels after TeamTalk initial sync."""
+        online = {
+            ttstr(user.szNickname).strip().casefold()
+            for user in self.bot.getServerUsers()
+            if int(getattr(user, "nUserID", 0) or 0) != int(self.bot.getMyUserID() or 0)
+        }
+        with self.private_channel_lock:
+            for key, channel_name in list(self.private_channels.items()):
+                channel_id = self.bot.getChannelIDFromPath(ttstr(f"/{channel_name}"))
+                if not channel_id:
+                    self.private_channels.pop(key, None)
+                    self.bot.state_store.delete_private_channel("\x1f".join(sorted(key)))
+                    continue
+                if not any(name in online for name in key):
                     self.bot.doRemoveChannel(channel_id)
-                del self.private_channels[channel_key_to_delete]
+                    self.private_channels.pop(key, None)
+                    self.bot.state_store.delete_private_channel("\x1f".join(sorted(key)))
+

@@ -1079,10 +1079,6 @@ msgstr "อุปกรณ์อินพุต"
 msgid "Intercept All Channel Messages?"
 msgstr "รับข้อความจากทุกห้องหรือไม่"
 
-#: bot/config_handler.py:58
-msgid "Interval in minutes for sending random broadcast messages from messages.txt. Set to 0 to disable."
-msgstr "ช่วงเวลาเป็นนาทีสำหรับส่งข้อความสุ่มจาก messages.txt ตั้งเป็น 0 เพื่อปิด"
-
 #: bot/config_handler.py:429
 msgid "Invalid choice number."
 msgstr "หมายเลขตัวเลือกไม่ถูกต้อง"
@@ -1227,10 +1223,6 @@ msgstr "ชื่อผู้ใช้ไม่ถูกต้อง ใช้ 3
 msgid "Invalid value. Use accounts on or accounts off."
 msgstr "ค่าไม่ถูกต้อง ใช้ accounts on หรือ accounts off"
 
-#: bot/modules/tts.py:584
-msgid "Invalid value. Use rb on or rb off."
-msgstr "ค่าไม่ถูกต้อง ใช้ rb on หรือ rb off"
-
 #: bot/modules/tts.py:569
 msgid "Invalid value. Use tts on or tts off."
 msgstr "ค่าไม่ถูกต้อง ใช้ tts on หรือ tts off"
@@ -1340,8 +1332,8 @@ msgid "List currently connected users with account type, location, and status."
 msgstr "แสดงผู้ใช้ที่เชื่อมต่ออยู่ พร้อมประเภทบัญชี ตำแหน่งโดยประมาณ และสถานะ"
 
 #: bot/help.py:73
-msgid "List items in current queue."
-msgstr "แสดงรายการในคิวปัจจุบัน"
+msgid "List the queue in pages of 50 items; omit page to show the current queue page."
+msgstr "แสดงคิวแบบแบ่งหน้าละ 50 รายการ โดยไม่ใส่เลขจะแสดงหน้าที่มีคิวปัจจุบัน"
 
 #: bot/help.py:140
 msgid "List saved favorite tracks, one track per message."
@@ -1787,18 +1779,6 @@ msgstr "เปลี่ยนผลค้นหาของคิว {position} 
 msgid "Queue {position} was not added from a search, so it has no alternate search results."
 msgstr "คิว {position} ไม่ได้เพิ่มมาจากการค้นหา จึงไม่มีผลค้นหาอื่นให้เปลี่ยน"
 
-#: bot/config_handler.py:58
-msgid "Random Message Interval (minutes)"
-msgstr "ช่วงเวลาข้อความสุ่ม (นาที)"
-
-#: bot/modules/tts.py:580
-msgid "Random broadcasts are currently {state}."
-msgstr "ประกาศสุ่มขณะนี้ {state}"
-
-#: bot/modules/tts.py:590
-msgid "Random broadcasts have been {state}."
-msgstr "ประกาศสุ่มถูก{state}แล้ว"
-
 #: bot/modules/tts.py:465
 msgid "Rate is only available in Microsoft mode. For Google TTS, please use speed"
 msgstr "Rate ใช้ได้เฉพาะโหมด Microsoft สำหรับ Google TTS ให้ใช้ speed"
@@ -2112,8 +2092,8 @@ msgid "Stereo 3D 2 (Echo): {state}"
 msgstr "Stereo 3D แบบ 2 (Echo): {state}"
 
 #: bot/help.py:65
-msgid "Stop playback and clear queue."
-msgstr "หยุดเล่นและล้างคิว"
+msgid "Stop playback only; keep queue, playlist, and current item."
+msgstr "หยุดการเล่นเท่านั้น โดยเก็บคิว เพลย์ลิสต์ และรายการปัจจุบันไว้"
 
 #: bot/sntalkbot.py:563
 msgid "Subscribed to channel messages"

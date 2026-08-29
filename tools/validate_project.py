@@ -151,6 +151,57 @@ if duplicates:
 else:
     ok(f"registered command names are unique ({len(names)})")
 
+# Every public command must resolve to a real, non-empty method on its cog. This
+# catches menu/help entries that register a command but have no executable action.
+_dead_command_actions = []
+for _path in sorted((ROOT / "bot").rglob("*.py")):
+    if "__pycache__" in _path.parts:
+        continue
+    _tree = ast.parse(_path.read_text(encoding="utf-8"), filename=str(_path))
+    for _cls in [n for n in _tree.body if isinstance(n, ast.ClassDef)]:
+        _methods = {n.name: n for n in _cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for _node in ast.walk(_cls):
+            if not (isinstance(_node, ast.Call) and isinstance(_node.func, ast.Attribute) and _node.func.attr == "register_command"):
+                continue
+            if len(_node.args) < 2 or not isinstance(_node.args[0], ast.Constant) or not isinstance(_node.args[0].value, str):
+                continue
+            _cmd = _node.args[0].value.strip().lstrip("/").lower()
+            _handler_expr = ast.unparse(_node.args[1])
+            _method_name = _handler_expr.rsplit(".", 1)[-1]
+            _method = _methods.get(_method_name)
+            if _method is None:
+                _dead_command_actions.append(f"{_cmd}:missing {_handler_expr}")
+                continue
+            _body = [x for x in _method.body if not (isinstance(x, ast.Expr) and isinstance(x.value, ast.Constant) and isinstance(x.value.value, str))]
+            if not _body or all(isinstance(x, ast.Pass) for x in _body):
+                _dead_command_actions.append(f"{_cmd}:empty {_handler_expr}")
+if _dead_command_actions:
+    fail("registered commands without executable actions: " + "; ".join(_dead_command_actions))
+else:
+    ok("every registered command resolves to a real non-empty action method")
+
+# Reverse command/action audit: a method explicitly named handle_*_command is
+# public-command-shaped. If nothing registers it, it is dead UI/action code and
+# should be removed or deliberately renamed as an internal helper.
+_registered_handler_methods = set()
+_command_shaped_methods = []
+for _path in sorted((ROOT / "bot").rglob("*.py")):
+    if "__pycache__" in _path.parts:
+        continue
+    _tree = ast.parse(_path.read_text(encoding="utf-8"), filename=str(_path))
+    for _cls in [n for n in ast.walk(_tree) if isinstance(n, ast.ClassDef)]:
+        for _method in _cls.body:
+            if isinstance(_method, (ast.FunctionDef, ast.AsyncFunctionDef)) and _method.name.startswith("handle_") and _method.name.endswith("_command"):
+                _command_shaped_methods.append((_method.name, f"{_path.relative_to(ROOT)}:{_method.lineno}"))
+        for _node in ast.walk(_cls):
+            if isinstance(_node, ast.Call) and isinstance(_node.func, ast.Attribute) and _node.func.attr == "register_command" and len(_node.args) >= 2:
+                _registered_handler_methods.add(ast.unparse(_node.args[1]).rsplit(".", 1)[-1])
+_orphan_command_handlers = [f"{name}@{loc}" for name, loc in _command_shaped_methods if name not in _registered_handler_methods]
+if _orphan_command_handlers:
+    fail("command-shaped action methods are unreachable from any registered command: " + "; ".join(_orphan_command_handlers))
+else:
+    ok("no unreachable handle_*_command action methods remain")
+
 # Avoid keeping multiple public aliases that execute exactly the same handler in the
 # same command module. This catches duplicate handler registrations.
 same_handler = []
@@ -231,7 +282,7 @@ wrong_required = [f"{a}->{aliases.get(a, '?')}" for a, target in required_aliase
 if wrong_required:
     fail("required usability aliases missing or incorrect: " + ", ".join(wrong_required))
 else:
-    ok("required usability aliases are present with one shorthand per intent (h/a + Player gl/c/sb/sf + Manager j/sc/vt)")
+    ok("required usability aliases are present with one shorthand per intent (h/a + Common lifecycle/config + Player gl/c/sb/sf + Manager j)")
 
 # Command-dispatch regression test without importing the native TeamTalk SDK.
 def validate_prefix_free_dispatch():
@@ -542,6 +593,41 @@ def validate_multilingual_blacklist():
 
 if validate_multilingual_blacklist():
     ok("canonical blacklist.txt preserves legacy languages, includes Thai, and fully contains compatibility badword.txt")
+
+
+def validate_channel_reference_compatibility():
+    spec = importlib.util.spec_from_file_location("validate_channel_utils", ROOT / "bot" / "utils.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    cases = [
+        (8, ("id", 8)),
+        ("8", ("id", 8)),
+        ('"8"', ("id", 8)),
+        ("'8'", ("id", 8)),
+        ("/music", ("path", "/music")),
+        ("/8", ("path", "/8")),
+        ("Music Room", ("path", "Music Room")),
+        ("", ("path", "/")),
+    ]
+    for raw, expected in cases:
+        actual = module.BotUtils.parse_channel_reference(raw)
+        if actual != expected:
+            fail(f"default channel parser failed for {raw!r}: expected {expected!r}, got {actual!r}")
+            return False
+    source = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
+    wired = all(token in source for token in (
+        "utils.parse_channel_reference(self.bot_config.get('default_channel', '/'))",
+        'if channel_kind == "id":',
+        "self.getChannelIDFromPath(ttstr(channel_ref))",
+        "self.doJoinChannelByID(channel_id",
+    ))
+    if not wired:
+        fail("default channel ID/path parser is not wired into TeamTalk login")
+        return False
+    return True
+
+if validate_channel_reference_compatibility():
+    ok("default_channel accepts legacy integer IDs, textual/quoted IDs, and historical channel paths in one field")
 
 if 'contains_profanity(message_text, self.bad_words)' in sntalkbot_source:
     fail("legacy supplemental badword warning path still runs separately from canonical blacklist")
@@ -1021,6 +1107,7 @@ def validate_player_queue_and_radio_regressions():
         player.current_collection_index = 0
         selected_links = []
         player.stop = lambda: None
+        player.stop_transport = lambda: None
         def fake_play_stream(link):
             selected_links.append(link)
             player.media_title = next((x["title"] for x in player.collection_results if x["link"] == link), link)
@@ -1058,6 +1145,52 @@ def validate_player_queue_and_radio_regressions():
         assert announced[-1].get("collection_title") == "Second", announced
         assert announced[-1].get("nickname") == "Tester", announced
         assert all(item.get("added_by") == "Tester" for item in player.queue[-2:]), player.queue[-2:]
+
+        # Transport semantics are intentionally non-overlapping:
+        # s = stop only, x = pause/resume, p(no args) = restart current item,
+        # cq = clear queue only. None may silently perform another command's job.
+        player.queue_mode = False
+        player.queue = [{"title":"Keep Q","link":"keep-q"}]
+        player.queue_index = 0
+        player.collection_results = [{"title":"Keep P","link":"keep-p"}]
+        player.search_results = [{"title":"Keep S","link":"keep-s"}]
+        player.current_link = "normal-current"
+        player.media_title = "Normal Current"
+        player.is_playing = True
+        player.pause = False
+        stop_calls=[]
+        player.stop_transport=lambda: stop_calls.append("stop")
+        player.pause_stream=lambda: setattr(player,"pause",True)
+        cog.handle_stop_command(msg)
+        assert stop_calls == ["stop"], stop_calls
+        assert player.current_link == "normal-current" and len(player.queue) == 1 and len(player.collection_results) == 1 and len(player.search_results) == 1
+
+        # x pauses and resumes the same transport without stopping/clearing.
+        player.is_playing=True; player.pause=False
+        cog.handle_pause_resume_command(msg)
+        assert player.pause is True and stop_calls == ["stop"]
+        cog.handle_pause_resume_command(msg)
+        assert player.pause is False and stop_calls == ["stop"]
+
+        # p with no argument restarts the normal-mode current link from 00:00.
+        restarted=[]
+        player.is_playing=False; player.pause=False; player.queue_mode=False; player.current_link="normal-current"
+        player.play_stream=lambda link: restarted.append(link)
+        cog.handle_play_search_or_pause_command(msg)
+        assert restarted == ["normal-current"], restarted
+
+        # In Queue Mode p restarts the exact current queue item, not the next one.
+        queue_restart=[]
+        player.queue_mode=True; player.queue=[{"title":"Q1","link":"q1"},{"title":"Q2","link":"q2"},{"title":"Q3","link":"q3"}]; player.queue_index=1
+        cog._play_from_queue=lambda index: queue_restart.append(index)
+        cog.handle_play_search_or_pause_command(msg)
+        assert queue_restart == [1], queue_restart
+
+        # cq clears queue data only; it must not stop the currently playing audio.
+        player.is_playing=True; player.current_link="detached-current"; player.queue=[{"title":"Q1","link":"q1"}]; player.queue_index=0
+        stop_before=len(stop_calls)
+        cog.handle_clear_queue_command(msg)
+        assert len(player.queue)==0 and player.queue_index==-1 and player.current_link=="detached-current" and len(stop_calls)==stop_before
         return True
     except Exception as exc:
         fail(f"Player queue/radio regression: {exc!r}")
@@ -1076,6 +1209,164 @@ def validate_player_queue_and_radio_regressions():
 
 if validate_player_queue_and_radio_regressions():
     ok("queue FIFO/ownership, first-item queue-before-play announcement, pending prefetch, pp/select/search targeting, and normal n/b Radio are regression-tested")
+
+def validate_mpv_endfile_queue_skip_runtime():
+    """Regression-test stale EOF, one-retry failure policy, Queue skip and force-stop."""
+    previous_mpv = sys.modules.get("mpv")
+    previous_yt = sys.modules.get("yt_dlp")
+    previous_tt = sys.modules.get("TeamTalk5")
+    fake_mpv = types.ModuleType("mpv")
+    class FakeMPV:
+        pass
+    fake_mpv.MPV = FakeMPV
+    fake_yt = types.ModuleType("yt_dlp")
+    fake_yt.YoutubeDL = object
+    sys.modules["mpv"] = fake_mpv
+    sys.modules["yt_dlp"] = fake_yt
+    fake_tt = types.ModuleType("TeamTalk5")
+    fake_tt.ttstr = lambda value: str(value)
+    sys.modules["TeamTalk5"] = fake_tt
+    root_str = str(ROOT)
+    added_root = root_str not in sys.path
+    if added_root:
+        sys.path.insert(0, root_str)
+    try:
+        spec = importlib.util.spec_from_file_location("_sntalkbot_mpv_endfile_test", ROOT / "bot" / "player.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        player = module.Player.__new__(module.Player)
+        player._end_dispatch_lock = module.threading.Lock()
+        player._intentional_stop = False
+        player._end_event_handled = False
+        player._mpv_end_event_registered = True
+        player.last_end_reason = None
+        player.last_end_error = 0
+        player.is_playing = True
+        player.playback_end_transition = False
+        player.active_playback_started = module.time.monotonic()
+        player._terminal_handoff_grace = 0.85
+        player.idle_active = False
+        callbacks = []
+        player.end_callback = lambda: callbacks.append((player.last_end_reason, player.last_end_error))
+
+        # A late END_FILE from the old item can arrive after the new item became
+        # active. While mpv is non-idle inside the handoff grace, it must not
+        # consume the fresh item's end detector or advance Queue item #2.
+        stale = types.SimpleNamespace(data=types.SimpleNamespace(reason=0, error=0))
+        player._on_end_file_event(stale)
+        assert callbacks == [] and player._end_event_handled is False and player.is_playing is True, callbacks
+
+        # Once the current item is actually idle, its real ERROR is terminal and
+        # is still de-duplicated if python-mpv delivers the event twice.
+        player.idle_active = True
+        event = types.SimpleNamespace(data=types.SimpleNamespace(reason=4, error=-13))
+        player._on_end_file_event(event)
+        player._on_end_file_event(event)
+        assert callbacks == [("error", -13)], callbacks
+        assert player.is_playing is False and player.playback_end_transition is False
+
+        spec2 = importlib.util.spec_from_file_location("_sntalkbot_mpv_queue_test", ROOT / "bot" / "modules" / "player.py")
+        mod2 = importlib.util.module_from_spec(spec2)
+        spec2.loader.exec_module(mod2)
+        played = []
+        retried = []
+        messages = []
+        voice = []
+        class Pool:
+            def submit(self, fn, *args):
+                return fn(*args)
+        bot = types.SimpleNamespace(
+            io_pool=Pool(),
+            enableVoiceTransmission=lambda value: voice.append(bool(value)),
+            doChangeStatus=lambda *a, **k: None,
+            bot_config={"gender": 0},
+            playback_config={"send_channel_messages": True},
+            get_idle_status_message=lambda: "idle",
+        )
+        qplayer = types.SimpleNamespace(
+            queue_lock=mod2.threading.RLock(),
+            queue=[{"title":"Broken","link":"bad","_queue_token":"token-bad"},{"title":"Good","link":"good","_queue_token":"token-good"}],
+            queue_index=0, queue_mode=True, queue_transition=False, queue_history=[],
+            last_end_reason="error", last_end_error=-13, play_mode=2, current_link="bad",
+            collection_results=[], media_title="Broken", is_playing=False, pause=False,
+            stop_transport=lambda: None,
+            play_stream=lambda link: retried.append(link),
+        )
+        cog = mod2.PlayerCog.__new__(mod2.PlayerCog)
+        cog.bot=bot; cog.player=qplayer; cog._=lambda value: value
+        cog.loading_new_track=False; cog.autoplay_enabled=False; cog._deferred_playback_end=False
+        cog._send_playback_message=lambda msg: messages.append(msg)
+        cog._prefetch_next_for_current=lambda: None
+        cog._play_from_queue=lambda index: played.append(index)
+        cog._set_playback_context("queue", "bad", "token-bad")
+
+        # First failure retries the exact same logical item. Queue/index remain
+        # unchanged, so a transient extractor/player error cannot silently skip Q2.
+        cog.on_playback_end()
+        assert retried == ["bad"], retried
+        assert [x["title"] for x in qplayer.queue] == ["Broken", "Good"], qplayer.queue
+        assert qplayer.queue_index == 0 and played == [], (qplayer.queue_index, played)
+        assert any("Retrying the same item once" in msg for msg in messages), messages
+
+        # If the same item fails again, it is now genuinely considered broken:
+        # remove only that item, do not put it in history, continue with Good.
+        qplayer.last_end_reason="error"; qplayer.last_end_error=-13
+        cog.on_playback_end()
+        assert retried == ["bad"], retried
+        assert [x["title"] for x in qplayer.queue] == ["Good"], qplayer.queue
+        assert qplayer.queue_history == [], qplayer.queue_history
+        assert qplayer.queue_index == 0 and played == [0], (qplayer.queue_index, played)
+        assert any("Skipping" in msg for msg in messages), messages
+
+        # Reported split-brain stop case: logical player state may already say
+        # idle while TeamTalk still transmits voice. `s` must still stop transport
+        # and disable Voice TX instead of answering "nothing is playing".
+        stop_calls=[]; private=[]; broadcast=[]; force_voice=[]
+        own_user=types.SimpleNamespace(nChannelID=7, uUserState=1, szNickname="music")
+        stop_bot=types.SimpleNamespace(
+            io_pool=Pool(), playback_config={"send_channel_messages": True}, bot_config={"gender":0},
+            getMyUserID=lambda:10, getMyChannelID=lambda:7, getUser=lambda uid: own_user,
+            _state_flag=lambda name:1 if name=="USERSTATE_VOICE" else 0,
+            enableVoiceTransmission=lambda value: force_voice.append(bool(value)),
+            privateMessage=lambda uid,msg: private.append(msg), send_message=lambda msg: broadcast.append(msg),
+            doChangeStatus=lambda *a,**k:None, get_idle_status_message=lambda:"idle",
+        )
+        stop_player=types.SimpleNamespace(
+            is_playing=False, pause=False, transport_is_active=lambda:False,
+            stop_transport=lambda:stop_calls.append("stop"),
+        )
+        stop_cog=mod2.PlayerCog.__new__(mod2.PlayerCog)
+        stop_cog.bot=stop_bot; stop_cog.player=stop_player; stop_cog._=lambda value:value
+        stop_cog.loading_new_track=False; stop_cog._deferred_playback_end=False
+        stop_msg=types.SimpleNamespace(nFromUserID=10)
+        stop_cog.handle_stop_command(stop_msg)
+        assert stop_calls==["stop"] and force_voice and force_voice[-1] is False, (stop_calls, force_voice)
+        assert not any("Nothing is currently playing" in x for x in private), private
+        return True
+    except Exception as exc:
+        fail(f"mpv playback lifecycle runtime regression failed: {exc!r}")
+        return False
+    finally:
+        if added_root:
+            try:
+                sys.path.remove(root_str)
+            except ValueError:
+                pass
+        if previous_mpv is None:
+            sys.modules.pop("mpv", None)
+        else:
+            sys.modules["mpv"] = previous_mpv
+        if previous_yt is None:
+            sys.modules.pop("yt_dlp", None)
+        else:
+            sys.modules["yt_dlp"] = previous_yt
+        if previous_tt is None:
+            sys.modules.pop("TeamTalk5", None)
+        else:
+            sys.modules["TeamTalk5"] = previous_tt
+
+if validate_mpv_endfile_queue_skip_runtime():
+    ok("stale mpv EOF cannot skip a fresh item; every failed item retries once, then only a repeat failure is skipped; stop force-clears real Voice TX")
 
 def validate_radio_webpage_resolver():
     """Verify station-homepage/playlist resolution without external network access."""
@@ -1433,16 +1724,49 @@ else:
 bridge_source = (ROOT / "bot" / "dashboard_state.py").read_text(encoding="utf-8") if (ROOT / "bot" / "dashboard_state.py").is_file() else ""
 api_source = (ROOT / "bot" / "http_api.py").read_text(encoding="utf-8") if (ROOT / "bot" / "http_api.py").is_file() else ""
 sntalk_source = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
-if not bridge_source or 'runtime_status.json' not in bridge_source:
-    fail("Web runtime-state bridge is missing")
-elif 'RuntimeStateWriter(self)' not in sntalk_source or '.runtime_state_writer.start()' not in sntalk_source:
-    fail("SNTalkBot does not start the web runtime-state bridge")
+main_source = (ROOT / "main.py").read_text(encoding="utf-8") if (ROOT / "main.py").is_file() else ""
+_runtime_refs = []
+for _path in ROOT.rglob("*"):
+    if not _path.is_file() or any(part in {".git", "__pycache__"} for part in _path.parts):
+        continue
+    if _path.resolve() == Path(__file__).resolve():
+        continue
+    if _path.suffix.lower() not in {".py", ".sh", ".ini", ".service"}:
+        continue
+    try:
+        if "runtime_status.json" in _path.read_text(encoding="utf-8", errors="ignore"):
+            _runtime_refs.append(str(_path.relative_to(ROOT)))
+    except Exception:
+        pass
+# Any high-frequency runtime/live/status JSON file would reintroduce file I/O
+# into the realtime path. API payloads are JSON over HTTP/SSE; JSON *files* are
+# not permitted for changing runtime status.
+_realtime_json_file_refs = []
+_realtime_json_pattern = re.compile(r"(?:runtime|live|status)[A-Za-z0-9_.-]*\.json", re.I)
+for _path in list((ROOT / "bot").rglob("*.py")) + [ROOT / "main.py", ROOT / "config_default.ini"]:
+    if not _path.is_file():
+        continue
+    _text = _path.read_text(encoding="utf-8", errors="ignore")
+    for _match in _realtime_json_pattern.findall(_text):
+        _realtime_json_file_refs.append(f"{_path.relative_to(ROOT)}:{_match}")
+if _runtime_refs:
+    fail(f"production runtime_status.json references remain: {_runtime_refs}")
+elif _realtime_json_file_refs:
+    fail("realtime/live/status JSON file references remain: " + ", ".join(_realtime_json_file_refs))
+elif not bridge_source or 'class RuntimeSnapshotBuilder' not in bridge_source:
+    fail("live RuntimeSnapshotBuilder is missing")
+elif 'RuntimeSnapshotBuilder(self)' not in sntalk_source:
+    fail("SNTalkBot does not construct the live runtime snapshot builder")
 elif any(secret in bridge_source for secret in ('server_config.get("password")', 'channel_password', 'telegram_bot_token', 'api_key')):
-    fail("Web runtime-state bridge appears to expose secret configuration")
+    fail("live dashboard snapshot appears to expose secret configuration")
 elif not api_source or 'SNTALKBOT_API_PORT' not in api_source or 'SNTALKBOT_API_TOKEN' not in api_source:
     fail("token-protected local realtime HTTP API is missing")
-elif 'do_POST' in api_source or 'do_PUT' in api_source or 'do_DELETE' in api_source:
-    fail("local bot API exposes a management write method; it must remain read-only")
+elif 'do_PUT' in api_source or 'do_DELETE' in api_source or 'do_PATCH' in api_source:
+    fail("local bot API exposes an unapproved management write method")
+elif not all(path in api_source for path in ('/v1/events/release', '/v1/events/global-broadcast')):
+    fail("local bot API POST surface is missing an approved release/global-broadcast endpoint")
+elif 'manager_feature_disabled' not in api_source or 'global_broadcast_disabled' not in api_source:
+    fail("central broadcast endpoint is not gated to enabled Manager/Full instances")
 elif '127.0.0.1' not in api_source or 'Authorization' not in api_source or 'Bearer' not in api_source:
     fail("local bot API is not clearly loopback/token protected")
 elif 'LocalStatusApi(self)' not in sntalk_source or '.local_status_api.start()' not in sntalk_source:
@@ -1450,7 +1774,60 @@ elif 'LocalStatusApi(self)' not in sntalk_source or '.local_status_api.start()' 
 elif 'bot_username' not in bridge_source or 'username == bot_username' not in bridge_source or 'room_users_online' not in bridge_source or 'server_users_online' not in bridge_source:
     fail("dashboard state does not separate room/server counts or exclude the bot TeamTalk username from Administrator results")
 else:
-    ok("secret-free JSON fallback + read-only token-protected loopback HTTP API expose room/server realtime state and exclude the bot ID/username from Administrator results")
+    ok("API-only realtime snapshots use RAM/SQLite -> loopback HTTP -> SSE, with no runtime/live/status JSON file path")
+
+# Leaving/logout events may clean per-user features, but must never stop Player
+# merely because the room becomes empty. This preserves continuous unattended
+# playback like the historical TTMediaBot behavior.
+def _function_block(source, name, next_name):
+    start=source.find(f"    def {name}(")
+    end=source.find(f"    def {next_name}(", start+1)
+    return source[start:end] if start >= 0 and end > start else ""
+_leave_block=_function_block(sntalk_source, "onCmdUserLeftChannel", "onCmdUserLoggedOut")
+_logout_block=_function_block(sntalk_source, "onCmdUserLoggedOut", "split_long_message")
+if not _leave_block or not _logout_block or any(token in (_leave_block+_logout_block) for token in ("stop_transport", "fade_out_and_stop", "enableVoiceTransmission(False)")):
+    fail("user leave/logout events can stop Player when the room becomes empty")
+else:
+    ok("user leave/logout events never auto-stop Player; room-empty playback remains continuous")
+
+# Central Global Broadcast is the sole recurring announcement source. The old
+# messages.txt scheduler and separate rb/random-TTS scheduler are intentionally
+# gone; optional speech consumes the *same* central message pushed over the API.
+_legacy_broadcast_tokens = ("messages.txt", "random_message_interval", "random_broadcast_enabled",
+                            "send_broadcast_messages_at_intervals", "_random_tts_broadcast_loop",
+                            "handle_rb_command")
+_legacy_broadcast_hits = []
+for _path in list((ROOT / "bot").rglob("*.py")) + [ROOT / "main.py", ROOT / "config_default.ini"]:
+    if not _path.is_file():
+        continue
+    # config_handler contains an explicit one-time migration which must name the
+    # obsolete keys in order to delete/map them. It is not a runtime scheduler.
+    if _path.name == "config_handler.py":
+        continue
+    _text = _path.read_text(encoding="utf-8", errors="ignore")
+    for _token in _legacy_broadcast_tokens:
+        if _token in _text:
+            _legacy_broadcast_hits.append(f"{_path.relative_to(ROOT)}:{_token}")
+_config_handler_source = (ROOT / "bot" / "config_handler.py").read_text(encoding="utf-8")
+_migration_contract = all(token in _config_handler_source for token in (
+    "def _migrate_legacy_broadcast_settings", "random_message_interval",
+    "random_broadcast_enabled", 'del self.config["bot"]["random_message_interval"]',
+    'del self.config["tts"]["random_broadcast_enabled"]',
+))
+if (ROOT / "messages.txt").exists():
+    fail("legacy messages.txt still exists")
+elif _legacy_broadcast_hits:
+    fail("legacy duplicate broadcast system remains: " + ", ".join(_legacy_broadcast_hits))
+elif not _migration_contract:
+    fail("legacy broadcast config keys are not migrated-and-deleted safely")
+elif any(_cmd in canonical_names for _cmd in ("rb", "bot", "sbot", "superbot")):
+    fail("redundant/unsupported broadcast command remains: " + ", ".join(sorted(set(canonical_names) & {"rb","bot","sbot","superbot"})))
+elif 'queue_global_broadcast_tts' not in sntalk_source or 'speak_global_broadcast' not in (ROOT / "bot" / "modules" / "tts.py").read_text(encoding="utf-8"):
+    fail("Central Global Broadcast optional TTS is not wired to the single message source")
+elif 'tts_enabled' not in config_default_source or '|tts on|off' not in (ROOT / "bot" / "help.py").read_text(encoding="utf-8"):
+    fail("Central Global Broadcast TTS setting/help is missing")
+else:
+    ok("messages.txt/rb and fake broadcast scopes are removed; one Central Global Broadcast feed optionally speaks the same message with TTS")
 
 # Exercise room-scoped dashboard semantics with fake TeamTalk users.
 try:
@@ -1477,7 +1854,7 @@ try:
                 _NS(nUserID=13,nChannelID=9,uUserType=2,uUserState=16,szUsername="other-admin",szNickname="Other",szStatusMsg=""),
                 _NS(nUserID=14,nChannelID=7,uUserType=2,uUserState=0,szUsername="BOT-ACCOUNT",szNickname="Duplicate bot session",szStatusMsg=""),
             ]
-    _snap=_state_mod.RuntimeStateWriter(_FakeBot()).build_snapshot()
+    _snap=_state_mod.RuntimeSnapshotBuilder(_FakeBot()).build_snapshot()
     assert _snap["users_online"]==2 and _snap["room_users_online"]==2, _snap
     assert _snap["server_users_online"]==3, _snap
     assert _snap["admins_online_count"]==2 and _snap["admins_in_room_count"]==1, _snap
@@ -1498,8 +1875,18 @@ try:
     _sock = socket.socket(); _sock.bind(("127.0.0.1", 0)); _port = _sock.getsockname()[1]; _sock.close()
     class _Writer:
         def build_snapshot(self): return {"connected": True, "admins_online_count": 1, "admins_online": [{"username":"human-admin"}]}
+    _broadcasts=[]
     class _Bot:
-        runtime_state_writer = _Writer()
+        runtime_snapshot_builder = _Writer()
+        state_store = None
+        player = None
+        update_notifier = None
+        server_management_enabled = True
+        global_broadcast_config = {"enabled": True, "interval_minutes": 60, "tts_enabled": True}
+        def send_broadcast_message(self, message):
+            _broadcasts.append(message)
+        def queue_global_broadcast_tts(self, message):
+            return message == "ประกาศทดสอบส่วนกลาง"
     _old_port=_os.environ.get("SNTALKBOT_API_PORT"); _old_token=_os.environ.get("SNTALKBOT_API_TOKEN"); _old_bind=_os.environ.get("SNTALKBOT_API_BIND")
     _os.environ["SNTALKBOT_API_PORT"]=str(_port); _os.environ["SNTALKBOT_API_TOKEN"]="validation-token"; _os.environ["SNTALKBOT_API_BIND"]="127.0.0.1"
     _api=_mod.LocalStatusApi(_Bot()); assert _api.start()
@@ -1513,7 +1900,29 @@ try:
         with urllib.request.urlopen(_good,timeout=2) as resp:
             _payload=__import__("json").loads(resp.read().decode())
         assert _payload["connected"] is True and _payload["api"]["realtime"] is True
-        ok("local realtime HTTP API rejects unauthenticated reads and serves token-authenticated status on loopback")
+
+        def _post_event(path, payload):
+            body=__import__("json").dumps(payload,ensure_ascii=False).encode("utf-8")
+            req=urllib.request.Request(
+                f"http://127.0.0.1:{_port}{path}", data=body, method="POST",
+                headers={"Authorization":"Bearer validation-token","Content-Type":"application/json"},
+            )
+            try:
+                with urllib.request.urlopen(req,timeout=2) as resp:
+                    return resp.status, __import__("json").loads(resp.read().decode())
+            except urllib.error.HTTPError as exc:
+                return exc.code, __import__("json").loads(exc.read().decode())
+
+        status,payload=_post_event("/v1/events/global-broadcast",{"message":"ประกาศทดสอบส่วนกลาง"})
+        assert status==202 and payload.get("accepted") is True and payload.get("tts_queued") is True and _broadcasts==["ประกาศทดสอบส่วนกลาง"], (status,payload,_broadcasts)
+        _api.bot.server_management_enabled=False
+        status,payload=_post_event("/v1/events/global-broadcast",{"message":"must-not-send"})
+        assert status==403 and payload.get("error")=="manager_feature_disabled", (status,payload)
+        _api.bot.server_management_enabled=True; _api.bot.global_broadcast_config={"enabled":False,"interval_minutes":60,"tts_enabled":False}
+        status,payload=_post_event("/v1/events/global-broadcast",{"message":"must-not-send"})
+        assert status==409 and payload.get("error")=="global_broadcast_disabled", (status,payload)
+        assert _broadcasts==["ประกาศทดสอบส่วนกลาง"], _broadcasts
+        ok("local realtime HTTP API rejects unauthenticated reads, serves live status, and delivers the single central broadcast feed with optional TTS only to enabled Manager/Full bots")
     finally:
         _api.stop()
         for _k,_v in (("SNTALKBOT_API_PORT",_old_port),("SNTALKBOT_API_TOKEN",_old_token),("SNTALKBOT_API_BIND",_old_bind)):
@@ -1575,15 +1984,22 @@ else:
         fail("Windows cookie export helper does not expose browser profile listing")
     else:
         ok("YouTube cookie guide/export helper include browser-profile discovery and private/incognito workflow")
-idle_start = player_core_source.find("def _on_idle_active")
-idle_end = player_core_source.find("def set_output_device", idle_start)
-idle_block = player_core_source[idle_start:idle_end]
-transition_pos = idle_block.find("self.playback_end_transition = True")
-not_playing_pos = idle_block.find("self.is_playing = False")
-if idle_start < 0 or transition_pos < 0 or not_playing_pos < 0 or transition_pos > not_playing_pos:
-    fail("mpv idle transition guard must be raised before is_playing=False")
+dispatch_start = player_core_source.find("def _dispatch_end_once")
+dispatch_end = player_core_source.find("def _on_end_file_event", dispatch_start)
+dispatch_block = player_core_source[dispatch_start:dispatch_end]
+transition_pos = dispatch_block.find("self.playback_end_transition = True")
+not_playing_pos = dispatch_block.find("self.is_playing = False")
+if (
+    dispatch_start < 0
+    or "event_callback('END_FILE')" not in player_core_source
+    or transition_pos < 0
+    or not_playing_pos < 0
+    or transition_pos > not_playing_pos
+    or "reason == 4" not in player_core_source
+):
+    fail("mpv END_FILE error/EOF dispatch and queue-boundary guard are incomplete")
 else:
-    ok("mpv idle boundary is guarded before is_playing=False, closing the last-second enqueue window")
+    ok("mpv END_FILE handles asynchronous load failures with a guarded one-shot queue transition; idle-active remains fallback")
 
 # Queue playback must not retain a stale playlist/radio that could resume after
 # clearing or leaving the queue.
@@ -1643,6 +2059,17 @@ def validate_noninteractive_config_migration():
             parser = configparser.ConfigParser()
             parser.read(config_path, encoding="utf-8")
             parser.remove_option("bot", "channel_input_enabled")
+            # Reproduce a 5.1.12-era config that still carried the retired
+            # messages.txt/random-TTS scheduler settings.  Migration must fold
+            # them into Central Global Broadcast, delete the obsolete keys and
+            # never enable scheduled broadcasts implicitly.
+            parser.set("bot", "random_message_interval", "30")
+            # 5.1.12 already had Central Broadcast interval/enabled, but did not
+            # yet have the unified Central-Broadcast TTS flag introduced in 5.1.13.
+            parser.remove_option("global_broadcast", "tts_enabled")
+            if not parser.has_section("tts"):
+                parser.add_section("tts")
+            parser.set("tts", "random_broadcast_enabled", "True")
             with config_path.open("w", encoding="utf-8") as handle:
                 parser.write(handle)
 
@@ -1651,6 +2078,18 @@ def validate_noninteractive_config_migration():
             migrated.read(config_path, encoding="utf-8")
             if not migrated.getboolean("bot", "channel_input_enabled", fallback=False):
                 fail("old config did not auto-migrate channel_input_enabled=True")
+                return False
+            if migrated.has_option("bot", "random_message_interval") or migrated.has_option("tts", "random_broadcast_enabled"):
+                fail("retired messages.txt/random-broadcast config keys survived migration")
+                return False
+            if migrated.getboolean("global_broadcast", "enabled", fallback=True):
+                fail("legacy broadcast migration unexpectedly enabled Central Global Broadcast")
+                return False
+            if migrated.getint("global_broadcast", "interval_minutes", fallback=0) != 30:
+                fail("legacy random_message_interval did not migrate to global_broadcast.interval_minutes")
+                return False
+            if not migrated.getboolean("global_broadcast", "tts_enabled", fallback=False):
+                fail("legacy random_broadcast_enabled did not migrate to global_broadcast.tts_enabled")
                 return False
         return True
     except Exception as exc:
@@ -1710,7 +2149,7 @@ player_only = commands_in_class("PlayerCog")
 manager_modules = set().union(*(commands_in_class(name) for name in (
     "AdminCog", "JailCog", "TTSCog", "TranslatorCog", "AccountRequestCog", "UserManager"
 )))
-manager_general = {"weather", "report", "intercept", "events"}
+manager_general = {"weather", "intercept", "events"}
 manager_only = manager_modules | manager_general
 general_registered = commands_in_class("GeneralCog")
 common_only = general_registered - manager_general
@@ -1728,6 +2167,27 @@ if role_aliases:
         fail(f"role alias target leak: common={bad_common} player={bad_player} manager={bad_manager}")
     else:
         ok("Common/Player/Manager aliases target only commands owned by the same role")
+
+# Bot-local lifecycle/configuration commands belong to every profile. They do
+# not require Server Manager facilities and must never be duplicated in AdminCog.
+_common_bot_controls = {
+    "restart", "shutdown", "channelinput", "lock", "blockcmd", "language",
+    "clearlog", "cn", "cs", "cg", "save", "voicetx", "report",
+}
+if not _common_bot_controls.issubset(common_only) or _common_bot_controls.intersection(manager_only):
+    fail("bot-local controls must be Common only: " + ", ".join(sorted(_common_bot_controls)))
+else:
+    ok("bot-local lifecycle/config controls are Common in Player, Manager, and Full without duplicate Manager handlers")
+
+_common_alias_contract = {
+    "rs": "restart", "sd": "shutdown", "rep": "report", "cl": "clearlog",
+    "lg": "language", "vt": "voicetx", "bc": "blockcmd", "sc": "save",
+}
+_wrong_common_aliases = [f"{a}->{common_aliases.get(a, '?')}" for a, target in _common_alias_contract.items() if common_aliases.get(a) != target]
+if _wrong_common_aliases or set(_common_alias_contract).intersection(manager_aliases):
+    fail("bot-local aliases must be Common: " + ", ".join(_wrong_common_aliases or sorted(set(_common_alias_contract).intersection(manager_aliases))))
+else:
+    ok("restart/shutdown/report/config aliases follow their Common command ownership")
 
 player_admin_utilities = {"cc", "csize", "cm"}
 if not player_admin_utilities.issubset(player_only) or player_admin_utilities.intersection(manager_only):
@@ -1761,13 +2221,51 @@ if extra_help:
 else:
     ok("help contains no stale command entries")
 
+# Runtime h/help groups related commands instead of alphabetically mixing
+# Player, Queue, Admin, and System commands. Every registered command belongs to
+# exactly one declared category, and GeneralCog emits each category heading.
+_help_source = (ROOT / "bot" / "help.py").read_text(encoding="utf-8")
+if "HELP_CATEGORY_ORDER" not in _help_source or "HELP_CATEGORY_COMMANDS" not in _help_source or "registered_groups" not in _help_source:
+    fail("runtime help category catalog is missing")
+elif "for category, lines in self.bot.help_commands.registered_groups" not in general_source:
+    fail("h/help does not emit grouped category headings")
+else:
+    try:
+        _help_ast = ast.parse(_help_source)
+        _category_map = None
+        for _node in _help_ast.body:
+            if isinstance(_node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "HELP_CATEGORY_COMMANDS" for t in _node.targets):
+                _category_map = ast.literal_eval(_node.value)
+                break
+        _categorized = [name for members in (_category_map or {}).values() for name in members]
+        _missing_categories = sorted(set(names) - set(_categorized))
+        _duplicate_categories = sorted({name for name in _categorized if _categorized.count(name) > 1})
+        if _missing_categories or _duplicate_categories:
+            fail(f"help category coverage invalid: missing={_missing_categories} duplicate={_duplicate_categories}")
+        else:
+            ok("h/help groups all registered commands by intent with no category duplication")
+    except Exception as exc:
+        fail(f"help category validation failed: {exc}")
+
 # The shipped Thai command reference mirrors runtime help output. Commands are
 # prefix-free in both Private and Channel; keep each line within TeamTalk limits.
 commands_th = ROOT / "COMMANDS_TH.md"
-th_lines = [
-    line for line in commands_th.read_text(encoding="utf-8").splitlines()
-    if " : " in line and line.split(" : ", 1)[0].split()[0].lstrip("/").lower() in set(names)
-] if commands_th.exists() else []
+# Every command-reference row is authoritative.  Do not filter unknown names
+# out before comparing, otherwise a removed command can remain documented forever
+# while the validator reports a false pass.  Prose/code examples are excluded by
+# requiring the simple ``syntax : description`` row shape used by this document.
+_all_command_rows = []
+if commands_th.exists():
+    for _line in commands_th.read_text(encoding="utf-8").splitlines():
+        if " : " not in _line or _line.startswith(("#", ">", " ", "\t")):
+            continue
+        _syntax = _line.split(" : ", 1)[0].strip()
+        if not _syntax:
+            continue
+        _name = _syntax.split()[0].lstrip("/").lower()
+        if re.fullmatch(r"[a-z0-9_+,.\-]+", _name):
+            _all_command_rows.append(_line)
+th_lines = _all_command_rows
 th_names = [line.split(" : ", 1)[0].split()[0].lstrip("/").lower() for line in th_lines]
 if any(line.startswith("/") for line in th_lines):
     fail("COMMANDS_TH.md contains slash-prefixed command syntax")
@@ -1893,6 +2391,141 @@ else:
     ok("legacy multi-profile references are absent")
 
 
+
+# Persistent state regression: the database is the canonical source for state
+# that must survive process/container replacement. Exercise a large queue and
+# every time-based/persistent table across a real close/reopen boundary.
+try:
+    import time as _time
+    import sqlite3 as _sqlite3
+    with tempfile.TemporaryDirectory() as _td:
+        _db = Path(_td) / "state.sqlite3"
+        _spec_store = importlib.util.spec_from_file_location("_snt_state_store_validation", ROOT / "bot" / "state_store.py")
+        _store_mod = importlib.util.module_from_spec(_spec_store); _spec_store.loader.exec_module(_store_mod)
+        _store = _store_mod.StateStore(_db)
+        _q = _store.queue()
+        _q.extend({"title": f"Q{i}", "link": f"u{i}"} for i in range(25000))
+        assert len(_q) == 25000
+        _q.insert(0, {"title":"front","link":"front"})
+        _q.insert(12500, {"title":"middle","link":"middle"})
+        assert len(_q) == 25002 and _q[0]["title"] == "front" and _q[12500]["title"] == "middle"
+        _store.set_meta("queue_index", 12345)
+        _store.add_offline_message("target", "sender", "Sender", "hello")
+        _store.add_notification("owner", "username", "target", "777")
+        _future = _time.time() + 3600
+        _store.upsert_moderation("kick", "username", "target", _future)
+        _store.schedule_deletion("/tmp/file", 10, "remote.dat", _future)
+        _store.save_private_channel("alice", "bob", "Private alice bob")
+        _store.set_preference("alice", "tts_rate", "+10%")
+        _store.set_update_state("last_notified_version", "9.9.9")
+        _store.close()
+
+        _store = _store_mod.StateStore(_db)
+        _q = _store.queue()
+        assert len(_q) == 25002 and int(_store.get_meta("queue_index", -1)) == 12345
+        # Export every page and prove pagination is only a transport boundary,
+        # not an application-level queue ceiling.
+        _after = None; _exported = 0
+        while True:
+            _items, _after2 = _store.queue_page(after_seq=_after, limit=4096)
+            _exported += len(_items)
+            if not _items or len(_items) < 4096:
+                break
+            _after = _after2
+        assert _exported == 25002, (_exported, len(_q))
+        assert _store.pop_offline_messages("target")[0]["message"] == "hello"
+        assert len(_store.active_moderation()) == 1 and _store.next_moderation_expiry() > _time.time()
+        assert _store.next_deletion_time() > _time.time()
+        _delrow = _store.due_deletions(now=_future + 1, limit=1)[0]
+        _store.reschedule_deletion(_delrow["id"], _future + 7200)
+        assert _store.next_deletion_time() >= _future + 7199
+        assert _store.list_private_channels()[0]["user_a"] == "alice"
+        assert _store.get_preferences("alice")["tts_rate"] == "+10%"
+        assert _store.get_update_state("last_notified_version") == "9.9.9"
+        assert _store.remove_notification("owner", "username", "target", "777") == 1
+        _store.close()
+
+        # A newer persistent schema must never be silently downgraded by old code.
+        _con = _sqlite3.connect(_db); _con.execute(f"PRAGMA user_version={_store_mod.SCHEMA_VERSION + 1}"); _con.close()
+        try:
+            _store_mod.StateStore(_db)
+            raise AssertionError("newer schema was accepted by older code")
+        except RuntimeError:
+            pass
+        # The failed constructor must have closed its SQLite handle.  This is
+        # essential on Windows, where TemporaryDirectory cleanup cannot remove a
+        # database/WAL file that is still open by the current process.
+        _probe = _db.with_name("state-probe.sqlite3")
+        _db.replace(_probe)
+        _probe.replace(_db)
+    ok("SQLite state survives restart, large queues are unbounded/paged, timers/preferences/messages persist, schema downgrade is blocked, and failed startup releases Windows file locks")
+except Exception as exc:
+    fail(f"SQLite persistent-state runtime regression failed: {exc!r}")
+
+# Account request regression: Telegram verification may use a transient password
+# and OTP in RAM, but neither secret may ever become a database column/value.
+try:
+    _fake_tt = types.ModuleType("TeamTalk5")
+    class _TextMsgType: MSGTYPE_USER = 1
+    class _UserType: USERTYPE_DEFAULT = 1; USERTYPE_ADMIN = 2
+    _fake_tt.TextMsgType = _TextMsgType; _fake_tt.UserType = _UserType; _fake_tt.ttstr = lambda v: v
+    _prev_tt = sys.modules.get("TeamTalk5"); sys.modules["TeamTalk5"] = _fake_tt
+    try:
+        _spec_acc = importlib.util.spec_from_file_location("_snt_account_validation", ROOT / "bot" / "modules" / "account_requests.py")
+        _acc_mod = importlib.util.module_from_spec(_spec_acc); _spec_acc.loader.exec_module(_acc_mod)
+        _spec_store = importlib.util.spec_from_file_location("_snt_state_account_validation", ROOT / "bot" / "state_store.py")
+        _store_mod = importlib.util.module_from_spec(_spec_store); _spec_store.loader.exec_module(_store_mod)
+        with tempfile.TemporaryDirectory() as _td:
+            _store = _store_mod.StateStore(Path(_td)/"state.sqlite3")
+            _messages=[]; _created=[]; _sent=[]
+            class _Creator:
+                @staticmethod
+                def create_user_account(): return types.SimpleNamespace(szUsername="",szPassword="",uUserType=0,uUserRights=0)
+            class _Bot:
+                state_store=_store
+                account_creator=_Creator()
+                telegram_config={"telegram_bot_token":"token","default_chat_id":""}
+                account_request_config={"enabled":True,"otp_expiry_seconds":600,"max_attempts":3}
+                command_handler=types.SimpleNamespace(is_command_candidate=lambda *a,**k: False)
+                def _(self,text): return text
+                def getUser(self,uid): return types.SimpleNamespace(nUserID=uid,szIPAddress="203.0.113.10",nChannelID=1)
+                def privateMessage(self,uid,text): _messages.append((uid,str(text)))
+                def doNewUserAccount(self,account): _created.append((account.szUsername,account.szPassword)); return True
+                def getServerUsers(self): return []
+                def is_authorized_user(self,*a): return False
+                def send_message(self,*a): pass
+                def getMyChannelID(self): return 1
+            _bot=_Bot()
+            _old_send=_acc_mod.utils.send_telegram_notification
+            _old_loc=_acc_mod.utils.get_user_location
+            _acc_mod.utils.send_telegram_notification=lambda token,chat,text: (_sent.append((token,str(chat),str(text))) or True)
+            _acc_mod.utils.get_user_location=lambda ip: ("TestCountry","TestCity")
+            try:
+                _cog=_acc_mod.AccountRequestCog(_bot)
+                _cog._start_flow(7)
+                _cog._handle_flow_message(7,"newuser")
+                _cog._handle_flow_message(7,"super-secret-password")
+                _cog._handle_flow_message(7,"123456789")
+                _state=_cog.active_requests[7]
+                _otp=_state["otp"]
+                assert _sent and _state["data"]["password"] == "super-secret-password"
+                _cog._handle_flow_message(7,_otp)
+                assert 7 not in _cog.active_requests and _created == [("newuser","super-secret-password")]
+                _cols=[row[1] for row in _store._conn.execute("PRAGMA table_info(account_registry)")]
+                assert "password" not in _cols and "otp" not in _cols
+                _raw=Path(_store.path).read_bytes()
+                assert b"super-secret-password" not in _raw and _otp.encode() not in _raw
+            finally:
+                _acc_mod.utils.send_telegram_notification=_old_send
+                _acc_mod.utils.get_user_location=_old_loc
+                _store.close()
+        ok("Telegram account-request flow creates an account while password/OTP remain RAM-only and never enter SQLite")
+    finally:
+        if _prev_tt is None: sys.modules.pop("TeamTalk5",None)
+        else: sys.modules["TeamTalk5"]=_prev_tt
+except Exception as exc:
+    fail(f"Telegram account-request runtime regression failed: {exc!r}")
+
 # Role-specific default status must clearly identify each bot profile while preserving custom status.
 identity_path = ROOT / "bot" / "bot_identity.py"
 spec = importlib.util.spec_from_file_location("sntalkbot_bot_identity", identity_path)
@@ -1922,20 +2555,47 @@ else:
 
 sntalkbot_status_source = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
 player_status_source = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
-admin_status_source = (ROOT / "bot" / "modules" / "admin.py").read_text(encoding="utf-8")
+general_status_source = (ROOT / "bot" / "modules" / "general.py").read_text(encoding="utf-8")
 if "get_idle_status_message" not in sntalkbot_status_source:
     fail("runtime role-status resolver is not wired into SNTalkBot")
 elif "status_msg = self.bot.get_idle_status_message()" not in player_status_source:
     fail("Player does not restore role status after playback")
-elif "ttstr(self.bot.get_idle_status_message())" not in admin_status_source:
-    fail("admin status/gender path does not resolve automatic role status")
+elif "ttstr(self.bot.get_idle_status_message())" not in general_status_source:
+    fail("common status/gender path does not resolve automatic role status")
 else:
-    ok("role status is restored consistently after login/playback/admin changes")
+    ok("role status is restored consistently after login/playback/common bot-identity changes")
+
+# Production builds must be reproducible: direct dependencies are pinned, not
+# floating across a future major release without a code/validator review.
+_expected_requirements = {
+    "requests": "2.34.2",
+    "tqdm": "4.70.0",
+    "paramiko": "3.5.1",
+    "wikipedia": "1.4.0",
+    "langdetect": "1.0.9",
+    "gTTS": "2.5.4",
+    "deep-translator": "1.11.4",
+    "edge-tts": "7.2.8",
+    "python-mpv": "1.0.8",
+    "yt-dlp[default,curl-cffi]": "2026.8.19",
+}
+_req_lines = [line.strip() for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines() if line.strip() and not line.lstrip().startswith("#")]
+_req_map = {}
+for _line in _req_lines:
+    if "==" not in _line:
+        fail(f"unbounded direct dependency remains: {_line}")
+        continue
+    _name, _version = _line.split("==", 1)
+    _req_map[_name.strip()] = _version.strip()
+if _req_map != _expected_requirements:
+    fail(f"production dependency lock mismatch: {_req_map!r}")
+else:
+    ok("production direct dependencies are exact-pinned to the reviewed compatibility set")
 
 for required in [
     "Dockerfile", "docker-compose.yml", "docker-entrypoint.sh", "run_linux.sh",
     "tools/setup_pulse_bridge.sh", "tools/download_teamtalk_sdk.py",
-    "README_TH.md", "DEPENDENCIES_TH.md", "COMMANDS_TH.md",
+    "README_TH.md", "DEPENDENCIES_TH.md", "COMMANDS_TH.md", "COMMAND_ACTION_AUDIT_TH.md",
 ]:
     if not (ROOT / required).exists():
         fail(f"required release file missing: {required}")

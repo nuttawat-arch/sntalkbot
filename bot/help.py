@@ -1,6 +1,40 @@
 import gettext
 
 
+HELP_CATEGORY_ORDER = (
+    "general",
+    "player",
+    "queue",
+    "tts",
+    "translation",
+    "users",
+    "moderation",
+    "system",
+)
+
+HELP_CATEGORY_COMMANDS = {
+    "general": {"help", "about", "status", "myinfo", "admins", "gcid", "search", "weather", "dr", "report"},
+    "player": {
+        "p", "pm", "u", "pp", "s", "x", "n", "b", "+", "-", "t", "v", "l", "pg", "d", "r", "dl",
+        "autoplay", "channel", "m", "m1", "m2", "m3", "3d", "3d2", "bass", "sp", "f", "hide", "select", ".", ",",
+    },
+    "queue": {"q", "ql", "qc", "dq", "cq", "fav", "playfav", "delfav", "favorites", "shuffle"},
+    "tts": {
+        "say", "rate", "pitch", "volume", "voice", "speed", "st", "ld", "get_voices", "ttsmode", "tts", "rb",
+        "ptts", "pttsmode", "pvoice", "pvoices", "pttsrate", "pttsspeed",
+    },
+    "translation": {"tr", "pt", "wt"},
+    "users": {"private", "who", "whoall", "users", "msg", "messages", "notify", "unotify", "account", "accounts", "new"},
+    "moderation": {
+        "db", "udb", "dk", "udk", "clear", "jail", "unjail", "jails", "k", "ks", "moveall", "join",
+        "filter", "welcome", "welcomebroadcast", "noname", "vpn", "lock", "blockcmd", "channelinput", "intercept",
+        "cm", "events", "globalbroadcast", "bm", "cn", "cs", "cg",
+    },
+    "system": {"restart", "shutdown", "reboot", "exec", "save", "clearlog", "language", "voicetx", "cc", "csize"},
+}
+
+
+
 class HelpCommands:
     """Localized command help catalog. Command syntax itself is never translated."""
 
@@ -37,7 +71,6 @@ class HelpCommands:
             'get_voices langcode': self._('List Microsoft voices, or Google standard gTTS languages in Google mode.'),
             'ld': self._('Enable or disable language detection.'),
             'tts on|off': self._('Admins only: Enable or disable TTS for everyone.'),
-            'rb on|off': self._('Admins only: Enable or disable Google TTS random broadcasts.'),
             'account': self._('Start the account request flow in private messages.'),
             'accounts on|off': self._('Admins only: Enable or disable account requests.'),
             'db name duration': self._('Admins only: Bans someone by IP address for a specified period.'),
@@ -62,7 +95,7 @@ class HelpCommands:
             'pm <query>': self._('Search and play/enqueue from YouTube Music.'),
             'u <link>': self._('Play a URL or start the first playlist. In Queue Mode, enqueue the URL/playlist.'),
             'pp <playlist_link>': self._('Player/Full: append another YouTube or YouTube Music playlist without interrupting the current track. In Queue Mode, append the whole playlist to FIFO queue.'),
-            's': self._('Stop playback and clear queue.'),
+            's': self._('Stop playback only; keep queue, playlist, and current item.'),
             'x': self._('Pause or resume playback.'),
             'n': self._('Queue mode: play next queued item. Normal mode: play the next related Radio track.'),
             'b': self._('Queue mode: play the previous queued-history item. Normal mode: go back in related Radio history.'),
@@ -70,7 +103,7 @@ class HelpCommands:
             '-': self._('Seek 10 seconds backward.'),
             't <time>': self._('Seek to absolute time (e.g. 1:30).'),
             'q on|off': self._('Toggle queue system.'),
-            'ql': self._('List items in current queue.'),
+            'ql [page]': self._('List the queue in pages of 50 items; omit page to show the current queue page.'),
             'qc': self._('Check current queue position.'),
             'dq <index|title>': self._('Delete one queued item by number or song title.'),
             'cq': self._('Clear entire queue.'),
@@ -111,9 +144,7 @@ class HelpCommands:
             'k <nickname>': self._('Admins only: Kick a user from the current channel.'),
             'ks <nickname>': self._('Admins only: Kick a user from the server.'),
             'udk <username> <duration>': self._('Admins only: Duration-kick a TeamTalk username.'),
-            'bot <message>': self._('Admins only: Send a bot broadcast message according to the configured broadcast scope.'),
-            'sbot <message>': self._('Admins only: Send a server broadcast message.'),
-            'superbot <message>': self._('Admins only: Send a host/global broadcast message when supported.'),
+            'globalbroadcast on|off|status|interval <minutes>|tts on|off': self._('Admins only (Manager/Full): Enable/disable the central Web Manager broadcast feed, set this bot interval from 1 to 10080 minutes, or speak the same central messages with TTS. Short alias: gb.'),
             'filter on|off|status': self._('Admins only: Enable, disable, or show the master multilingual word filter. OFF disables blacklist/badword checks together; ON enables them together, including channel moderation before channel-input gating.'),
             'welcome': self._('Admins only: Toggle the static channel-join welcome message.'),
             'welcomebroadcast [on|off|status]': self._('Admins only: Enable, disable, or show the randomized public login welcome broadcast. The setting is saved to config.ini.'),
@@ -171,10 +202,58 @@ class HelpCommands:
             description = description + " " + self._("Short aliases: {aliases}").format(aliases=alias_text)
         return f"{syntax} : {description}"
 
+    def category_for(self, command_name):
+        name = (command_name or "").lower()
+        for category in HELP_CATEGORY_ORDER:
+            if name in HELP_CATEGORY_COMMANDS.get(category, set()):
+                return category
+        return "general"
+
+    def category_label(self, category):
+        # Thai is the primary deployment language. Other locales get stable
+        # English headings even when their catalog has not translated these
+        # structural labels yet; command descriptions remain fully localized.
+        thai = {
+            "general": "ทั่วไปและข้อมูล",
+            "player": "เครื่องเล่นเพลง",
+            "queue": "คิวและรายการโปรด",
+            "tts": "เสียงพูดและ TTS",
+            "translation": "การแปลภาษา",
+            "users": "ผู้ใช้ ข้อความ และบัญชี",
+            "moderation": "ผู้ดูแลและการกลั่นกรอง",
+            "system": "ระบบและการดูแลบอต",
+        }
+        english = {
+            "general": "General and information",
+            "player": "Music player",
+            "queue": "Queue and favorites",
+            "tts": "Speech and TTS",
+            "translation": "Translation",
+            "users": "Users, messages, and accounts",
+            "moderation": "Administration and moderation",
+            "system": "System and bot lifecycle",
+        }
+        if str(self.language or "").lower().startswith("th"):
+            return thai.get(category, category)
+        return english.get(category, category)
+
+    def registered_groups(self, command_handler):
+        """Return active commands grouped by intent, preserving one handler per command."""
+        groups = []
+        for category in HELP_CATEGORY_ORDER:
+            names = [
+                name for name in command_handler.commands
+                if self.category_for(name) == category
+            ]
+            if not names:
+                continue
+            lines = []
+            for name in sorted(names, key=lambda value: value.lower()):
+                command = command_handler.commands[name]
+                lines.append(self.line(name, command.admin_only, command_handler.aliases_for(name)))
+            groups.append((self.category_label(category), lines))
+        return groups
+
     def registered_lines(self, command_handler):
-        """Return one canonical help line per command, including its short aliases."""
-        result = []
-        for name in sorted(command_handler.commands, key=lambda value: value.lower()):
-            command = command_handler.commands[name]
-            result.append(self.line(name, command.admin_only, command_handler.aliases_for(name)))
-        return result
+        """Return active help lines in the same category order used by runtime help."""
+        return [line for _category, lines in self.registered_groups(command_handler) for line in lines]

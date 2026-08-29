@@ -1,3 +1,69 @@
+# SNTalkBot 5.1.14 — Windows SQLite Handle Hotfix
+
+- แก้ `StateStore` ให้ปิด SQLite connection แบบ deterministic หาก constructor/migration ล้มเหลว โดยเฉพาะกรณีพบ schema ใหม่กว่าที่รุ่นนี้รองรับ ซึ่งเดิมทิ้ง handle ไว้จน Windows ลบ TemporaryDirectory ไม่ได้และทำให้ Release Publisher หยุดด้วย `PermissionError(13)`.
+- `close()` เป็น idempotent และปล่อย handle ก่อน checkpoint/close cleanup เพื่อไม่ให้ cleanup ซ้ำค้างไฟล์.
+- validator เพิ่ม regression ที่ rename ฐานข้อมูลทันทีหลัง constructor ที่ตั้งใจ fail เพื่อพิสูจน์ว่าไม่มี file lock ค้าง; contract อื่นของ 5.1.13 (API-only realtime, Central Global Broadcast, 121 commands, playback regression) คงเดิมทั้งหมด.
+
+# SNTalkBot 5.1.13 — Single Broadcast Source / API-only Realtime / Command-Action Audit
+
+- ลบ `messages.txt` ออกจากโปรเจกต์และ runtime โดยสมบูรณ์ รวมทั้ง legacy text scheduler และ Random TTS scheduler ที่อ่านไฟล์นี้ จึงไม่มีระบบประกาศสองชุดยิงซ้อนกันอีก
+- Central Global Broadcast เป็นแหล่งข้อความประกาศตามรอบเพียงชุดเดียว: ข้อความและรอบส่งอยู่ใน SQLite ของ Web Manager; Manager/Full รับผ่าน loopback Bearer API และสามารถใช้ `gb tts on|off` เพื่อพูด **ข้อความชุดเดียวกัน** โดยไม่สร้าง scheduler หรือ data source ที่สอง
+- migration จาก 5.1.12 ลบ `random_message_interval` และ `random_broadcast_enabled`; หาก Central Broadcast ยังไม่ได้ถูกเปิดใช้งานจะย้าย interval เดิมที่มีประโยชน์และย้าย TTS toggle ไป `[global_broadcast]` โดยไม่เปิด broadcast ให้อัตโนมัติ
+- realtime/high-frequency state ใช้ RAM/SQLite → `/v1/status` loopback API → Web Manager SSE; validator ปฏิเสธ production path ที่อ้าง `runtime_status.json` หรือไฟล์ `runtime/live/status*.json`
+- audit command ↔ action ใหม่บังคับว่าทุก canonical command ต้อง resolve ไปยัง method ที่มี action จริง และ `COMMANDS_TH.md` ต้องตรงกับ runtime แบบ exact รวมถึงจับคำสั่งที่ถูกถอดแต่ยังค้างในคู่มือ
+- ถอด `rb`, `bot`, `sbot`, `superbot`: `rb` ผูกกับระบบ `messages.txt` ที่ถูกลบ; อีกสามคำสั่งใช้ TeamTalk `MSGTYPE_BROADCAST` action เดียวกับ `bm` แต่เคยอธิบาย scope ต่างกันซึ่ง runtime ไม่ได้แยกจริง จึงคง `bm` สำหรับ manual server broadcast และ `globalbroadcast`/`gb` สำหรับประกาศส่วนกลางตามรอบ
+- role matrix ปัจจุบัน Common 21 / Player 51 / Server Manager 49 = Full 121 canonical commands; aliases 52 และไม่มี registered command ที่เป็น pass/placeholder
+- คง playback reliability ของ 5.1.12 ทั้ง stale-EOF guard, exact-one retry, broken-item skip, Voice TX force-stop และ no room-empty autostop พร้อม regression เดิมทั้งหมด
+
+# SNTalkBot 5.1.12 — Playback Reliability / Central Global Broadcast
+
+- แก้ race ระหว่าง `MPV_EVENT_END_FILE` ของรายการเก่ากับรายการใหม่ด้วย playback generation/handoff guard เพื่อไม่ให้เพลงดีหรือ Queue item ถัดไปถูกข้ามโดย event เก่าที่มาช้า
+- ใช้ failure policy เดียวกันใน Queue, URL/Search, Playlist/Channel, Favorites, Related Radio/Autoplay, Previous/Next, Restart และ M3: error ครั้งแรก retry รายการเดิม 1 ครั้ง; ถ้า error ซ้ำจึงข้ามเฉพาะรายการเสีย และ M3 จะไม่วนไฟล์เสียไม่รู้จบ
+- `s` ตรวจ transport จริงและ TeamTalk Voice TX จริง จึงบังคับหยุดเสียง/สถานะ Speaking ที่ค้างได้แม้ flag ภายใน Player หลุดไปก่อน
+- ไม่มี auto-stop เพราะห้องว่าง: playback เดินต่อโดยไม่ผูกกับจำนวนผู้ฟังในห้อง
+- เพิ่ม Central Global Broadcast สำหรับ Manager/Full: ค่าเริ่มต้นปิด, ช่วง 1-10080 นาที, คำสั่ง `globalbroadcast`/`gb` on|off|status|interval; รับข้อความผ่าน loopback Bearer API จาก Web Manager เท่านั้น
+- ข้อความ Global แบบเก่าจาก `messages.txt` พักเมื่อ Central Global Broadcast เปิดเพื่อไม่ยิงซ้ำ; Random TTS เป็นฟีเจอร์แยกและยังทำงานตาม config เดิม
+- `send_broadcast_message` แบ่งข้อความตามขนาด UTF-8 ก่อนส่ง TeamTalk เพื่อไม่ส่งก้อนยาวเกิน transport
+- role matrix เป็น Common 21 / Player 51 / Server Manager 53 รวม Full 125 canonical commands; alias รวม 52 โดย `gb` เป็น alias ใหม่ของ `globalbroadcast`
+- validator เพิ่ม regression ที่จำลอง stale EOF, exact-one retry, broken-item skip, Voice TX split-brain stop และ Central Broadcast access gate จริงผ่าน loopback HTTP runtime test
+
+# SNTalkBot 5.1.11 — Default Channel ID / Path Compatibility
+
+- `default_channel` ช่องเดียวรับ Channel ID และพาธห้องแบบเดิม: `8`, `"8"`, `'8'` ใช้ ID 8 โดยตรง; `/music` ใช้ path lookup แบบเดิม
+- ยึด behavior TTMediaBot เดิม: ค่า channel ที่เป็น ID ไม่ถูกส่งเข้า `getChannelIDFromPath()`
+- TTMediaBot config v1 ที่มี `teamtalk.channel` เป็นตัวเลข migrate ต่อได้โดยไม่ต้องแปลงเป็นชื่อห้อง
+- คำสั่ง `gcid`/`cid` ยังเป็นแหล่งดู Channel ID แล้วนำเลขมาใส่ `default_channel` ได้โดยตรง
+
+# SNTalkBot 5.1.10 — Common Bot Controls / Download-site Role Contract
+
+- ตรวจ ownership ของ canonical commands ทั้ง 124 ตัวใหม่ทั้งหมดและคง handler เดิมหนึ่งตัวต่อหนึ่ง action; ไม่มี command หรือ alias ใหม่ซ้ำความหมาย
+- ย้ายคำสั่งที่ดูแล “ตัวบอต instance เอง” ให้เป็น Common admin-only เพื่อใช้ได้ใน Player, Server Manager และ Full: `shutdown`, `lock`, `blockcmd`, `language`, `clearlog`, `cn`, `cs`, `cg`, `save`, `voicetx`; `report` เป็น Common สำหรับส่งข้อความหาแอดมิน TeamTalk
+- `restart` / `rs` ยังคง Common เช่นเดิม; `reboot` / `rbt` และ `exec` ยัง Manager-only เพราะเป็นคำสั่งระดับเครื่อง/SSH ไม่ใช่ lifecycle ของ process บอต
+- alias ของคำสั่งที่ย้าย (`sd`, `rep`, `cl`, `lg`, `vt`, `bc`, `sc`) ย้าย ownership ตาม canonical command โดยไม่ duplicate handler
+- role matrix ใหม่เป็น Common 21 / Player 51 / Server Manager 52; Full ยังรวมทั้งหมด 124 canonical commands
+- validator ล็อก role matrix และ alias ownership เพื่อกันคำสั่งระดับ instance หลุดกลับไป Manager-only ในรุ่นถัดไป
+
+# SNTalkBot 5.1.9 — Queue Auto-Skip / Common Restart / Grouped Help
+
+- แก้ Queue หยุดค้างเมื่อ yt-dlp resolve URL ได้แต่ libmpv โหลดหรือเล่นสื่อจริงไม่สำเร็จภายหลัง: Player รับ `MPV_EVENT_END_FILE` โดยตรงและแยก EOF/ERROR; Queue item ที่เสียจะถูกนำออกเฉพาะรายการนั้นและข้ามไปเพลงถัดไปอัตโนมัติ
+- เพิ่ม one-shot/dedup guard ระหว่าง END_FILE กับ idle fallback เพื่อไม่ให้เหตุการณ์เดียวเลื่อนคิวสองครั้ง และรองรับ error ที่เกิดเร็วมากระหว่าง `loading_new_track` ด้วย deferred terminal event
+- `restart` / `rs` ย้ายเป็น Common lifecycle command แบบ admin-only จึงใช้ได้ใน Player Bot, Server Manager Bot และ Full Bot โดยมี handler เดียว ไม่ซ้ำกับ AdminCog
+- `h` / `help` แสดงคำสั่งเป็นหมวดต่อเนื่อง: ทั่วไป, เครื่องเล่นเพลง, คิว/รายการโปรด, TTS, การแปล, ผู้ใช้/บัญชี, ผู้ดูแล/กลั่นกรอง และระบบ แทนการเรียงตัวอักษรที่สลับหน้าที่ไปมา
+- เพิ่ม regression tests สำหรับ asynchronous mpv load failure, exact-one queue skip, `rs` ทุก role และ help category coverage ครบ 124 canonical commands
+
+# SNTalkBot 5.1.8 — Persistent State / Realtime API / Queue Reliability
+
+- เปลี่ยน runtime state ที่ต้องอยู่รอดข้าม restart/update เป็น `state.sqlite3` แบบ SQLite WAL: Queue, queue index, favorites, notify subscriptions, offline messages, timed moderation, scheduled file deletion, private-channel metadata, user TTS preferences และ update notification state
+- สถานะสดที่เปลี่ยนถี่ เช่น connection, ผู้ใช้ในห้อง, Voice/Media และ playback ใช้ RAM → loopback Bearer API → Web Manager SSE โดยตรง และเลิกใช้ `runtime_status.json` ใน production path
+- Queue ไม่มีเพดานจำนวนรายการระดับแอป; API export เป็น pagination และ validator ทดสอบ 25,000+ รายการข้าม process restart โดยไม่ตัดคิวเงียบ ๆ
+- `s` หยุด playback เท่านั้น, `x` pause/resume ตำแหน่งเดิม, `p` แบบไม่ใส่คำค้นเริ่มรายการเดิมใหม่จากต้น และ `cq` เป็นคำสั่งล้างคิวโดยเฉพาะ
+- `ql [page]` แสดงคิวหน้าละ 50 รายการเพื่อไม่ทำให้ TeamTalk/โปรแกรมอ่านหน้าจอค้าง โดยไม่จำกัดจำนวนคิวจริง
+- Account Request ใช้ Telegram OTP แทน SMTP/Gmail; password และ OTP อยู่ RAM เฉพาะ workflow และไม่ถูกเขียน SQLite
+- timed kick/ban และ scheduled deletion ใช้ deadline จริงใน SQLite จึงจำเวลาที่เหลือหลัง restart; deletion ที่ล้มเพราะ reconnect จะ retry แทนการทิ้ง schedule
+- GitHub update notification ใช้ Web Manager webhook เป็นเส้นทางหลัก และ polling ทำงานเฉพาะเมื่อเปิด fallback
+- dependency ฝั่ง SNTalkBot ถูก exact-pin เป็นชุดที่ review แล้วเพื่อให้ Docker build ทำซ้ำได้; Paramiko คงสาย 3.5.1 เพื่อหลีกเลี่ยง breaking changes ของ major 4/5 โดยไม่จำเป็น
+- canonical commands ยังคง 124 ไม่มี command/alias ซ้ำ
+
 # SNTalkBot 5.1.7 — Dynamic URL / Nested Radio Resolver
 
 - คง `yt-dlp` Generic Extractor เป็นด่านแรกสำหรับ `u <URL>`; fallback ใหม่ทำงานเฉพาะเมื่อ yt-dlp ไม่มี playable URL หรือ extract ไม่สำเร็จ
