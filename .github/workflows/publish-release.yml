@@ -1,0 +1,33 @@
+name: Publish GitHub Release
+
+"on":
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.repository == 'nuttawat-arch/sntalkbot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create published GitHub Release from pushed version tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          version="${TAG#v}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists; nothing to recreate."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --latest \
+            --title "SNTalkBot $version" \
+            --notes "SNTalkBot $version is published. Download: https://ttdl.nuttawat.ddnsfree.com/downloads/SNTalkBot-$version.zip"

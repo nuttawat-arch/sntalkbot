@@ -2618,3 +2618,14 @@ for required in [
         fail(f"required release file missing: {required}")
 
 raise SystemExit(1 if FAILED else 0)
+_release_workflow = root / ".github" / "workflows" / "publish-release.yml"
+if _release_workflow.is_file():
+    _wf = _release_workflow.read_text(encoding="utf-8")
+    if all(x in _wf for x in ("push:", "tags:", "gh release create", "--verify-tag", "permissions:", "contents: write")):
+        ok("GitHub Actions publishes a GitHub Release from the version tag without a developer PAT")
+    else:
+        fail("GitHub Release workflow is incomplete")
+else:
+    fail("GitHub Release workflow is missing")
+
+
