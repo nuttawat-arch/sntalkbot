@@ -2,7 +2,7 @@ import shlex
 import unicodedata
 import logging
 from TeamTalk5 import TextMessage, TextMsgType, UserType, ttstr
-from bot.utils import BotUtils as utils
+from bot.utils import BotUtils as utils, RestartSignal, ShutdownSignal
 
 
 class Command:
@@ -220,9 +220,25 @@ class CommandHandler:
             except Exception:
                 pass
 
+        action_token = utils.push_action_context(command_name, sender_username, requested_name)
         try:
+            log_action = getattr(self.bot, "log_runtime_action", None)
+            if callable(log_action):
+                log_action("command_start", name=command_name)
             command.handler(textmessage, *args)
+            # Many media/admin handlers intentionally enqueue asynchronous work.
+            # "handler_return" means dispatch succeeded; actual worker-side
+            # effects are logged separately by the shared action logger.
+            if callable(log_action):
+                log_action("command_handler_return", name=command_name)
+        except (RestartSignal, ShutdownSignal) as signal:
+            # These are control-flow signals for main.py, not command failures.
+            if callable(log_action):
+                log_action("command_signal", name=command_name, signal=type(signal).__name__)
+            raise
         except Exception as exc:
+            if callable(log_action):
+                log_action("command_failed", name=command_name, error_type=type(exc).__name__)
             logging.exception("Command %s failed", command_name)
             try:
                 self.bot.privateMessage(
@@ -231,4 +247,6 @@ class CommandHandler:
                 )
             except Exception:
                 pass
+        finally:
+            utils.reset_action_context(action_token)
         return True

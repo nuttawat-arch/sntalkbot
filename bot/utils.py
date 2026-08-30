@@ -9,23 +9,51 @@ import logging
 import traceback
 import re
 import unicodedata
+import contextvars
 from concurrent.futures import ThreadPoolExecutor
 
 
-class ShutdownSignal(Exception):
+class LifecycleSignal(BaseException):
+    """Internal control-flow signal that ordinary Exception handlers must never swallow."""
+
+
+class ShutdownSignal(LifecycleSignal):
     """Signal a clean bot shutdown from a command handler."""
 
 
-class RestartSignal(Exception):
+class RestartSignal(LifecycleSignal):
     """Signal an in-process bot restart from a command handler."""
 
+
+_action_context = contextvars.ContextVar("sntalkbot_action_context", default=None)
 
 
 class BotUtils:
     """
     A class for standalone utility functions used by the bot.
     """
-    VERSION = "5.1.21"
+    VERSION = "5.1.23"
+
+    @staticmethod
+    def push_action_context(command, user="", requested=""):
+        """Attach safe command context to synchronous and submitted async work."""
+        return _action_context.set({
+            "command": str(command or ""),
+            "requested": str(requested or command or ""),
+            "user": str(user or ""),
+        })
+
+    @staticmethod
+    def reset_action_context(token):
+        try:
+            _action_context.reset(token)
+        except Exception:
+            pass
+
+    @staticmethod
+    def get_action_context():
+        value = _action_context.get()
+        return dict(value) if isinstance(value, dict) else {}
 
     @staticmethod
     def load_blacklist(filename="blacklist.txt"):
@@ -239,19 +267,18 @@ class BotUtils:
 
 
 class LoggingThreadPoolExecutor(ThreadPoolExecutor):
-    """
-    A ThreadPoolExecutor that automatically logs exceptions from submitted tasks.
-    """
+    """A ThreadPoolExecutor that preserves command context and logs exceptions."""
     def submit(self, fn, *args, **kwargs):
-        """
-        Wraps the submitted function to catch and log any exceptions.
-        """
-        def wrapped_fn(*args, **kwargs):
+        # copy_context() is essential here: Player search/queue actions run in
+        # worker threads, but their operational logs must still identify the
+        # originating command without copying raw/secret command arguments.
+        ctx = contextvars.copy_context()
+
+        def invoke():
             try:
                 return fn(*args, **kwargs)
-            except Exception as e:
+            except Exception:
                 exc_info = traceback.format_exc()
-                logging.error(f"Exception in thread pool for function '{fn.__name__}':\n{exc_info}")
-        
-        # Submit the wrapped function to the parent class's submit method
-        return super().submit(wrapped_fn, *args, **kwargs)
+                logging.error(f"Exception in thread pool for function '{getattr(fn, '__name__', type(fn).__name__)}':\n{exc_info}")
+
+        return super().submit(lambda: ctx.run(invoke))

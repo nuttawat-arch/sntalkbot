@@ -325,11 +325,14 @@ def validate_prefix_free_dispatch():
         spec.loader.exec_module(module)
 
         calls = []
+        action_logs = []
         class Bot:
             commands_locked = False
             blocked_commands = set()
             def _(self, text): return text
             def privateMessage(self, user_id, message): pass
+            def log_runtime_action(self, action, **metadata):
+                action_logs.append((action, metadata.get("name")))
             def is_authorized_user(self, username): return False
             def getUser(self, user_id): return None
             def getMyUserID(self): return 99
@@ -447,6 +450,35 @@ def validate_prefix_free_dispatch():
         assert handler.handle_message(msg("ap on", _MsgType.MSGTYPE_CHANNEL)) is True
         assert handler.handle_message(msg("/ap on", _MsgType.MSGTYPE_CHANNEL)) is True
         assert calls == before
+        assert any(item == ("command_start", "help") for item in action_logs), action_logs
+        assert any(item == ("command_handler_return", "help") for item in action_logs), action_logs
+        assert any(item == ("command_start", "p") for item in action_logs), action_logs
+
+        # Restart/shutdown are lifecycle control flow, not normal failures. Test
+        # the same public aliases users type (rs/sd), not only a synthetic handler.
+        assert not issubclass(module.RestartSignal, Exception)
+        assert not issubclass(module.ShutdownSignal, Exception)
+        assert issubclass(module.RestartSignal, BaseException)
+        assert issubclass(module.ShutdownSignal, BaseException)
+        def raise_restart(_msg, *_args):
+            raise module.RestartSignal()
+        def raise_shutdown(_msg, *_args):
+            raise module.ShutdownSignal()
+        handler.register_command("restart", raise_restart, admin_only=True)
+        handler.register_alias("rs", "restart")
+        handler.register_command("shutdown", raise_shutdown, admin_only=True)
+        handler.register_alias("sd", "shutdown")
+        bot.is_authorized_user = lambda username: True
+        try:
+            handler.handle_message(msg("rs", _MsgType.MSGTYPE_USER))
+            raise AssertionError("rs swallowed RestartSignal")
+        except module.RestartSignal:
+            pass
+        try:
+            handler.handle_message(msg("sd", _MsgType.MSGTYPE_USER))
+            raise AssertionError("sd swallowed ShutdownSignal")
+        except module.ShutdownSignal:
+            pass
         return True
     except Exception as exc:
         fail(f"prefix-free private/channel command-dispatch regression: {exc!r}")
@@ -479,6 +511,28 @@ if ("<arguments redacted>" not in command_handler_source
     fail("command ingress diagnostics/redaction guard is incomplete")
 else:
     ok("real commands are visible in logs, CUSTOM typing noise is suppressed, and admin arguments stay redacted")
+
+# Operational logging must cover the command lifecycle and central TeamTalk
+# side effects without copying secret arguments into logs. Restart/shutdown are
+# control-flow signals and must escape the command wrapper to main.py.
+action_log_source = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
+player_action_source = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
+if ("command_start" not in command_handler_source
+        or "command_handler_return" not in command_handler_source
+        or "except (RestartSignal, ShutdownSignal) as signal" not in command_handler_source
+        or "class LifecycleSignal(BaseException)" not in utils_source_for_text
+        or "class RestartSignal(LifecycleSignal)" not in utils_source_for_text
+        or "class ShutdownSignal(LifecycleSignal)" not in utils_source_for_text
+        or "log_runtime_action" not in action_log_source
+        or '"private_message"' not in action_log_source
+        or '"channel_message"' not in action_log_source
+        or '"broadcast_message"' not in action_log_source
+        or '"playback_started"' not in player_action_source
+        or '"queue_added"' not in player_action_source
+        or "copy_context()" not in utils_source_for_text):
+    fail("central command/action operational logging or control-signal passthrough is incomplete")
+else:
+    ok("all commands use central lifecycle logs, async context is preserved, key side effects are logged, and restart/shutdown signals pass through")
 unknown_text = 'Unknown or invalid command. Send h for help.'
 unknown_pos = sntalkbot_source_for_unknown.find(unknown_text)
 translator_pos = sntalkbot_source_for_unknown.find("self.translator_cog.handle_whisper_translation(textmessage)")

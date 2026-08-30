@@ -443,6 +443,38 @@ class SNTalkBot(TeamTalk):
             logging.debug("activity log write failed: %s", exc)
             return None
 
+    def log_runtime_action(self, action, **metadata):
+        """Write one secret-safe operational action line to the normal bot log.
+
+        This deliberately logs *what the bot did*, not just what command text
+        arrived.  Secret-like keys are always redacted and values are bounded so
+        operators can keep console/file logging enabled safely.
+        """
+        try:
+            context = utils.get_action_context()
+            merged = {}
+            if context.get("command"):
+                merged["command"] = context.get("command")
+            if context.get("user"):
+                merged["user"] = context.get("user")
+            merged.update(metadata)
+            parts = []
+            secret_markers = ("token", "password", "secret", "cookie", "api_key", "apikey", "authorization")
+            for key, value in merged.items():
+                key_text = str(key)
+                if any(marker in key_text.lower() for marker in secret_markers):
+                    value_text = "<redacted>"
+                else:
+                    value_text = str(value)
+                    if len(value_text) > 160:
+                        value_text = value_text[:157] + "..."
+                value_text = value_text.replace("\r", "\r").replace("\n", "\n")
+                parts.append(f"{key_text}={value_text}")
+            suffix = (" " + " ".join(parts)) if parts else ""
+            print(f"ACTION {action}{suffix}")
+        except Exception as exc:
+            logging.debug("runtime action log failed: %s", exc)
+
     def _event_tracking_live(self):
         with self._event_bootstrap_lock:
             return bool(self._event_bootstrap_ready)
@@ -1113,7 +1145,12 @@ class SNTalkBot(TeamTalk):
         return chunks
 
     def privateMessage(self, user_id, message_text):
-        for chunk in self._split_private_message(message_text):
+        chunks = self._split_private_message(message_text)
+        self.log_runtime_action(
+            "private_message", to_user=int(user_id or 0), chunks=len(chunks),
+            bytes=len(str(message_text or "").encode("utf-8", errors="replace")),
+        )
+        for chunk in chunks:
             message = TextMessage()
             message.nMsgType = 1
             message.nToUserID = user_id
@@ -1124,6 +1161,10 @@ class SNTalkBot(TeamTalk):
     def send_message(self, message_text, channel_id=None):
         if channel_id is None:
             channel_id=self.getMyChannelID()
+        self.log_runtime_action(
+            "channel_message", channel_id=int(channel_id or 0),
+            bytes=len(str(message_text or "").encode("utf-8", errors="replace")),
+        )
         message = TextMessage()
         message.nMsgType = TextMsgType.MSGTYPE_CHANNEL
         message.nChannelID = channel_id
@@ -1132,7 +1173,12 @@ class SNTalkBot(TeamTalk):
 
     def send_broadcast_message(self, message_text):
         """Send a global text broadcast using TeamTalk-safe UTF-8 chunks."""
-        for chunk in self._split_private_message(message_text):
+        chunks = self._split_private_message(message_text)
+        self.log_runtime_action(
+            "broadcast_message", chunks=len(chunks),
+            bytes=len(str(message_text or "").encode("utf-8", errors="replace")),
+        )
+        for chunk in chunks:
             message = TextMessage()
             message.nMsgType = TextMsgType.MSGTYPE_BROADCAST
             message.szMessage = ttstr(chunk)
@@ -1141,11 +1187,13 @@ class SNTalkBot(TeamTalk):
     def kick_user(self, user_id):
         user = self.getUser(user_id)
         if not user:
+            self.log_runtime_action("kick_user", user_id=int(user_id or 0), result="not_found")
             return False
         user_channel_id = int(getattr(user, "nChannelID", 0) or 0)
         if user_channel_id:
             self.doKickUser(user_id, user_channel_id)
         self.doKickUser(user_id, 0)
+        self.log_runtime_action("kick_user", user_id=int(user_id or 0), result="requested")
         return True
 
     def queue_global_broadcast_tts(self, message_text):

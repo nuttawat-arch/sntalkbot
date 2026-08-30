@@ -42,6 +42,11 @@ class PlayerCog:
         )
         self._deletion_worker.start()
 
+    def _log_action(self, action, **metadata):
+        logger = getattr(self.bot, "log_runtime_action", None)
+        if callable(logger):
+            logger(action, **metadata)
+
     def load_favorites(self):
         store = getattr(self.bot, "state_store", None)
         if store is None:
@@ -787,6 +792,13 @@ class PlayerCog:
         self._send_playback_message(self._("{nickname} requested playing from a URL").format(nickname=user_nickname))
         self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
         self._announce_track(self.player.media_title)
+        try:
+            host = (urlparse(str(link)).hostname or "").lower()
+        except Exception:
+            host = ""
+        self._log_action(
+            "playback_started", source="url", host=host or "unknown", title=self.player.media_title, mode="direct"
+        )
         if "youtube.com" in str(link) or "youtu.be" in str(link):
             source = "ytmusic" if "music.youtube.com" in str(link) else "youtube"
             self.player.reset_radio_history({"title": self.player.media_title, "link": link, "source": source}, source)
@@ -844,6 +856,13 @@ class PlayerCog:
                 nickname=user_nickname, position=start or "?", title=video['title']))
             self._announce_queue(title=video['title'], start=start, nickname=user_nickname)
             self._after_queue_enqueue(should_start)
+            try:
+                host = (urlparse(str(link)).hostname or "").lower()
+            except Exception:
+                host = ""
+            self._log_action(
+                "queue_added", source="url", position=start or "?", host=host or "unknown", title=video.get("title", "")
+            )
         except Exception as e:
             self.bot.privateMessage(user_id, self._("Error adding to queue: {e}").format(e=str(e)))
 
@@ -1168,6 +1187,9 @@ class PlayerCog:
                 )
                 self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
                 self._announce_track(self.player.media_title)
+                self._log_action(
+                    "playback_started", source=source, title=first_video.get("title", ""), mode="search"
+                )
             else:
                 print(f"{source} search returned no results for query {query!r}")
                 self._send_playback_message(self._("No results found for '{query}'.").format(query=query), user_id)
@@ -1205,6 +1227,9 @@ class PlayerCog:
                 )
                 self._announce_queue(title=video['title'], start=start, nickname=user_nickname)
                 self._after_queue_enqueue(should_start)
+                self._log_action(
+                    "queue_added", source=source, position=start or "?", title=video.get("title", "")
+                )
             else:
                 print(f"{source} queue search returned no results for query {query!r}")
                 self._send_playback_message(self._("No results found for '{query}'.").format(query=query), user_id)
