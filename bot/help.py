@@ -167,7 +167,7 @@ class HelpCommands:
             'events [1-25]': self._('Admins only (Manager/Full): Show recent real TeamTalk/admin activity from the bounded in-memory audit ring; command arguments/secrets are never stored.'),
             'language <code>': self._('Admins only: save the bot interface language code. Restart the bot to reload every module in the new language.'),
             'voicetx on|off': self._('Admins only: manually enable or disable TeamTalk voice transmission.'),
-            'select <index>': self._('Select and play the indexed item from the current search or active list.'),
+            'select <index>': self._('Select and play the indexed item from the active queue or playlist. Use . and , for search results.'),
             'favorites': self._('List saved favorite tracks, one track per message.'),
             'shuffle': self._('Shuffle only the unplayed part of the current queue.'),
             'ptts [on|off|status]': self._('Admins only: Control Player track/queue TTS announcements. Also supports ptts tracks on|off and ptts queue on|off.'),

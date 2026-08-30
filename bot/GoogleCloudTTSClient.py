@@ -6,10 +6,12 @@ import base64
 GOOGLE_TTS_TIMEOUT_SECONDS = 180
 
 class GoogleCloudTTSClient:
-    def __init__(self, api_key, base_url="https://texttospeech.googleapis.com/v1"):
+    def __init__(self, api_key, base_url="https://texttospeech.googleapis.com/v1", state_store=None):
         self.api_key = (api_key or "").strip()
         # ใช้ Base URL มาตรฐานของ Google Cloud TTS
         self.base_url = (base_url or "https://texttospeech.googleapis.com/v1").strip()
+        self.state_store = state_store
+        self._memory_cache = {}
 
     def is_configured(self):
         return bool(self.api_key)
@@ -112,14 +114,24 @@ class GoogleCloudTTSClient:
         return response.json()
 
     def load_cache(self, cache_path):
-        if not os.path.exists(cache_path):
-            return {}
-        with open(cache_path, "r", encoding="utf-8") as handle:
-            return json.load(handle)
+        """Compatibility cache backed by per-instance SQLite or RAM, never JSON files."""
+        key = "google_tts_cache:" + os.path.basename(str(cache_path or "default"))
+        if self.state_store is not None:
+            try:
+                raw = self.state_store.get_meta(key, "{}")
+                value = json.loads(raw) if isinstance(raw, str) else raw
+                return value if isinstance(value, dict) else {}
+            except Exception:
+                return {}
+        return dict(self._memory_cache.get(key, {}))
 
     def save_cache(self, cache_path, data):
-        with open(cache_path, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, ensure_ascii=False, indent=2)
+        key = "google_tts_cache:" + os.path.basename(str(cache_path or "default"))
+        value = dict(data or {})
+        if self.state_store is not None:
+            self.state_store.set_meta(key, json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+        else:
+            self._memory_cache[key] = value
 
     def resolve_voice_id(self, voice_name, voices):
         if not voice_name or not voices:

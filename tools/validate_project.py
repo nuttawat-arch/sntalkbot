@@ -132,6 +132,18 @@ if not version_match or version_match.group(1) != release_version:
 else:
     ok(f"hard-coded utility version matches release VERSION ({release_version})")
 
+# Release-notice and Telegram-routing policy are security/UX contracts.
+_update_source = (ROOT / "bot" / "update_notifier.py").read_text(encoding="utf-8")
+if "มี SNTalkBot เวอร์ชันใหม่ {version} พร้อมใช้งานแล้ว" in _update_source and 'message += " " + str(url)' not in _update_source:
+    ok("GitHub release notification is Thai-only and never broadcasts the release URL")
+else:
+    fail("GitHub release notification must be Thai-only without a release URL")
+_config_source = (ROOT / "bot" / "config_handler.py").read_text(encoding="utf-8")
+if all(x in _config_source for x in ("if instance_token:", 'source = "instance"', 'os.getenv("SNTALKBOT_TELEGRAM_BOT_TOKEN")', 'default_chat_id = instance_chat_id')):
+    ok("per-instance Telegram token owns its routing and central Telegram is fallback-only")
+else:
+    fail("per-instance Telegram token precedence over central Telegram is missing")
+
 # Compile every Python file without importing native dependencies.
 for path in ROOT.rglob("*.py"):
     if "__pycache__" in path.parts:
@@ -1117,6 +1129,97 @@ def validate_player_queue_and_radio_regressions():
         assert player.current_collection_index == 55, player.current_collection_index
         assert player.current_link == "p56" and selected_links[-1] == "p56", (player.current_link, selected_links)
 
+        # select/c must never acquire a second meaning as a direct search-result
+        # selector. Search candidates have their own ./, navigation commands.
+        player.queue_mode = False
+        player.collection_results = []
+        player.search_results = [{"title":"S1","link":"s1"},{"title":"S2","link":"s2"}]
+        player.current_search_index = 0
+        before_selected = list(selected_links)
+        bot.messages.clear()
+        cog.handle_select_command(msg, "2")
+        assert player.current_search_index == 0 and selected_links == before_selected, (player.current_search_index, selected_links)
+        assert any("Use . and ," in text for _, text in bot.messages), bot.messages
+
+        # In Queue Mode select N is a true skip, not merely a temporary index
+        # change. Entries before N are consumed so N+1 follows N instead of the
+        # old bug that returned to queue item 1 after the selected track ended.
+        player.queue_mode = True
+        player.queue = [{"title": f"Q{i}", "link": f"q{i}"} for i in range(1, 21)]
+        player.queue_index = 0
+        player.queue_history = []
+        queue_jumps = []
+        player.stop_transport = lambda: None
+        cog._play_from_queue = lambda index: queue_jumps.append((index, player.queue[index]["title"]))
+        cog.handle_select_command(msg, "10")
+        assert [x["title"] for x in player.queue[:3]] == ["Q10", "Q11", "Q12"], player.queue[:3]
+        assert [x["title"] for x in player.queue_history] == [f"Q{i}" for i in range(1, 10)], player.queue_history
+        assert player.queue_index == 0 and queue_jumps[-1] == (0, "Q10"), (player.queue_index, queue_jumps)
+
+        # p <query> and pm <query> are intentionally different source selectors,
+        # but Queue Mode and normal playback must share the same handoff inside
+        # each source. Reproduce the reported regression where pm worked while p
+        # returned no playable YouTube item in Queue Mode.
+        youtube_queries = []
+        music_queries = []
+        youtube_fixture = [
+            {"title":"YouTube hit","link":"https://www.youtube.com/watch?v=yt1","source":"youtube"},
+            {"title":"YouTube alt","link":"https://www.youtube.com/watch?v=yt2","source":"youtube"},
+        ]
+        music_fixture = [
+            {"title":"Music hit","link":"https://music.youtube.com/watch?v=ym1","source":"ytmusic"},
+            {"title":"Music alt","link":"https://music.youtube.com/watch?v=ym2","source":"ytmusic"},
+        ]
+        player.search_youtube = lambda query: (youtube_queries.append(str(query)) or [dict(x) for x in youtube_fixture])
+        player.search_ytmusic = lambda query: (music_queries.append(str(query)) or [dict(x) for x in music_fixture])
+        player.clear_collection = lambda: setattr(player, "collection_results", [])
+        player.reset_radio_history = lambda seed, source=None: None
+        player.stop_transport = lambda: None
+        player.play_stream = lambda link: setattr(player, "media_title", "played:" + str(link))
+        cog._announce_queue = lambda **kwargs: None
+        cog._prefetch_next_for_current = lambda: None
+
+        player.queue_mode = True
+        player.queue = []
+        player.queue_index = -1
+        player.queue_transition = False
+        player.playback_end_transition = False
+        player.is_playing = False
+        queue_starts = []
+        original_after_queue_enqueue = cog._after_queue_enqueue
+        cog._after_queue_enqueue = lambda should_start: queue_starts.append(bool(should_start))
+        cog.handle_play_search_or_pause_command(msg, "รักรักรัก")
+        assert youtube_queries == ["รักรักรัก"] and music_queries == [], (youtube_queries, music_queries)
+        assert len(player.queue) == 1 and player.queue[0]["link"].endswith("v=yt1"), player.queue
+        assert player.queue[0].get("_search_source") == "youtube" and len(player.queue[0].get("_search_results") or []) == 2, player.queue[0]
+        assert queue_starts == [True], queue_starts
+
+        # pm remains YouTube Music-only and must not be changed by the p fix.
+        player.queue = []
+        player.queue_index = -1
+        player.queue_transition = False
+        player.playback_end_transition = False
+        player.is_playing = False
+        queue_starts.clear()
+        cog.handle_ytmusic_search_command(msg, "รักรักรัก")
+        assert youtube_queries == ["รักรักรัก"] and music_queries == ["รักรักรัก"], (youtube_queries, music_queries)
+        assert len(player.queue) == 1 and "music.youtube.com" in player.queue[0]["link"], player.queue
+        assert player.queue[0].get("_search_source") == "ytmusic", player.queue[0]
+
+        # Normal p <query> uses the exact same YouTube resolver and must start the
+        # first returned result instead of having a Queue-only fix.
+        player.queue_mode = False
+        player.queue = []
+        player.queue_index = -1
+        player.is_playing = False
+        player.collection_results = []
+        normal_plays = []
+        player.play_stream = lambda link: (normal_plays.append(str(link)), setattr(player, "media_title", "YouTube hit"))[0]
+        cog._after_queue_enqueue = original_after_queue_enqueue
+        cog.handle_play_search_or_pause_command(msg, "รักรักรัก")
+        assert youtube_queries == ["รักรักรัก", "รักรักรัก"], youtube_queries
+        assert normal_plays == ["https://www.youtube.com/watch?v=yt1"], normal_plays
+
         # Reset the playlist fixture before exercising a second, independent pp case.
         player.collection_results = [{"title":"P1","link":"p1"},{"title":"P2","link":"p2"}]
 
@@ -1208,7 +1311,80 @@ def validate_player_queue_and_radio_regressions():
             sys.path.remove(root_str)
 
 if validate_player_queue_and_radio_regressions():
-    ok("queue FIFO/ownership, first-item queue-before-play announcement, pending prefetch, pp/select/search targeting, and normal n/b Radio are regression-tested")
+    ok("queue FIFO/ownership, select-N queue/playlist jumps without search-selection overlap, YouTube p/pm source routing in Queue+normal modes, first-item announcement, pending prefetch, pp/search targeting, and normal n/b Radio are regression-tested")
+
+def validate_youtube_search_resolver_fallback():
+    """Prove p's YouTube resolver survives one discovery surface returning empty."""
+    previous_mpv = sys.modules.get("mpv")
+    previous_yt = sys.modules.get("yt_dlp")
+    root_str = str(ROOT)
+    added_root = root_str not in sys.path
+    if added_root:
+        sys.path.insert(0, root_str)
+    fake_mpv = types.ModuleType("mpv")
+    class FakeMPV:
+        pass
+    fake_mpv.MPV = FakeMPV
+    sys.modules["mpv"] = fake_mpv
+    calls = []
+    mode = {"url_empty": False}
+    class FakeYDL:
+        def __init__(self, opts):
+            self.opts = opts
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            return False
+        def extract_info(self, target, download=False):
+            calls.append(str(target))
+            if str(target).startswith("https://www.youtube.com/results?search_query="):
+                if mode["url_empty"]:
+                    return {"entries": []}
+                return {"entries": [{"id": "urlhit", "title": "URL hit", "url": "urlhit"}]}
+            if str(target).startswith("ytsearch50:"):
+                return {"entries": [{"id": "prefixhit", "title": "Prefix hit", "url": "prefixhit"}]}
+            raise AssertionError(target)
+    fake_yt = types.ModuleType("yt_dlp")
+    fake_yt.YoutubeDL = FakeYDL
+    sys.modules["yt_dlp"] = fake_yt
+    try:
+        spec = importlib.util.spec_from_file_location("_sntalkbot_youtube_search_test", ROOT / "bot" / "player.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        player = module.Player.__new__(module.Player)
+        player.ytdlp_config = {}
+        player.cookiefile = None
+        player.bundled_cookiefile = None
+
+        calls.clear()
+        results = player.search_youtube("รักรักรัก")
+        assert len(calls) == 1 and calls[0].startswith("https://www.youtube.com/results?search_query="), calls
+        assert results and results[0]["link"] == "https://www.youtube.com/watch?v=urlhit", results
+        assert results[0].get("source") == "youtube", results
+
+        mode["url_empty"] = True
+        calls.clear()
+        results = player.search_youtube("fallback")
+        assert len(calls) == 2 and calls[0].startswith("https://www.youtube.com/results?search_query=") and calls[1] == "ytsearch50:fallback", calls
+        assert results and results[0]["link"] == "https://www.youtube.com/watch?v=prefixhit", results
+        return True
+    except Exception as exc:
+        fail(f"YouTube search resolver fallback regression: {exc!r}")
+        return False
+    finally:
+        if previous_mpv is None:
+            sys.modules.pop("mpv", None)
+        else:
+            sys.modules["mpv"] = previous_mpv
+        if previous_yt is None:
+            sys.modules.pop("yt_dlp", None)
+        else:
+            sys.modules["yt_dlp"] = previous_yt
+        if added_root and root_str in sys.path:
+            sys.path.remove(root_str)
+
+if validate_youtube_search_resolver_fallback():
+    ok("YouTube p search uses search-URL primary + ytsearch fallback and yields canonical playable watch URLs")
 
 def validate_mpv_endfile_queue_skip_runtime():
     """Regression-test stale EOF, one-retry failure policy, Queue skip and force-stop."""
@@ -1775,6 +1951,17 @@ elif 'bot_username' not in bridge_source or 'username == bot_username' not in br
     fail("dashboard state does not separate room/server counts or exclude the bot TeamTalk username from Administrator results")
 else:
     ok("API-only realtime snapshots use RAM/SQLite -> loopback HTTP -> SSE, with no runtime/live/status JSON file path")
+
+_google_cache_source = (ROOT / "bot" / "GoogleCloudTTSClient.py").read_text(encoding="utf-8")
+if "json.dump(" in _google_cache_source or 'open(cache_path, "w"' in _google_cache_source:
+    fail("mutable Google TTS JSON cache writer remains")
+else:
+    ok("mutable runtime JSON cache writer removed; legacy favorites.json is read-once migration into per-instance SQLite")
+
+if '/v1/config/apply' in api_source and 'apply_live_config' in (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8") and 'reload_config_file' in (ROOT / "bot" / "config_handler.py").read_text(encoding="utf-8"):
+    ok("loopback live-config apply reloads config.ini and synchronizes safe running settings without forced restart")
+else:
+    fail("loopback live-config apply contract incomplete")
 
 # Leaving/logout events may clean per-user features, but must never stop Player
 # merely because the room becomes empty. This preserves continuous unattended

@@ -44,7 +44,7 @@ class LocalStatusApi:
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
-            server_version = "SNTalkBotLocalAPI/2"
+            server_version = "SNTalkBotLocalAPI/3"
             sys_version = ""
 
             def log_message(self, fmt, *args):
@@ -130,6 +130,18 @@ class LocalStatusApi:
                 payload = self._body_json()
                 if not isinstance(payload, dict):
                     self._json(400, {"ok": False, "error": "invalid_json"})
+                    return
+                if parsed.path == "/v1/config/apply":
+                    changed = payload.get("changed_keys")
+                    if not isinstance(changed, list) or len(changed) > 256:
+                        self._json(400, {"ok": False, "error": "invalid_changed_keys"})
+                        return
+                    try:
+                        result = outer.bot.apply_live_config(changed)
+                        self._json(200, result)
+                    except Exception as exc:
+                        logging.exception("Live config apply failed")
+                        self._json(500, {"ok": False, "error": type(exc).__name__})
                     return
                 if parsed.path == "/v1/events/release":
                     notifier = getattr(outer.bot, "update_notifier", None)

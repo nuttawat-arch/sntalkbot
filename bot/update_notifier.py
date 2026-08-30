@@ -50,11 +50,11 @@ class UpdateNotifier:
         key = "last_notified_version"
         if self.bot.state_store.get_update_state(key, "") == str(version):
             return False
-        message = self.bot._(
-            "SNTalkBot update available: {version} (current {current})."
-        ).format(version=version, current=current)
-        if url:
-            message += " " + str(url)
+        # Release notices are intentionally short Thai announcements. The
+        # GitHub URL remains internal webhook metadata and is never broadcast.
+        message = "มี SNTalkBot เวอร์ชันใหม่ {version} พร้อมใช้งานแล้ว (เวอร์ชันปัจจุบัน {current})".format(
+            version=version, current=current
+        )
         delivered = False
         if self.config.get("broadcast_enabled"):
             try:

@@ -22,6 +22,22 @@ class ConfigHandler:
         self.CONFIG_STRUCTURE = self._get_config_structure()        
         self.read_config_file()
 
+    def reload_config_file(self):
+        """Reload the existing config.ini without running setup or migrations.
+
+        This is used by the authenticated loopback runtime API after the Web
+        Manager has atomically saved config.ini.  Replacing the parser avoids a
+        later bot command writing an old in-memory parser back over web changes.
+        """
+        if not os.path.isfile(self.config_file):
+            raise FileNotFoundError(self.config_file)
+        refreshed = configparser.ConfigParser()
+        with open(self.config_file, "r", encoding="utf-8") as handle:
+            refreshed.read_file(handle)
+        self.config = refreshed
+        self.language = refreshed.get("bot", "language", fallback=self.language)
+        return self.config
+
     def _get_config_structure(self):
         """
         Defines the entire structure of the config.ini file.
@@ -752,13 +768,24 @@ class ConfigHandler:
         self._update_section("bot", updates)
 
     def get_telegram_config(self):
-        # Environment variables are intentionally supported so Docker/helper deployments
-        # can keep secrets out of GitHub, Docker images, and per-instance config files.
-        token = os.getenv("SNTALKBOT_TELEGRAM_BOT_TOKEN") or self.config.get("telegram", "telegram_bot_token", fallback="")
-        default_chat_id = os.getenv("SNTALKBOT_TELEGRAM_DEFAULT_CHAT_ID") or self.config.get("telegram", "default_chat_id", fallback="")
+        # A token configured by the instance owner has absolute precedence and
+        # owns its chat routing too. Never combine an owner's token with the
+        # operator's central chat ID. The root-only central environment is only
+        # a fallback for instances that have no token of their own.
+        instance_token = self.config.get("telegram", "telegram_bot_token", fallback="").strip()
+        instance_chat_id = self.config.get("telegram", "default_chat_id", fallback="").strip()
+        if instance_token:
+            token = instance_token
+            default_chat_id = instance_chat_id
+            source = "instance"
+        else:
+            token = str(os.getenv("SNTALKBOT_TELEGRAM_BOT_TOKEN") or "").strip()
+            default_chat_id = str(os.getenv("SNTALKBOT_TELEGRAM_DEFAULT_CHAT_ID") or "").strip()
+            source = "central" if token else "disabled"
         return {
-            "telegram_bot_token": str(token or "").strip(),
-            "default_chat_id": str(default_chat_id or "").strip(),
+            "telegram_bot_token": token,
+            "default_chat_id": default_chat_id,
+            "source": source,
         }
 
     def get_updates_config(self):

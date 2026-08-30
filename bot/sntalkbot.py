@@ -112,6 +112,138 @@ class SNTalkBot(TeamTalk):
         self.local_status_api = LocalStatusApi(self)
         self.local_status_api.start()
 
+    # Settings which can be applied safely through the loopback API without
+    # recreating the Docker container.  Everything else remains persisted in
+    # config.ini and is reported as restart-required.
+    _LIVE_BOT_KEYS = {
+        "nickname", "gender", "status_message", "welcome_broadcast",
+        "vpn_detection", "prevent_noname", "noname_note",
+        "channel_input_enabled", "intercept_channel_messages", "char_limit",
+        "char_limit_mode", "blacklist_mode", "banned_countries",
+        "video_deletion_timer", "profanity_filter_enabled", "tts_enabled",
+        "welcome_mode", "welcome_msg", "is_locked", "blocked_commands",
+        "jail_users", "jail_names", "jail_channel", "jail_timer_seconds",
+        "jail_flood_count", "reconnection_attempts", "reconnection_timeout",
+    }
+    _LIVE_PLAYBACK_KEYS = {
+        "seek_step", "default_volume", "max_volume", "send_channel_messages",
+        "channel_messages_mode", "volume_fading", "is_stereo_wide",
+        "is_stereo_echo", "is_bass_boosted", "speed", "fade_enabled",
+        "queue_mode", "persist_queue", "resume_queue_on_start", "play_mode",
+        "autoplay_enabled", "announce_tracks", "announce_queue",
+        "announcement_tts_mode", "announcement_voice",
+        "announcement_microsoft_voice", "announcement_google_lang",
+        "announcement_google_tld", "announcement_google_slow",
+        "announcement_rate", "announcement_google_speed", "announcement_volume",
+    }
+    _LIVE_UPDATE_KEYS = {"enabled", "repository", "broadcast_enabled", "telegram_enabled"}
+    _LIVE_SECTIONS = {"telegram", "exclusion", "accounts", "account_requests", "global_broadcast", "weather", "tts", "groq"}
+
+    def apply_live_config(self, changed_keys):
+        """Reload config.ini and apply safe changed keys to this running bot.
+
+        Returns a JSON-safe result containing keys applied live and keys which
+        still require a container restart.  The Web Manager owns persistence;
+        this method owns runtime synchronization only.
+        """
+        requested = []
+        for raw in changed_keys or []:
+            key = str(raw or "").strip().lower()
+            if key and "." in key and key not in requested:
+                requested.append(key)
+        self.config_handler.reload_config_file()
+
+        live, restart = [], []
+        for dotted in requested:
+            section, key = dotted.split(".", 1)
+            allowed = (
+                section == "bot" and key in self._LIVE_BOT_KEYS
+                or section == "playback" and key in self._LIVE_PLAYBACK_KEYS
+                or section == "updates" and key in self._LIVE_UPDATE_KEYS
+                or section in self._LIVE_SECTIONS
+            )
+            (live if allowed else restart).append(dotted)
+
+        # Refresh canonical parsed dictionaries. Modules reference these objects
+        # at runtime, so replacing them synchronizes Web and TeamTalk controls.
+        self.bot_config = self.config_handler.get_bot_config()
+        self.playback_config = self.config_handler.get_playback_config()
+        self.telegram_config = self.config_handler.get_telegram_config()
+        self.exclusion_config = self.config_handler.get_exclusion_config()
+        self.accounts_config = self.config_handler.get_accounts_config()
+        self.account_request_config = self.config_handler.get_account_request_config()
+        self.global_broadcast_config = self.config_handler.get_global_broadcast_config()
+        self.weather_config = self.config_handler.get_weather_config()
+        self.tts_config = self.config_handler.get_tts_config()
+        self.groq_config = self.config_handler.get_groq_config()
+
+        if any(k.startswith("groq.") for k in live):
+            self.groq_client = GroqClient(
+                api_key=self.groq_config.get("api_key"),
+                model=self.groq_config.get("model", "llama-3.1-8b-instant"),
+                base_url=self.groq_config.get("base_url", "https://api.groq.com/openai/v1"),
+            )
+
+        if any(k.startswith("updates.") for k in live) and getattr(self, "update_notifier", None):
+            # Webhook flags/repository are safe to change live. Polling thread
+            # lifecycle settings remain restart-required by the whitelist above.
+            self.update_notifier.config = self.config_handler.get_updates_config()
+
+        bot_live = {k.split(".", 1)[1] for k in live if k.startswith("bot.")}
+        self.blocked_commands = set(x.lower().lstrip("/") for x in self.bot_config.get("blocked_commands", []))
+        self.commands_locked = self.bot_config.get("is_locked", False)
+        self.tts_enabled = self.bot_config.get("tts_enabled", True)
+        self.profanity_filter_enabled = self.bot_config.get("profanity_filter_enabled", False)
+        self.welcome_mode = self.bot_config.get("welcome_mode", 0)
+        self.welcome_broadcast = self.bot_config.get("welcome_broadcast", True)
+        self.welcome_msg = self.bot_config.get("welcome_msg", self.welcome_msg)
+        if "intercept_channel_messages" in bot_live:
+            try:
+                self.set_intercept_channel_messages(self.bot_config.get("intercept_channel_messages", True))
+            except Exception:
+                restart.append("bot.intercept_channel_messages")
+                live.remove("bot.intercept_channel_messages")
+        if "nickname" in bot_live:
+            try:
+                self.doChangeNickname(ttstr(self.bot_config.get("nickname", "SN TalkBot")))
+            except Exception:
+                pass
+        if bot_live.intersection({"gender", "status_message"}):
+            try:
+                self.doChangeStatus(ttstr(self.bot_config.get("gender", 0)), ttstr(self.get_idle_status_message()))
+            except Exception:
+                pass
+
+        if self.player is not None:
+            self.player.playback_config = dict(self.playback_config)
+            playback_live = {k.split(".", 1)[1] for k in live if k.startswith("playback.")}
+            if "queue_mode" in playback_live:
+                self.player.queue_mode = bool(self.playback_config.get("queue_mode", False))
+            if "play_mode" in playback_live:
+                self.player.play_mode = int(self.playback_config.get("play_mode", 2) or 2)
+            if "fade_enabled" in playback_live:
+                self.player.fade_enabled = bool(self.playback_config.get("fade_enabled", True))
+            filter_changed = False
+            for key, attr in (("is_stereo_wide", "is_stereo_wide"), ("is_stereo_echo", "is_stereo_echo"), ("is_bass_boosted", "is_bass_boosted")):
+                if key in playback_live:
+                    setattr(self.player, attr, bool(self.playback_config.get(key, False)))
+                    filter_changed = True
+            if "speed" in playback_live:
+                speed = float(self.playback_config.get("speed", 1.0))
+                self.player.speed = speed
+                try:
+                    self.player["speed"] = speed
+                except Exception:
+                    pass
+            if filter_changed:
+                self.player.update_filters()
+            if getattr(self, "player_cog", None) is not None:
+                self.player_cog.autoplay_enabled = bool(
+                    self.playback_config.get("autoplay_enabled", self.player.play_mode == 2)
+                )
+
+        return {"ok": True, "applied": live, "restart_required": restart}
+
     def get_idle_status_message(self):
         """Return the configured custom status or a role-specific automatic default."""
         return effective_status_message(

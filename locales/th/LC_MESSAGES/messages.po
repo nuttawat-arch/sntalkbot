@@ -1888,8 +1888,8 @@ msgid "Seek to absolute time (e.g. 1:30)."
 msgstr "เลื่อนไปยังเวลาที่ระบุ เช่น 1:30"
 
 #: bot/help.py:139
-msgid "Select and play the indexed item from the current search or active list."
-msgstr "เลือกและเล่นรายการตามลำดับจากผลการค้นหาหรือรายการที่กำลังใช้งาน"
+msgid "Select and play the indexed item from the active queue or playlist. Use . and , for search results."
+msgstr "เลือกและเล่นรายการตามลำดับจากคิวหรือเพลย์ลิสต์ที่กำลังใช้งาน ใช้ . และ , สำหรับผลค้นหา"
 
 #: bot/config_handler.py:498
 msgid "Select {type} Device"

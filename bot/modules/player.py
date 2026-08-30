@@ -2221,6 +2221,29 @@ class PlayerCog:
         self._set_play_mode(3)
         self._send_playback_message(self._("Mode set to: M3 (Repeat)"))
 
+    def _skip_queue_to_index(self, index):
+        """Consume pending entries before *index* and make that item queue head.
+
+        ``select N`` in Queue mode is a real skip-to-position operation.  Items
+        before N are moved into bounded queue history, so after N finishes FIFO
+        continues with N+1 instead of unexpectedly returning to item 1.
+        """
+        with self.player.queue_lock:
+            if index < 0 or index >= len(self.player.queue):
+                raise IndexError("queue index out of range")
+            skipped = [dict(item) for item in self.player.queue[:index]]
+            if index:
+                del self.player.queue[:index]
+            if skipped:
+                self.player.queue_history.extend(skipped)
+                if len(self.player.queue_history) > 64:
+                    del self.player.queue_history[:-64]
+            self.player.queue_index = 0
+            self.player.queue_transition = True
+            if getattr(self.player, "state_store", None) is not None:
+                self.player.state_store.set_meta("queue_index", 0)
+            return dict(self.player.queue[0])
+
     def handle_select_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
@@ -2232,18 +2255,47 @@ class PlayerCog:
         except ValueError:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Index must be a number."))
             return
-        results, _ = self._get_active_results()
-        if not results:
-            results = self.player.search_results
+        # select/c is deliberately a media-position command only. Search-result
+        # navigation already has its own ./, commands, so search candidates must
+        # never become an implicit second meaning of select.
+        if self.player.queue_mode and self.player.queue:
+            results, list_type = self.player.queue, "queue"
+        elif self.player.collection_results:
+            results, list_type = self.player.collection_results, "collection"
+        else:
+            self.bot.privateMessage(
+                textmessage.nFromUserID,
+                self._("No queue or playlist is active. Use . and , to change search results."),
+            )
+            return
         if index < 0 or index >= len(results):
             self.bot.privateMessage(textmessage.nFromUserID, self._("Track index is out of range."))
             return
+
+        # Queue has different semantics from a playlist: skipping to position N
+        # consumes 1..N-1 so FIFO continuation is N+1.
+        if list_type == "queue":
+            try:
+                item = self._skip_queue_to_index(index)
+                self.player.stop_transport()
+                self._send_playback_message(
+                    self._("Queue {position} selection changed to: {title}").format(
+                        position=index + 1, title=item.get("title", self._("Unknown"))
+                    ),
+                    textmessage.nFromUserID,
+                )
+                self._play_from_queue(0)
+            except Exception as exc:
+                self.bot.privateMessage(textmessage.nFromUserID, self._("Error playing track: {error}").format(error=str(exc)))
+            return
+
         self.loading_new_track = True
         try:
             self._set_active_index(index)
             item = results[index]
             self.player.stop_transport()
             self.player.current_link = item["link"]
+            self._set_playback_context(list_type or "search", item["link"], f"select:{index}")
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(item["link"])
             self._send_playback_message(self._("Playing: {title}").format(title=self.player.media_title), textmessage.nFromUserID)

@@ -333,8 +333,22 @@ class Player(mpv.MPV):
         return results
 
     def search_youtube(self, query):
-        """Search YouTube using yt-dlp's official ytsearch extractor."""
-        return self._tag_source(self._search(f"ytsearch50:{query}", limit=50), "youtube")
+        """Search YouTube with two supported yt-dlp discovery surfaces.
+
+        The explicit YouTube search URL extractor is the primary path.  Some
+        deployments can return an empty ``ytsearch:`` result while the normal
+        YouTube search page still works (the inverse can also happen during
+        extractor rollouts), so retain ``ytsearch:`` as a bounded fallback.
+        Queue Mode and normal playback both call this single resolver.
+        """
+        query = str(query or "").strip()
+        if not query:
+            return []
+        target = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+        results = self._search(target, limit=50)
+        if not results:
+            results = self._search(f"ytsearch50:{query}", limit=50)
+        return self._tag_source(results, "youtube")
 
     def search_ytmusic(self, query):
         """Search the YouTube Music Songs section using its supported search URL extractor."""

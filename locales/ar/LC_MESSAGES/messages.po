@@ -1840,7 +1840,7 @@ msgid "Seek to absolute time (e.g. 1:30)."
 msgstr ""
 
 #: bot/help.py:137
-msgid "Select and play the indexed item from the current search or active list."
+msgid "Select and play the indexed item from the active queue or playlist. Use . and , for search results."
 msgstr ""
 
 #: bot/config_handler.py:498
