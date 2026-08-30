@@ -1,4 +1,4 @@
-# Command ↔ Action / Realtime Architecture Audit — SNTalkBot 5.1.20
+# Command ↔ Action / Realtime Architecture Audit — SNTalkBot 5.1.21
 
 ## ผลการตรวจคำสั่ง
 

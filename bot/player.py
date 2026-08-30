@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import base64
 import binascii
 import html
@@ -114,6 +115,13 @@ class Player(mpv.MPV):
         self.set_output_device()
         self.update_filters()
         self.ydl = yt_dlp.YoutubeDL(self._base_ydl_opts(noplaylist=True))
+        try:
+            ytdlp_version = getattr(getattr(yt_dlp, "version", None), "__version__", "unknown")
+            deno_path = shutil.which("deno") or "NOT FOUND"
+            cookie_source = "user/default" if self._active_cookiefile() else "none"
+            print(f"Media resolver ready: yt-dlp {ytdlp_version}; Deno: {deno_path}; cookies: {cookie_source}")
+        except Exception:
+            pass
         self.prefetcher = LinkPrefetcher(self.prefetch_stream_info, max_pending=5)
 
     @staticmethod
@@ -138,8 +146,22 @@ class Player(mpv.MPV):
             return False
         return False
 
-    def _base_ydl_opts(self, *, extract_flat=False, noplaylist=False, playlistend=None):
-        """Return yt-dlp Python API options shared by search and playback."""
+    def _active_cookiefile(self):
+        if self.cookiefile and self._cookiefile_has_records(self.cookiefile):
+            return self.cookiefile
+        if self.bundled_cookiefile and self._cookiefile_has_records(self.bundled_cookiefile):
+            return self.bundled_cookiefile
+        return None
+
+    def _base_ydl_opts(self, *, extract_flat=False, noplaylist=False, playlistend=None, use_cookies=True):
+        """Return yt-dlp Python API options shared by search and playback.
+
+        Deno is installed in the production image specifically for yt-dlp's
+        current YouTube EJS challenge path.  Explicitly point the Python API at
+        the executable so an environment/PATH difference cannot silently make
+        YouTube formats disappear.  A no-cookie retry is available to callers
+        because stale account cookies can break otherwise-public media.
+        """
         cfg = self.ytdlp_config
         opts = {
             "format": cfg.get("format", "bestaudio/best"),
@@ -155,13 +177,12 @@ class Player(mpv.MPV):
         }
         if playlistend is not None:
             opts["playlistend"] = playlistend
-        active_cookiefile = None
-        if self.cookiefile and self._cookiefile_has_records(self.cookiefile):
-            active_cookiefile = self.cookiefile
-        elif self.bundled_cookiefile and self._cookiefile_has_records(self.bundled_cookiefile):
-            active_cookiefile = self.bundled_cookiefile
+        active_cookiefile = self._active_cookiefile() if use_cookies else None
         if active_cookiefile:
             opts["cookiefile"] = active_cookiefile
+        deno = shutil.which("deno")
+        if deno:
+            opts["js_runtimes"] = {"deno": {"path": deno}}
         impersonate = (cfg.get("impersonate") or "").strip()
         if impersonate:
             opts["impersonate"] = impersonate
@@ -312,20 +333,48 @@ class Player(mpv.MPV):
                 break
         return results
 
-    def _search(self, target, limit=50):
+    def _search_once(self, target, limit=50, *, use_cookies=True):
         results = []
-        try:
-            with yt_dlp.YoutubeDL(self._base_ydl_opts(extract_flat=True, playlistend=limit)) as ydl:
-                info = ydl.extract_info(target, download=False)
-            for entry in self._iter_entries(info or {}):
-                item = self._entry_to_result(entry)
-                if item:
-                    results.append(item)
-                if len(results) >= limit:
-                    break
-        except Exception as exc:
-            print(f"yt-dlp search failed: {exc}")
+        with yt_dlp.YoutubeDL(
+            self._base_ydl_opts(extract_flat=True, playlistend=limit, use_cookies=use_cookies)
+        ) as ydl:
+            info = ydl.extract_info(target, download=False)
+        for entry in self._iter_entries(info or {}):
+            item = self._entry_to_result(entry)
+            if item:
+                results.append(item)
+            if len(results) >= limit:
+                break
         return results
+
+    def _search(self, target, limit=50):
+        """Search once with the effective cookie, then retry public media cleanly.
+
+        This avoids one bad/stale cookie file turning every YouTube and YouTube
+        Music search into an empty result while still preferring the user's cookie
+        for account-gated content.
+        """
+        first_error = None
+        try:
+            results = self._search_once(target, limit=limit, use_cookies=True)
+            if results:
+                return results
+        except Exception as exc:
+            first_error = exc
+        if self._active_cookiefile():
+            try:
+                results = self._search_once(target, limit=limit, use_cookies=False)
+                if results:
+                    print("yt-dlp search recovered without cookies")
+                    return results
+            except Exception as exc:
+                if first_error is None:
+                    first_error = exc
+                else:
+                    print(f"yt-dlp no-cookie search retry failed: {exc}")
+        if first_error is not None:
+            print(f"yt-dlp search failed: {first_error}")
+        return []
 
     def _tag_source(self, results, source):
         for item in results:
@@ -333,27 +382,45 @@ class Player(mpv.MPV):
         return results
 
     def search_youtube(self, query):
-        """Search YouTube with two supported yt-dlp discovery surfaces.
+        """Search YouTube with independent extractor fallbacks.
 
-        The explicit YouTube search URL extractor is the primary path.  Some
-        deployments can return an empty ``ytsearch:`` result while the normal
-        YouTube search page still works (the inverse can also happen during
-        extractor rollouts), so retain ``ytsearch:`` as a bounded fallback.
-        Queue Mode and normal playback both call this single resolver.
+        ``ytsearch:`` is the established API path and stays primary.  The normal
+        YouTube search URL is a fallback, not a replacement, so an extractor
+        rollout on either surface cannot disable both Queue Mode and normal play.
         """
         query = str(query or "").strip()
         if not query:
             return []
-        target = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
-        results = self._search(target, limit=50)
+        results = self._search(f"ytsearch50:{query}", limit=50)
         if not results:
-            results = self._search(f"ytsearch50:{query}", limit=50)
+            target = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+            results = self._search(target, limit=50)
         return self._tag_source(results, "youtube")
 
     def search_ytmusic(self, query):
-        """Search the YouTube Music Songs section using its supported search URL extractor."""
+        """Search YouTube Music, with a playable ID fallback via YouTube search.
+
+        YouTube Music search has historically had extractor-specific regressions.
+        If its search page returns no songs, reuse ordinary YouTube discovery only
+        to obtain video IDs, then canonicalize those IDs back to music.youtube.com
+        so ``pm`` remains a distinct YouTube Music intent.
+        """
+        query = str(query or "").strip()
+        if not query:
+            return []
         target = f"https://music.youtube.com/search?q={quote_plus(query)}#songs"
-        return self._tag_source(self._search(target, limit=20), "ytmusic")
+        results = self._search(target, limit=20)
+        if not results:
+            fallback = self._search(f"ytsearch20:{query}", limit=20)
+            results = []
+            for item in fallback:
+                item = dict(item)
+                video_id = self.video_id_from_result(item)
+                if video_id:
+                    item["id"] = video_id
+                    item["link"] = f"https://music.youtube.com/watch?v={video_id}"
+                    results.append(item)
+        return self._tag_source(results, "ytmusic")
 
     @staticmethod
     def video_id_from_result(item):
@@ -985,6 +1052,60 @@ class Player(mpv.MPV):
         self.add_to_recent_history(self.media_title, self.current_link)
         return True
 
+
+    @staticmethod
+    def _canonical_youtube_playback_candidates(link):
+        value = str(link or "").strip()
+        candidates = [value] if value else []
+        try:
+            parsed = urlparse(value)
+            host = (parsed.hostname or "").lower()
+            if host == "music.youtube.com":
+                video_id = parse_qs(parsed.query).get("v", [None])[0]
+                if video_id:
+                    normal = f"https://www.youtube.com/watch?v={video_id}"
+                    if normal not in candidates:
+                        candidates.append(normal)
+        except Exception:
+            pass
+        return candidates
+
+    def _extract_play_info_resilient(self, link):
+        """Extract playable metadata with bounded URL/cookie fallbacks.
+
+        Keep the requested link as the public/history identity.  The fallback
+        candidate is only an extraction transport detail and is never exposed as
+        a source change to the caller.
+        """
+        errors = []
+        candidates = self._canonical_youtube_playback_candidates(link)
+        if not candidates:
+            candidates = [str(link or "")]
+        has_cookie = bool(self._active_cookiefile())
+        for candidate in candidates:
+            for use_cookies in ((True, False) if has_cookie else (True,)):
+                try:
+                    if candidate == str(link) and use_cookies:
+                        info = self.ydl.extract_info(candidate, download=False)
+                    else:
+                        with yt_dlp.YoutubeDL(
+                            self._base_ydl_opts(noplaylist=True, use_cookies=use_cookies)
+                        ) as ydl:
+                            info = ydl.extract_info(candidate, download=False)
+                    if info:
+                        if candidate != str(link):
+                            print("yt-dlp playback recovered through canonical YouTube URL")
+                        elif not use_cookies:
+                            print("yt-dlp playback recovered without cookies")
+                        return info
+                except Exception as exc:
+                    errors.append((candidate, use_cookies, exc))
+        if errors:
+            candidate, use_cookies, exc = errors[-1]
+            mode = "cookies" if use_cookies else "no-cookies"
+            raise RuntimeError(f"yt-dlp extraction failed ({mode}, {candidate}): {exc}") from exc
+        raise RuntimeError("yt-dlp extraction returned no playable metadata")
+
     def play_stream(self, link):
         """Play a URL using yt-dlp, with a direct HTTP stream fallback for radio/stream URLs."""
         try:
@@ -999,7 +1120,7 @@ class Player(mpv.MPV):
                         # result instead of paying for a duplicate extraction.
                         info = self._prefetch_cache.pop(link, None)
                         if not info:
-                            info = self.ydl.extract_info(link, download=False)
+                            info = self._extract_play_info_resilient(link)
                 except Exception:
                     host = (urlparse(str(link)).hostname or "").lower()
                     if str(link).lower().startswith(("http://", "https://")) and not any(x in host for x in ("youtube.com", "youtu.be", "music.youtube.com")):
@@ -1073,7 +1194,7 @@ class Player(mpv.MPV):
                 # Playback may have populated the cache while this worker waited.
                 if link in self._prefetch_cache:
                     return
-                info = self.ydl.extract_info(link, download=False)
+                info = self._extract_play_info_resilient(link)
                 # Commit while still holding the same yt-dlp lock.  Otherwise
                 # playback can acquire the lock in the tiny window after
                 # extract_info() returns but before this worker stores the cache,

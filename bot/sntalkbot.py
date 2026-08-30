@@ -100,6 +100,7 @@ class SNTalkBot(TeamTalk):
         self.welcome_mode = self.bot_config.get("welcome_mode", 0)
         self.welcome_broadcast = self.bot_config.get("welcome_broadcast", True)
         self.welcome_msg = self.bot_config.get("welcome_msg", "ยินดีต้อนรับคุณ ชื่อ เข้าสู่ห้องครับ")
+        print(f"Channel Input: {'ON' if self.bot_config.get('channel_input_enabled', True) else 'OFF'}")
         # One canonical multilingual word-filter source. badword.txt remains in
         # release packages only as a compatibility/reference mirror; every shipped
         # entry is required by validation to exist in blacklist.txt as well.
@@ -866,6 +867,15 @@ class SNTalkBot(TeamTalk):
         sender_user = self.getUser(from_uid)
         from_nickname = utils.ensure_text(ttstr(sender_user.szNickname)) if sender_user else "Unknown"
 
+        # TeamTalk CUSTOM text is transport metadata (the common example is the
+        # client typing indicator "typing\n1"), not user chat and never a bot
+        # command.  Do not let it flood console logs or enter TTS/player flows.
+        msg_type = self.command_handler._numeric(getattr(textmessage, "nMsgType", None))
+        custom_type = self.command_handler._numeric(getattr(TextMsgType, "MSGTYPE_CUSTOM", None))
+        if custom_type is not None and msg_type == custom_type:
+            super().onCmdUserTextMessage(textmessage)
+            return
+
         # Word moderation is intentionally independent from Channel Input. The
         # `filter` switch is the single master ON/OFF control for the canonical
         # multilingual blacklist (Thai, English, and other configured languages).
@@ -883,6 +893,14 @@ class SNTalkBot(TeamTalk):
         if not self.command_handler.channel_input_allowed(
             textmessage, self.bot_config.get("channel_input_enabled", True)
         ):
+            # Do not make a disabled Channel Input look like a dead command
+            # parser.  Keep the setting authoritative, but make the reason clear
+            # in logs without changing or executing the message.
+            if self.command_handler.is_command_candidate(message_text, textmessage):
+                print(self._("Message received: {message} from {username}").format(
+                    message=f"{message_text} [ignored: Channel Input OFF]",
+                    username=from_username,
+                ))
             return
 
         # TTMediaBot-style prefix-free commands work in both private and channel

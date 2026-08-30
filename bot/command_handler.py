@@ -1,5 +1,6 @@
 import shlex
 import unicodedata
+import logging
 from TeamTalk5 import TextMessage, TextMsgType, UserType, ttstr
 from bot.utils import BotUtils as utils
 
@@ -190,6 +191,21 @@ class CommandHandler:
             self.bot.privateMessage(textmessage.nFromUserID, self.bot._("Not authorized"))
             return True
 
+        # Console logs must prove that a command reached the dispatcher.  Player
+        # and ordinary commands are safe to show exactly as typed; admin-only
+        # arguments are redacted because they may contain passwords, messages,
+        # tokens, paths, or other operator-only data.  This is intentionally
+        # separate from the bounded admin activity audit below.
+        safe_message = message_text
+        if command.admin_only and args:
+            safe_message = f"{requested_name} <arguments redacted>"
+        try:
+            print(self.bot._("Message received: {message} from {username}").format(
+                message=safe_message, username=sender_username
+            ))
+        except Exception:
+            print(f"Command received: {requested_name} from {sender_username}")
+
         # Record only the canonical admin action name, never raw arguments. This
         # gives Manager/Full an audit trail without leaking passwords, messages,
         # tokens, or other command payloads into memory.
@@ -204,5 +220,15 @@ class CommandHandler:
             except Exception:
                 pass
 
-        command.handler(textmessage, *args)
+        try:
+            command.handler(textmessage, *args)
+        except Exception as exc:
+            logging.exception("Command %s failed", command_name)
+            try:
+                self.bot.privateMessage(
+                    textmessage.nFromUserID,
+                    f"Command {command_name} failed: {type(exc).__name__}: {exc}",
+                )
+            except Exception:
+                pass
         return True

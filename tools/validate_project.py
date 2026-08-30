@@ -472,10 +472,17 @@ else:
 # Legacy unknown-command response must happen only after real workflows and must
 # not answer TeamTalk CUSTOM events such as typing notifications.
 sntalkbot_source_for_unknown = (ROOT / "bot" / "sntalkbot.py").read_text(encoding="utf-8")
+if ("<arguments redacted>" not in command_handler_source
+        or "logging.exception(\"Command %s failed\"" not in command_handler_source
+        or "[ignored: Channel Input OFF]" not in sntalkbot_source_for_unknown
+        or "MSGTYPE_CUSTOM" not in sntalkbot_source_for_unknown):
+    fail("command ingress diagnostics/redaction guard is incomplete")
+else:
+    ok("real commands are visible in logs, CUSTOM typing noise is suppressed, and admin arguments stay redacted")
 unknown_text = 'Unknown or invalid command. Send h for help.'
 unknown_pos = sntalkbot_source_for_unknown.find(unknown_text)
 translator_pos = sntalkbot_source_for_unknown.find("self.translator_cog.handle_whisper_translation(textmessage)")
-super_pos = sntalkbot_source_for_unknown.find("super().onCmdUserTextMessage(textmessage)")
+super_pos = sntalkbot_source_for_unknown.find("super().onCmdUserTextMessage(textmessage)", unknown_pos)
 if unknown_pos < 0:
     fail("unknown-command fallback is missing")
 elif translator_pos < 0 or super_pos < 0 or not (translator_pos < unknown_pos < super_pos):
@@ -1314,7 +1321,7 @@ if validate_player_queue_and_radio_regressions():
     ok("queue FIFO/ownership, select-N queue/playlist jumps without search-selection overlap, YouTube p/pm source routing in Queue+normal modes, first-item announcement, pending prefetch, pp/search targeting, and normal n/b Radio are regression-tested")
 
 def validate_youtube_search_resolver_fallback():
-    """Prove p's YouTube resolver survives one discovery surface returning empty."""
+    """Prove p/pm survive independent discovery-surface regressions."""
     previous_mpv = sys.modules.get("mpv")
     previous_yt = sys.modules.get("yt_dlp")
     root_str = str(ROOT)
@@ -1327,7 +1334,7 @@ def validate_youtube_search_resolver_fallback():
     fake_mpv.MPV = FakeMPV
     sys.modules["mpv"] = fake_mpv
     calls = []
-    mode = {"url_empty": False}
+    mode = {"prefix_empty": False, "music_empty": False}
     class FakeYDL:
         def __init__(self, opts):
             self.opts = opts
@@ -1336,13 +1343,20 @@ def validate_youtube_search_resolver_fallback():
         def __exit__(self, exc_type, exc, tb):
             return False
         def extract_info(self, target, download=False):
-            calls.append(str(target))
-            if str(target).startswith("https://www.youtube.com/results?search_query="):
-                if mode["url_empty"]:
+            target = str(target)
+            calls.append(target)
+            if target.startswith("ytsearch50:"):
+                if mode["prefix_empty"]:
                     return {"entries": []}
-                return {"entries": [{"id": "urlhit", "title": "URL hit", "url": "urlhit"}]}
-            if str(target).startswith("ytsearch50:"):
                 return {"entries": [{"id": "prefixhit", "title": "Prefix hit", "url": "prefixhit"}]}
+            if target.startswith("https://www.youtube.com/results?search_query="):
+                return {"entries": [{"id": "urlhit", "title": "URL hit", "url": "urlhit"}]}
+            if target.startswith("https://music.youtube.com/search?"):
+                if mode["music_empty"]:
+                    return {"entries": []}
+                return {"entries": [{"id": "musichit", "title": "Music hit", "url": "musichit"}]}
+            if target.startswith("ytsearch20:"):
+                return {"entries": [{"id": "musicfallback", "title": "Music fallback", "url": "musicfallback"}]}
             raise AssertionError(target)
     fake_yt = types.ModuleType("yt_dlp")
     fake_yt.YoutubeDL = FakeYDL
@@ -1358,18 +1372,31 @@ def validate_youtube_search_resolver_fallback():
 
         calls.clear()
         results = player.search_youtube("รักรักรัก")
-        assert len(calls) == 1 and calls[0].startswith("https://www.youtube.com/results?search_query="), calls
-        assert results and results[0]["link"] == "https://www.youtube.com/watch?v=urlhit", results
+        assert calls == ["ytsearch50:รักรักรัก"], calls
+        assert results and results[0]["link"] == "https://www.youtube.com/watch?v=prefixhit", results
         assert results[0].get("source") == "youtube", results
 
-        mode["url_empty"] = True
+        mode["prefix_empty"] = True
         calls.clear()
         results = player.search_youtube("fallback")
-        assert len(calls) == 2 and calls[0].startswith("https://www.youtube.com/results?search_query=") and calls[1] == "ytsearch50:fallback", calls
-        assert results and results[0]["link"] == "https://www.youtube.com/watch?v=prefixhit", results
+        assert len(calls) == 2 and calls[0] == "ytsearch50:fallback" and calls[1].startswith("https://www.youtube.com/results?search_query="), calls
+        assert results and results[0]["link"] == "https://www.youtube.com/watch?v=urlhit", results
+
+        mode["music_empty"] = False
+        calls.clear()
+        results = player.search_ytmusic("เพลง")
+        assert len(calls) == 1 and calls[0].startswith("https://music.youtube.com/search?"), calls
+        assert results and results[0].get("source") == "ytmusic", results
+
+        mode["music_empty"] = True
+        calls.clear()
+        results = player.search_ytmusic("fallback music")
+        assert len(calls) == 2 and calls[0].startswith("https://music.youtube.com/search?") and calls[1] == "ytsearch20:fallback music", calls
+        assert results and results[0]["link"] == "https://music.youtube.com/watch?v=musicfallback", results
+        assert results[0].get("source") == "ytmusic", results
         return True
     except Exception as exc:
-        fail(f"YouTube search resolver fallback regression: {exc!r}")
+        fail(f"YouTube/YouTube Music search resolver fallback regression: {exc!r}")
         return False
     finally:
         if previous_mpv is None:
@@ -1384,7 +1411,79 @@ def validate_youtube_search_resolver_fallback():
             sys.path.remove(root_str)
 
 if validate_youtube_search_resolver_fallback():
-    ok("YouTube p search uses search-URL primary + ytsearch fallback and yields canonical playable watch URLs")
+    ok("YouTube/YouTube Music discovery uses independent bounded fallbacks and canonical playable watch URLs")
+
+def validate_playback_extraction_recovery():
+    """Prove music canonical-URL and stale-cookie playback recovery paths."""
+    previous_mpv = sys.modules.get("mpv")
+    previous_yt = sys.modules.get("yt_dlp")
+    root_str = str(ROOT)
+    added_root = root_str not in sys.path
+    if added_root:
+        sys.path.insert(0, root_str)
+    fake_mpv = types.ModuleType("mpv")
+    class FakeMPV:
+        pass
+    fake_mpv.MPV = FakeMPV
+    sys.modules["mpv"] = fake_mpv
+    temp_calls = []
+    class TempYDL:
+        def __init__(self, opts):
+            self.opts = dict(opts or {})
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            return False
+        def extract_info(self, target, download=False):
+            temp_calls.append((str(target), dict(self.opts)))
+            return {"title": "Recovered", "url": "https://cdn.example/audio"}
+    fake_yt = types.ModuleType("yt_dlp")
+    fake_yt.YoutubeDL = TempYDL
+    sys.modules["yt_dlp"] = fake_yt
+    try:
+        spec = importlib.util.spec_from_file_location("_sntalkbot_playback_recovery_test", ROOT / "bot" / "player.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        player = module.Player.__new__(module.Player)
+        player.ytdlp_config = {}
+        player.cookiefile = None
+        player.bundled_cookiefile = None
+        player._base_ydl_opts = lambda **kw: {"use_cookies": kw.get("use_cookies", True)}
+
+        class PrimaryFail:
+            def extract_info(self, target, download=False):
+                raise RuntimeError("primary failed")
+        player.ydl = PrimaryFail()
+        player._active_cookiefile = lambda: None
+        temp_calls.clear()
+        info = player._extract_play_info_resilient("https://music.youtube.com/watch?v=abc123")
+        assert info.get("title") == "Recovered", info
+        assert temp_calls and temp_calls[0][0] == "https://www.youtube.com/watch?v=abc123", temp_calls
+
+        player._active_cookiefile = lambda: "/fake/cookies.txt"
+        temp_calls.clear()
+        info = player._extract_play_info_resilient("https://www.youtube.com/watch?v=cookie123")
+        assert info.get("title") == "Recovered", info
+        assert temp_calls and temp_calls[0][0].endswith("v=cookie123"), temp_calls
+        assert temp_calls[0][1].get("use_cookies") is False, temp_calls
+        return True
+    except Exception as exc:
+        fail(f"playback extraction recovery regression: {exc!r}")
+        return False
+    finally:
+        if previous_mpv is None:
+            sys.modules.pop("mpv", None)
+        else:
+            sys.modules["mpv"] = previous_mpv
+        if previous_yt is None:
+            sys.modules.pop("yt_dlp", None)
+        else:
+            sys.modules["yt_dlp"] = previous_yt
+        if added_root and root_str in sys.path:
+            sys.path.remove(root_str)
+
+if validate_playback_extraction_recovery():
+    ok("YouTube playback recovers from music-domain extractor failure and stale cookies without changing public source intent")
 
 def validate_mpv_endfile_queue_skip_runtime():
     """Regression-test stale EOF, one-retry failure policy, Queue skip and force-stop."""
@@ -1742,14 +1841,14 @@ _play_url_start = _player_core_for_url.find("    def play_stream(self, link):")
 _play_url_end = _player_core_for_url.find("    def fade_out_and_stop", _play_url_start)
 _play_url_block = _player_core_for_url[_play_url_start:_play_url_end]
 if not (
-    "self.ydl.extract_info(link, download=False)" in _play_url_block
+    "self._extract_play_info_resilient(link)" in _play_url_block
     and "self._play_resolved_radio(link)" in _play_url_block
-    and _play_url_block.find("self.ydl.extract_info(link, download=False)")
+    and _play_url_block.find("self._extract_play_info_resilient(link)")
         < _play_url_block.find("self._play_resolved_radio(link)")
 ):
-    fail("URL resolver order changed: yt-dlp must run before radio webpage fallback")
+    fail("URL resolver order changed: resilient yt-dlp extraction must run before radio webpage fallback")
 else:
-    ok("URL playback keeps yt-dlp Generic Extractor first and bounded webpage resolution as fallback")
+    ok("URL playback keeps resilient yt-dlp extraction first and bounded webpage resolution as fallback")
 
 _queue_module_core = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
 _queue_url_start = _queue_module_core.find("    def _enqueue_url_task(self, link, user_id):")
@@ -1890,12 +1989,16 @@ if "cookiefile_path = /app/data/cookies.txt" not in config_default_source or 'or
     fail("Player cookie path is not defaulted to persistent /app/data/cookies.txt")
 elif 'self.bundled_cookiefile = os.path.join(' not in player_core_source or '"defaults", "cookies.txt"' not in player_core_source:
     fail("Player has no bundled default cookie fallback")
-elif 'if self.cookiefile and self._cookiefile_has_records(self.cookiefile):' not in player_core_source or 'elif self.bundled_cookiefile and self._cookiefile_has_records(self.bundled_cookiefile):' not in player_core_source:
+elif 'def _active_cookiefile(self):' not in player_core_source or 'if self.cookiefile and self._cookiefile_has_records(self.cookiefile):' not in player_core_source or 'if self.bundled_cookiefile and self._cookiefile_has_records(self.bundled_cookiefile):' not in player_core_source:
     fail("Player cookie precedence does not require a real persistent cookie before the bundled default")
-elif 'opts["cookiefile"] = active_cookiefile' not in player_core_source:
-    fail("Player does not pass the resolved persistent/bundled cookie file to yt-dlp")
+elif 'opts["cookiefile"] = active_cookiefile' not in player_core_source or 'use_cookies=False' not in player_core_source:
+    fail("Player does not support persistent/bundled cookie selection with a bounded no-cookie recovery")
 else:
-    ok("Player prefers a real persistent/user cookie and falls back to the bundled default when the persistent file is absent or header-only")
+    ok("Player prefers a real persistent/user cookie, falls back to bundled default, and retries public media without stale cookies on failure")
+if 'shutil.which("deno")' not in player_core_source or 'opts["js_runtimes"]' not in player_core_source:
+    fail("yt-dlp Python API does not explicitly bind the Docker Deno runtime")
+else:
+    ok("yt-dlp Python API explicitly binds the installed Deno runtime for current YouTube EJS handling")
 
 bridge_source = (ROOT / "bot" / "dashboard_state.py").read_text(encoding="utf-8") if (ROOT / "bot" / "dashboard_state.py").is_file() else ""
 api_source = (ROOT / "bot" / "http_api.py").read_text(encoding="utf-8") if (ROOT / "bot" / "http_api.py").is_file() else ""

@@ -688,6 +688,7 @@ class PlayerCog:
         """Helper to check if a user is in the bot's channel."""
         user = self.bot.getUser(user_id)
         if not user or user.nChannelID != self.bot.getMyChannelID():
+            print(f"Player command ignored: user {user_id} is not in bot channel {self.bot.getMyChannelID()}")
             self.bot.privateMessage(user_id, self._("You are not in the same channel"))
             return False
         return True
@@ -1133,59 +1134,86 @@ class PlayerCog:
             self.bot.io_pool.submit(self._search_and_play_task, query, textmessage.nFromUserID, source='ytmusic')
 
     def _search_and_play_task(self, query, user_id, source='youtube'):
-        """Task to be run in the thread pool for searching and playing."""
-        if source == 'ytmusic':
-            results = self.player.search_ytmusic(query)
-        else:
-            results = self.player.search_youtube(query)
-            
-        if results:
-            self.player.search_results = results
-            self.player.current_search_index = 0
-            first_video = results[0]
-            self.player.reset_radio_history(first_video, source)
-            self.player.current_link = first_video['link']
-            self._set_playback_context("search", first_video['link'], f"{source}:0")
-            self.bot.enableVoiceTransmission(True)
-            try:
-                self.player.play_stream(first_video['link'])
-            except Exception as e:
-                self._send_playback_message(self._("Error playing {title}: {e}").format(title=first_video['title'], e=str(e)))
-                self._mark_sync_play_error(e)
-                self.bot.io_pool.submit(self.on_playback_end)
-                return
-            self._prefetch_next_for_current()
-            user_nickname = self._nickname(user_id)
-            self._send_playback_message(self._("{nickname} requested to play: {title}").format(nickname=user_nickname, title=first_video['title']))
-            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
-            self._announce_track(self.player.media_title)
-        else:
-            self._send_playback_message(self._("No results found for '{query}'.").format(query=query))
+        """Search and play with visible failure reporting for async workers."""
+        try:
+            if source == 'ytmusic':
+                results = self.player.search_ytmusic(query)
+            else:
+                results = self.player.search_youtube(query)
+
+            if results:
+                self.player.search_results = results
+                self.player.current_search_index = 0
+                first_video = results[0]
+                self.player.reset_radio_history(first_video, source)
+                self.player.current_link = first_video['link']
+                self._set_playback_context("search", first_video['link'], f"{source}:0")
+                self.bot.enableVoiceTransmission(True)
+                try:
+                    self.player.play_stream(first_video['link'])
+                except Exception as e:
+                    print(f"{source} playback failed for query {query!r}: {type(e).__name__}: {e}")
+                    self._send_playback_message(
+                        self._("Error playing {title}: {e}").format(title=first_video['title'], e=str(e)),
+                        user_id,
+                    )
+                    self._mark_sync_play_error(e)
+                    self.bot.io_pool.submit(self.on_playback_end)
+                    return
+                self._prefetch_next_for_current()
+                user_nickname = self._nickname(user_id)
+                self._send_playback_message(
+                    self._("{nickname} requested to play: {title}").format(nickname=user_nickname, title=first_video['title']),
+                    user_id,
+                )
+                self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
+                self._announce_track(self.player.media_title)
+            else:
+                print(f"{source} search returned no results for query {query!r}")
+                self._send_playback_message(self._("No results found for '{query}'.").format(query=query), user_id)
+        except Exception as exc:
+            print(f"{source} search/play worker failed for query {query!r}: {type(exc).__name__}: {exc}")
+            self.bot.privateMessage(
+                user_id,
+                self._("Error playing track: {error}").format(error=f"{type(exc).__name__}: {exc}"),
+            )
 
     def _search_and_enqueue_task(self, query, user_id, source='youtube'):
-        """Task to search and add to queue."""
-        if source == 'ytmusic':
-            results = self.player.search_ytmusic(query)
-        else:
-            results = self.player.search_youtube(query)
-            
-        if results:
-            # Keep this result set attached to the queue item instead of only in
-            # the Player-global search buffer.  Multiple users can therefore have
-            # independent pending searches in the same FIFO queue.
-            video = dict(results[0])
-            video["_search_results"] = [dict(item) for item in results]
-            video["_search_index"] = 0
-            video["_search_source"] = source
-            queue_range = self._enqueue_queue_items([video], user_id=user_id)
-            start, _end, should_start = queue_range or (None, None, False)
-            user_nickname = self._nickname(user_id)
-            self._send_playback_message(self._("{nickname} added to queue {position}: {title}").format(
-                nickname=user_nickname, position=start or "?", title=video['title']))
-            self._announce_queue(title=video['title'], start=start, nickname=user_nickname)
-            self._after_queue_enqueue(should_start)
-        else:
-            self._send_playback_message(self._("No results found for '{query}'.").format(query=query))
+        """Search and enqueue with visible failure reporting for async workers."""
+        try:
+            if source == 'ytmusic':
+                results = self.player.search_ytmusic(query)
+            else:
+                results = self.player.search_youtube(query)
+
+            if results:
+                # Keep this result set attached to the queue item instead of only in
+                # the Player-global search buffer. Multiple users can therefore have
+                # independent pending searches in the same FIFO queue.
+                video = dict(results[0])
+                video["_search_results"] = [dict(item) for item in results]
+                video["_search_index"] = 0
+                video["_search_source"] = source
+                queue_range = self._enqueue_queue_items([video], user_id=user_id)
+                start, _end, should_start = queue_range or (None, None, False)
+                user_nickname = self._nickname(user_id)
+                self._send_playback_message(
+                    self._("{nickname} added to queue {position}: {title}").format(
+                        nickname=user_nickname, position=start or "?", title=video['title']
+                    ),
+                    user_id,
+                )
+                self._announce_queue(title=video['title'], start=start, nickname=user_nickname)
+                self._after_queue_enqueue(should_start)
+            else:
+                print(f"{source} queue search returned no results for query {query!r}")
+                self._send_playback_message(self._("No results found for '{query}'.").format(query=query), user_id)
+        except Exception as exc:
+            print(f"{source} search/enqueue worker failed for query {query!r}: {type(exc).__name__}: {exc}")
+            self.bot.privateMessage(
+                user_id,
+                self._("Error playing track: {error}").format(error=f"{type(exc).__name__}: {exc}"),
+            )
 
     def _play_from_queue(self, index):
         with self.player.queue_lock:
