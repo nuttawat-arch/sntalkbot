@@ -271,7 +271,7 @@ class Player(mpv.MPV):
                 return "channel"
         return None
 
-    def fetch_collection_details(self, link, max_items=100):
+    def fetch_collection_details(self, link, max_items=None):
         """Return ``(type, title, items)`` for YouTube/YouTube Music collections.
 
         ``fetch_collection`` remains as the backward-compatible two-value API.
@@ -282,15 +282,19 @@ class Player(mpv.MPV):
             title, items = self._fetch_playlist_details(link, max_items=max_items)
             return collection_type, title, items
         if collection_type == "channel":
-            items = self._fetch_channel_videos(link, max_items=max_items)
+            # Channel tabs can be effectively unbounded feeds. Keep the historical
+            # bounded discovery behavior unless a caller explicitly asks for a
+            # different limit; playlists themselves are intentionally uncapped.
+            channel_limit = 100 if max_items is None else max_items
+            items = self._fetch_channel_videos(link, max_items=channel_limit)
             return collection_type, "channel", items
         return None, None, []
 
-    def fetch_collection(self, link, max_items=100):
+    def fetch_collection(self, link, max_items=None):
         collection_type, _title, items = self.fetch_collection_details(link, max_items=max_items)
         return collection_type, items
 
-    def _fetch_playlist_details(self, link, max_items=100):
+    def _fetch_playlist_details(self, link, max_items=None):
         try:
             with yt_dlp.YoutubeDL(self._base_ydl_opts(extract_flat=True, playlistend=max_items)) as ydl:
                 info = ydl.extract_info(link, download=False)
@@ -309,11 +313,11 @@ class Player(mpv.MPV):
                 if source == "ytmusic" and item.get("id"):
                     item["link"] = f"https://music.youtube.com/watch?v={item['id']}"
                 results.append(item)
-            if len(results) >= max_items:
+            if max_items is not None and len(results) >= max_items:
                 break
         return title, results
 
-    def _fetch_playlist_videos(self, link, max_items=100):
+    def _fetch_playlist_videos(self, link, max_items=None):
         _title, results = self._fetch_playlist_details(link, max_items=max_items)
         return results
 

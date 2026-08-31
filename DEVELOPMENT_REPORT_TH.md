@@ -1,4 +1,12 @@
-# Development Report — SNTalkBot 5.1.23
+# Development Report — SNTalkBot 5.1.24
+
+## Playlist >100 และ default cookies
+
+- เอา default `max_items=100` ออกจาก YouTube/YouTube Music playlist loader; Playlist ปกติโหลดครบตามจำนวนจริง และ caller ที่ตั้งใจจำกัดยังส่ง `max_items=N` ได้
+- Queue Mode และ Normal playlist session ใช้รายการเดียวกันที่โหลดครบ จึงไม่ถูกตัดเหลือ 100 ก่อน enqueue/playback
+- Search limit และ channel-discovery limit ยังคงแยกจาก Playlist เพื่อไม่ขยายงานที่ไม่เกี่ยวข้อง
+- เพิ่ม regression fixture 350 เพลง ยืนยัน default ไม่มี `playlistend=100` และผลลัพธ์ครบ 350
+- Default cookie contract ยังคง persistent cookie > bundled default; TTUHelper/Web Manager รุ่นคู่กันจะคัดลอก bundled default ให้ instance Player/Full ใหม่ตั้งแต่สร้าง
 
 - Current matrix: Common 21 / Player 51 / Server Manager 49 / Full 121; aliases 52.
 - Playback lifecycle hardened across every media path with stale terminal-event protection and one retry before skip.

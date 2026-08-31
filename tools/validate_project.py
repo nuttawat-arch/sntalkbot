@@ -1374,6 +1374,61 @@ def validate_player_queue_and_radio_regressions():
 if validate_player_queue_and_radio_regressions():
     ok("queue FIFO/ownership, select-N queue/playlist jumps without search-selection overlap, YouTube p/pm source routing in Queue+normal modes, first-item announcement, pending prefetch, pp/search targeting, and normal n/b Radio are regression-tested")
 
+def validate_uncapped_playlist_loading():
+    """A real playlist may contain hundreds of entries; default loading must not stop at 100."""
+    previous_mpv = sys.modules.get("mpv")
+    previous_yt = sys.modules.get("yt_dlp")
+    root_str = str(ROOT)
+    added_root = root_str not in sys.path
+    if added_root:
+        sys.path.insert(0, root_str)
+    fake_mpv = types.ModuleType("mpv")
+    class FakeMPV: pass
+    fake_mpv.MPV = FakeMPV
+    sys.modules["mpv"] = fake_mpv
+    seen_opts = []
+    class FakeYDL:
+        def __init__(self, opts):
+            self.opts = dict(opts); seen_opts.append(self.opts)
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def extract_info(self, link, download=False):
+            count = 350
+            return {
+                "title": "Long Playlist",
+                "entries": [
+                    {"id": f"v{i}", "title": f"Track {i}", "url": f"https://www.youtube.com/watch?v=v{i}"}
+                    for i in range(1, count + 1)
+                ],
+            }
+    fake_yt = types.ModuleType("yt_dlp"); fake_yt.YoutubeDL = FakeYDL
+    sys.modules["yt_dlp"] = fake_yt
+    try:
+        spec = importlib.util.spec_from_file_location("_sntalkbot_uncapped_playlist_test", ROOT / "bot" / "player.py")
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        player = module.Player.__new__(module.Player)
+        player.ytdlp_config = {}
+        player.cookiefile = None
+        player.bundled_cookiefile = None
+        title, items = player._fetch_playlist_details("https://www.youtube.com/playlist?list=LONG")
+        assert title == "Long Playlist" and len(items) == 350, (title, len(items))
+        assert "playlistend" not in seen_opts[-1], seen_opts[-1]
+        _title2, limited = player._fetch_playlist_details("https://www.youtube.com/playlist?list=LONG", max_items=123)
+        assert len(limited) == 123 and seen_opts[-1].get("playlistend") == 123, (len(limited), seen_opts[-1])
+        return True
+    except Exception as exc:
+        fail(f"uncapped playlist regression: {exc!r}")
+        return False
+    finally:
+        if previous_mpv is None: sys.modules.pop("mpv", None)
+        else: sys.modules["mpv"] = previous_mpv
+        if previous_yt is None: sys.modules.pop("yt_dlp", None)
+        else: sys.modules["yt_dlp"] = previous_yt
+        if added_root and root_str in sys.path: sys.path.remove(root_str)
+
+if validate_uncapped_playlist_loading():
+    ok("playlist loading is uncapped by default and a 350-track playlist is preserved; explicit caller limits still work")
+
 def validate_youtube_search_resolver_fallback():
     """Prove p/pm survive independent discovery-surface regressions."""
     previous_mpv = sys.modules.get("mpv")
