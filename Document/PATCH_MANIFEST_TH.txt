@@ -1,0 +1,10 @@
+SNTalkBot 5.1.7 Dynamic URL / Nested Radio Resolver patch
+
+ไฟล์หลักที่เปลี่ยน:
+- VERSION / bot/utils.py
+- bot/player.py — bounded semantic radio/web resolver, nested iframe/provider yt-dlp retry, encoded URL and playlist support
+- bot/modules/player.py — Queue Mode u <URL> ใช้ resolver fallback เดียวกับ immediate playback
+- tools/validate_project.py — resolver/order/queue/non-radio safety regressions
+- README.md / README_TH.md / RELEASE_NOTES_TH.md / DEVELOPMENT_REPORT_TH.md
+
+ไม่มีการลบคำสั่งเดิม; canonical commands ยังคง 124

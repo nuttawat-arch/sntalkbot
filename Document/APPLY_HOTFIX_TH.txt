@@ -1,0 +1,9 @@
+SNTalkBot 5.1.7 URL resolver patch
+
+1. Merge โฟลเดอร์ sntalkbot ทับ repo เดิมโดยรักษา .git
+2. รัน python tools/validate_project.py
+3. Publish ผ่าน SNTalkBot-Release-Automation โดยไม่ใช้ -SkipDocker
+4. Production: Pull SNTalkBot image ล่าสุดและ Update running Player/Full bots
+5. ทดสอบ u <station webpage>, Queue Mode u <URL>, YouTube URL เดิม และ URL เว็บธรรมดาที่ไม่มีสื่อ
+
+resolver ใหม่ไม่ใช้ headless browser และมี depth/fetch/time caps เพื่อไม่ให้บอตไล่เว็บไม่สิ้นสุด

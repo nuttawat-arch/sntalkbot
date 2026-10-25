@@ -73,6 +73,7 @@ class PlayerCog:
             print(f"Error saving favorites: {exc}")
 
     def shutdown(self):
+        self._cancel_pending_retry()
         self._deletion_stop.set()
         self._deletion_wakeup.set()
         worker = getattr(self, "_deletion_worker", None)
@@ -190,14 +191,20 @@ class PlayerCog:
             self._failure_count = 0
         if not hasattr(self, "_playback_context"):
             self._playback_context = None
+        if not hasattr(self, "_retry_pending"):
+            self._retry_pending = None
         return lock
 
     def _set_playback_context(self, kind, link, token=None):
         key = (str(kind or "normal"), str(token or ""), str(link or ""))
         with self._ensure_failure_state():
             if key != self._failure_key:
+                if self._retry_pending:
+                    self._retry_pending["cancel"].set()
+                    self._retry_pending = None
                 self._failure_key = key
                 self._failure_count = 0
+            self._terminal_cancelled = False
             self._playback_context = {
                 "kind": key[0], "token": key[1], "link": key[2], "key": key,
             }
@@ -212,10 +219,30 @@ class PlayerCog:
             context = dict(self._playback_context or {})
             if not context or not context.get("link"):
                 return None
-            if self._failure_count >= 1:
+            if self._retry_pending:
+                return None
+            cfg = getattr(self.bot, "playback_config", {})
+            maximum = max(1, min(5, int(cfg.get("playback_retry_attempts", 3))))
+            if self._failure_count >= maximum:
                 return None
             self._failure_count += 1
+            context["attempt"] = self._failure_count
+            context["cancel"] = threading.Event()
+            self._retry_pending = context
             return context
+
+    def _cancel_pending_retry(self, invalidate=False):
+        with self._ensure_failure_state():
+            pending = self._retry_pending
+            if pending:
+                pending["cancel"].set()
+                self._retry_pending = None
+            if pending or invalidate:
+                self._terminal_cancelled = True
+                self._playback_context = None
+                self._failure_key = None
+            self._deferred_playback_end = False
+            return bool(pending)
 
     def _queue_token(self, index):
         with self.player.queue_lock:
@@ -226,13 +253,16 @@ class PlayerCog:
             if not token:
                 token = f"legacy-{time.time_ns()}"
                 entry["_queue_token"] = token
+                self.player.queue[index] = entry
             return token
 
     def _mark_sync_play_error(self, exc):
         """Convert a synchronous play_stream exception into the normal end path."""
         self._deferred_playback_end = False
+        self._sync_error_serial = int(getattr(self, "_sync_error_serial", 0)) + 1
         self.player.is_playing = False
         self.player.last_end_reason = "error"
+        self.player.last_error_category = getattr(exc, "category", None)
         try:
             code = int(getattr(exc, "errno", 0) or -1)
         except Exception:
@@ -240,12 +270,15 @@ class PlayerCog:
         self.player.last_end_error = code
 
     def _retry_current_playback_once(self):
+        if getattr(self.player, "last_error_category", None) == "age_auth":
+            return False  # Keep in failed history; account access must be fixed first.
         context = self._claim_one_retry()
         if not context:
             return False
         title = self.player.media_title or context.get("link") or self._("Unknown")
         self._send_playback_message(
-            self._("Playback error for {title}. Retrying the same item once before skipping...").format(title=title)
+            self._("Playback error for {title}. Retrying the same item with a fresh stream URL...").format(title=title)
+            + f" ({context['attempt']}/{max(1, min(5, int(self.bot.playback_config.get('playback_retry_attempts', 3))))})"
         )
         self.bot.io_pool.submit(self._retry_playback_context_task, context)
         return True
@@ -254,16 +287,36 @@ class PlayerCog:
         link = str(context.get("link") or "")
         if not link:
             return
+        cancel = context["cancel"]
+        delay = max(0.0, min(30.0, float(self.bot.playback_config.get("playback_retry_delay", 2.0))))
+        if cancel.wait(min(30.0, delay * context["attempt"])):
+            return
+        with self._ensure_failure_state():
+            if self._retry_pending is not context or self._failure_key != context["key"]:
+                return
+            if context.get("kind") == "queue":
+                with self.player.queue_lock:
+                    index = self.player.queue_index
+                    if index < 0 or index >= len(self.player.queue):
+                        self._retry_pending = None
+                        return
+                    item = self.player.queue[index]
+                    if item.get("link") != link or str(item.get("_queue_token") or "") != str(context.get("token") or ""):
+                        self._retry_pending = None
+                        return
         self.loading_new_track = True
         error = None
         try:
             self.player.stop_transport()
             self.player.current_link = link
             self.bot.enableVoiceTransmission(True)
-            # Keep the same context key so this replay consumes the one retry
-            # budget rather than resetting it.
-            self._set_playback_context(context.get("kind"), link, context.get("token"))
-            self.player.play_stream(link)
+            # A cached CDN URL is never reused for retry. Re-resolve with the
+            # current cookie snapshot using the existing extractor path.
+            if hasattr(self.player, "invalidate_stream_info"):
+                self.player.invalidate_stream_info(link)
+            self.player.play_stream(link, cancel_event=cancel)
+            if cancel.is_set():
+                return
             self.bot.doChangeStatus(
                 ttstr(self.bot.bot_config['gender']),
                 ttstr(self._("Playing: {title}").format(title=self.player.media_title)),
@@ -273,8 +326,12 @@ class PlayerCog:
             error = exc
             self._mark_sync_play_error(exc)
         finally:
-            self._finish_loading_transition()
-        if error is not None:
+            with self._ensure_failure_state():
+                if self._retry_pending is context:
+                    self._retry_pending = None
+            if not cancel.is_set():
+                self._finish_loading_transition()
+        if error is not None and not cancel.is_set():
             self.bot.io_pool.submit(self.on_playback_end)
 
     def _teamtalk_voice_tx_active(self):
@@ -313,7 +370,14 @@ class PlayerCog:
         with self.player.queue_lock:
             if self.player.queue_index >= 0 and self.player.queue:
                 idx = min(self.player.queue_index, len(self.player.queue) - 1)
-                finished = self.player.queue.pop(idx)
+                store = getattr(self.bot, "state_store", None)
+                if not remember and getattr(self.player, "last_end_reason", None) == "error" and store is not None:
+                    finished = store.archive_failed_queue_item(
+                        idx, f"{getattr(self.player, 'last_error_category', None) or 'playback'}: {getattr(self.player, 'last_end_error', -1)}",
+                        1 + int(getattr(self, "_failure_count", 0)),
+                    )
+                else:
+                    finished = self.player.queue.pop(idx)
                 if remember:
                     self.player.queue_history.append(dict(finished))
                     if len(self.player.queue_history) > 64:
@@ -691,6 +755,9 @@ class PlayerCog:
 
     def _is_in_same_channel(self, user_id):
         """Helper to check if a user is in the bot's channel."""
+        from bot.web_controls import WEB_ACTOR_ID
+        if user_id == WEB_ACTOR_ID:
+            return bool(self.bot.getMyChannelID())
         user = self.bot.getUser(user_id)
         if not user or user.nChannelID != self.bot.getMyChannelID():
             print(f"Player command ignored: user {user_id} is not in bot channel {self.bot.getMyChannelID()}")
@@ -700,6 +767,9 @@ class PlayerCog:
 
     def _nickname(self, user_id):
         """Return a safe nickname even if an async task finishes after logout."""
+        from bot.web_controls import WEB_ACTOR_ID
+        if user_id == WEB_ACTOR_ID:
+            return "Web Manager"
         try:
             user = self.bot.getUser(user_id)
             if user:
@@ -753,6 +823,7 @@ class PlayerCog:
     def handle_play_url_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
+        self._cancel_pending_retry(invalidate=True)
             
         if not args:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: u <link>"))
@@ -811,11 +882,12 @@ class PlayerCog:
             ydl_error = None
             try:
                 with self.player._ydl_lock:
-                    info = self.player.ydl.extract_info(link, download=False)
+                    info = self.player._extract_play_info_resilient(link)
                     # Store before releasing the shared extraction lock so a first
                     # queue playback cannot slip between extraction and cache commit.
                     if info and info.get('url'):
                         self.player._prefetch_cache[link] = info
+                        self.player._prefetch_times[link] = time.monotonic()
             except Exception as exc:
                 ydl_error = exc
 
@@ -838,6 +910,7 @@ class PlayerCog:
                         '_sntalkbot_resolved_stream': True,
                     }
                     self.player._prefetch_cache[link] = info
+                    self.player._prefetch_times[link] = time.monotonic()
                 elif ydl_error is not None:
                     raise ydl_error
                 else:
@@ -1072,6 +1145,7 @@ class PlayerCog:
     def handle_play_search_or_pause_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
+        self._cancel_pending_retry(invalidate=True)
 
         if args: # This is a search request
             query = " ".join(args)
@@ -1131,6 +1205,7 @@ class PlayerCog:
     def handle_ytmusic_search_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
+        self._cancel_pending_retry(invalidate=True)
         
         if not args:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command. Usage: pm <name>"))
@@ -1366,6 +1441,7 @@ class PlayerCog:
     def handle_next_track_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
+        self._cancel_pending_retry(invalidate=True)
 
         def play_next_track():
             if self.player.queue_mode:
@@ -1377,6 +1453,7 @@ class PlayerCog:
     def handle_previous_track_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
+        self._cancel_pending_retry(invalidate=True)
 
         def play_previous_track():
             if self.player.queue_mode:
@@ -1389,7 +1466,8 @@ class PlayerCog:
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
 
-        if self._transport_or_voice_active():
+        pending_retry = self._cancel_pending_retry(invalidate=True)
+        if pending_retry or self._transport_or_voice_active():
             # Stop transport only. Queue/playlist/search/current link remain intact so
             # p can restart the same item from 00:00; cq is the explicit queue clear.
             self.loading_new_track = True
@@ -1431,13 +1509,28 @@ class PlayerCog:
         if self.loading_new_track:
             self._deferred_playback_end = True
             return
+        with self._ensure_failure_state():
+            if getattr(self, "_terminal_cancelled", False):
+                return
+            if self._retry_pending:
+                return  # Duplicate callback while the same item awaits retry.
+        if hasattr(self.player, "last_end_reason") and self.player.last_end_reason is None:
+            return  # A queued callback from an older load, not this live item.
 
         # Queue always has priority. A completed queued item is removed exactly
         # once; if the previous track was non-queue, pending queue starts at item 1.
         end_reason = str(getattr(self.player, "last_end_reason", "") or "").lower()
         end_error = int(getattr(self.player, "last_end_error", 0) or 0)
 
-        # Any player failure gets one retry of the *same logical item* before
+        with self._ensure_failure_state():
+            if hasattr(self.player, "active_playback_epoch") or getattr(self, "_sync_error_serial", 0):
+                marker = (self._failure_key, getattr(self.player, "active_playback_epoch", None),
+                          int(getattr(self, "_sync_error_serial", 0)), end_reason, end_error)
+                if marker == getattr(self, "_handled_terminal", None):
+                    return
+                self._handled_terminal = marker
+
+        # A transient failure uses the configured retry budget for the same item before
         # Queue/Playlist/Radio state is advanced. This covers synchronous yt-dlp
         # failures and asynchronous libmpv END_FILE errors with one rule.
         if end_reason == "error" and self._retry_current_playback_once():
@@ -1460,6 +1553,8 @@ class PlayerCog:
                         title=failed_title, error=end_error
                     )
                 )
+            if failed_title is not None and getattr(self.bot, "state_store", None) is not None:
+                self._send_playback_message("เก็บรายการที่เล่นไม่สำเร็จไว้ในหน้าเว็บแล้ว สามารถส่งกลับท้ายคิวได้โดยไม่ต้องหาเพลงใหม่")
             if self._advance_queue_after_current(remember=queue_has_current and end_reason != "error"):
                 return
             if queue_has_current:
@@ -1743,7 +1838,7 @@ class PlayerCog:
                     'outtmpl': os.path.join("files", "%(title)s.%(ext)s"),
                     'skip_download': False,
                 })
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                with self.player._fresh_ydl(extra_opts=ydl_opts, noplaylist=True) as ydl:
                     info_dict = ydl.extract_info(link, download=True)
                     filename = ydl.prepare_filename(info_dict)
 
@@ -1939,6 +2034,7 @@ class PlayerCog:
     def handle_clear_queue_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
+        pending_retry = self._cancel_pending_retry()
         # cq removes queued entries only; unlike s it does not stop the audio that
         # is already playing. If that audio was a queue item it becomes detached.
         with self.player.queue_lock:
@@ -1946,6 +2042,9 @@ class PlayerCog:
             self.player.queue_index = -1
             self.player.queue_transition = False
             self.player.queue_history = []
+        if pending_retry:
+            self.player.stop_transport()
+            self.bot.enableVoiceTransmission(False)
         self.bot.privateMessage(textmessage.nFromUserID, self._("Queue cleared."))
 
     def handle_playing_info_command(self, textmessage, *args):
@@ -2300,6 +2399,7 @@ class PlayerCog:
     def handle_select_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
+        self._cancel_pending_retry(invalidate=True)
         if not args:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: select <index>"))
             return

@@ -1,0 +1,153 @@
+New in version 3.0 
+* Translation: a new optional Groq engine was added. If it is set, it will be used; if it is not set, the bot will still translate using Google Translate automatically.
+* TTS (text‑to‑speech): ElevenLabs voices were added. You can pick ElevenLabs voices, adjust how the voice sounds, and list available voices. If ElevenLabs is not configured, the bot keeps using Microsoft voices like before.
+* Random voice broadcasts: the bot can read scheduled messages out loud using ElevenLabs. This feature is optional and can be turned on or off.
+* Account requests: users can request a new account and the bot guides them step‑by‑step (username → password → email). Email verification is required, so SMTP must be configured.
+* Media player: it now supports playlist and channel links, can continue to the next item automatically, and is more stable with restricted links.
+* YouTube search: the search library was changed to py‑yt‑search, which improves search reliability.
+* Admin controls: admins can lock commands to admins only, pause all TTS requests, and toggle random broadcasts.
+* Welcome messages: more variations were added so logins feel less repetitive.
+
+New in version 2.2.6:
+It's a long time since the last version, But actually a lot has changed.
+* Removed checking for update method until we find another solution.
+* You can now translate the bot into your own language. There is a template file which includes strings for translation, But specific instructions are not included in the readme at the moment.
+* Fixed some miner issues, And fixed a bug which caused the command "/udb" to not work correctly on linux.
+* Added a new command: "/udk" to kick the user by username. Please note that if the bot cannot find the user: It will be kicked upon next login.
+* Removed username login support for yt-dlp since this method is no longer supported, And added a new method for specifying a cookie file to yt-dlp. Use the new argument option when running the bot: "-c" or "--cookiefile" "path/to/cookies.txt".
+Example: python TTUtilities.py -c cookies.txt
+
+New in version 2.2.1:
+hot fix update,Fixes some miner bugs.
+Important: Please backup your config file and recreate another one due to a problem resulted in some missing settings in the configuration. Also on windows:Please run the bot from source. We can't compile it right now due to some problems that has not yet been resolved, We are exploring solutions for embedding "yt-dlp" plugins in the compiled version but it seems this doesn't work as expected. Please use the source until further notice.
+New in version 2.2.0:
+Important: This is a major update with many changes. Users are highly recommended to backup their config file and recreate another one. Also: We highly recommend all users to take a look at the new readme file as there are many changes and commands. We can't put everything here.
+*Added a fully working media player for playing direct links, Search and play from youtube, And other features like seak, recent history and more.
+Due to the fact that installing and setting up the bot takes some time now: Please read the readme to learn more about how to set it up.
+The commands for media player are explained in the readme. Refer to it to learn more.
+* Added some settings in the config to allow for more customization, See the readme to know what's changed. You will either need to recreate your config file or use the default config.
+* Fixed many bugs related to GUI config creator.
+
+New in version 2.1.1:
+Hot fix update: Fixed some issues related to config creation on linux.
+
+New in version 2.1.0:
+Important: This is a major update that includes many changes and some parts have been replaced with other codes. In addition to the new settings for the config file, Please take a look at config_default.ini to know what has been changed and what has been removed.
+* A new and improved way for creating the config files. If you use the windows version and the bot doesn't find the config file: A new GUI will open allowing you to create config files easily rather than the old terminal. Unfortunately: This cannot be done on linux, Linux users will have the same UI for creating the config in the terminal.
+* Removed ipinfo.io service completely and replaced it with a better one for detecting VPN users. The issue of detecting most europ countries as VPN is now fixed, And you no longer need an API token anymore.
+* New weather info have been added when using the /weather command.
+* In case of an error or crash: The bot will log all errors to a file named errors.log. Please send this file to one of the staff if you find any bugs. And no worries about the data, This file only includes errors and not anything else. If there are no errors: You'll find this file empty.
+* New randomized welcome messages.
+* A new system for private channels with 2 users only. It works by sending the command /private second_name, The bot will create a private hidden channel with a randomized password between 15 and 32 characters. It will then move you and the second name to the channel, send the password to both of you, And then make you and the second name operators on the channel if you need to modify it.When both leave the channel or logout: They will be deleted from the list to allow them to create other channels.
+Please note that you can't create more than one channel with the same user. For example: If you have a channel with user B, You can't create another channel with user B until they logout. You can't also create another channel with user C even if user C is not in a private channel, This is added to prevent abusing the feature while giving users grader control on their private channels by allowing them to modify it anytime they want.
+* There is a new system for sending offline messages to users, these messages will be delivered when the specified username logs in to the server. Why usernames? Because nicknames are not accurate. You don't know which name they login to the server especially if you need to send an important message, You need something accurate. This system is usable for all users, admins and none admins can use it.
+The command is /pm username message
+Please note: You can't send more than one message to the same username until they deliver the message after that you're free to send another message to the same user. However: You can send messages to several offline users and they will be delivered to all specified users once they login. Please, avoid mistyping the username as the bot wouldn't recognize it.
+* A new command for checking your offline pending messages. The command is /messages. If you have no pending messages: The bot will inform you.
+* A new command has been added to get all users in the server and their usernames. This is necessary for none administrators to know the usernames so they can use the offline message system. It is also very useful for clients that do not have this feature such as android and IOS. The command is /users.
+* You can now monitor a specific user when they login, Please read below.
+* A new setting in the config.ini file is added which is telegram_bot_token, If you want to use this feature: You must put a telegram bot token in the config. You can create a bot in just simple steps using bot father bot on telegram. Once you get the token: Put it there.
+This system is useful if you want to monitor a specific user when they login to the server for whatever the reason. It is available to all users and it works by sending the command /notify nickname chat_id. chat_id is your chat ID you want the bot to send the message to. In order for this to work correctly: You must at least send one message to the bot you created to be able to receive messages. You can then get your chat ID by using telegram_raw_data bot,send any message and it'll send the info about the message you sent, including your chat ID. Once you get the chat ID: you can use it with the above command.
+There are 2 commands, /unotify username chat_id for monitoring a username, and /notify nickname chat_id for monitoring nicknames, not usernames.
+Please note: Monitoring is only one time, Meaning you will only get a message when this user logs in for the first time, After that you won't receive any messages.
+* New commands for managing jailed users directly without modifying the config file.
+/jails: Sends you the list of jailed users.
+/jail nickname: Puts someone in jails list and moves them to the specified jail channel.
+/unjail nickname: Removes someone from the jails list and moves them back to the root channel.
+* New commands for customization (Admins)
+/cn new_name: Changes the bot's nickname.
+/cs status: Changes the bot's status message.
+/cg mode: Can be one of the following, f for female, m for male, n for neutral.
+/save: Saves the new settings to the config file if you changed these settings and want to save them.
+* Added 2 new commands for retrieving country info for users.
+/who: Sends you how many are from the same country as your country. For example: If you're from United states: When using /who it will only tell you how many users are from united states.
+/whoall: Sends a detailed info about how many users are from each country. Excluded users will not be taken to count when using this command.
+* A new command for downloading youtube videos and uploading them to the server in .m4a format. Use /dl link to start downloading a video. The video will be uploaded to the same channel as the sender.
+There is a setting in the config that controls how many minutes before automatically deleting the video from the disk and the channel. If this is set to 0: The bot will not delete videos that are uploaded. Please be careful as this may take up a lot of storage.
+Also: You cannot download 2 videos at the same time. You must wait for the previous download to finish first.
+* Lots of bug fixes, Especially for the duration kick system which now stores the username and IP address in addition to the nickname if the user is not using one of the guest or predefined custom account. If so: It stores the IP address and nickname thus increasing the chance of unable to bypass the security without requiring some effort.
+Some improvements for checking weather info.
+
+Version 2.0.0:
+This is a major update, and we recommend everyone to update to the latest version to get the best experience.
+We tried to do our best and work hard to bring you this major update, which contain lots of features, bug fixes and improvements to existing features, Please read below for more details, some features require you to read carefully in order to use them.
+Important note: You will need to recreate your config file due to some changes.
+* The most importantly: The bot can run on linux now. We only tested it on ubuntu 22.0, Please report any bugs during testing this version, It is considered a beta version for linux. There may be undiscovered bugs.
+* The new improved text to speech system, hundreds of voices, customization of rate, pitch, volume, voice, and language detection for each user.
+We changed the old module for text to speech which was using google voices, The bot now uses Microsoft natural voices for text to speech, This new system support less languages but there's more, We still didn't remove google voices in case if the language is not supported by the new voices.
+The first thing you will notice when you use the command "/say" for the first time: It will use a default Microsoft voice, You can change this voice by using the commands explained below.
+To get the list of voices: You can send "/get_voices" without or with arguments, With arguments if you want to filter voices for your language or a specific language, Please only use the language code. The following is an example.
+/get_voices en-us
+Important note: Please avoid using the command "/get_voices" without arguments unless you want to be spammed with hundreds of messages, This is because there are many many voices for many language, Each language has no less than 2 or more voices to choose from, So use it wisely.
+When getting the list of voices, the bot will send the info for each voice in a separate message, In order to set a specific voice, you should copy the short name for that voice which will be found in the info as well. To set the voice, Use the command "/voice voiceName", and be sure to paste or type the short name of the voice, not the full friendly name.
+After you choose a voice, You may type one of these commands to customize it.
+"/rate": Control the speed of the voice, from -100 to 100. Important: If you want to restore the default rate, Do not set it to 0 But rather set it to 1.
+"/pitch": Control the voice pitch, from -100 to 100. The same applys for the pitch, Do not set it to 0 because that would have no effect on the pitch.
+"/volume": Control the voice volume, from 0.1 to 1.0.
+"/ld": Enable or disable the language detection. When this is on: The following applys.
+When you use "/say" or "'": It will try to detect your language and use a random Microsoft voice, If none is found for your current language: It will switch to google voices, Because google supports more languages so you have both options, If that fails, The bot will automatically inform you about that, and will use google voices instead.
+All speech settings only work for one user, Different users has the ability to use different voices, rates or other customizations.
+* A new command to stop the current stream speech file for authorized users: "/stop".  The reason it's available only for authorized users is to prevent stopping speech by anyone. Only use this command when you seriously need it.
+* The new smart ban and kick system, See below.
+The new system allows you to ban someone or kick them for a specified period of time. In case of ban, There are 2 types which you can ban the user by.
+Ban the user's IP address, Or ban the username. There are different commands for different ban types to avoid conflicts which will be explained below. In case of a duration kick, The bot stores the nickname and the associated username to prevent login with a different nickname before the duration expires.
+"/db name duration": Bans someone by IP address using their name to get the IP.
+"/udb name duration": Bans someone by username, using their nickname to get the associated username.
+"/dk name duration": Kicks someone for a specified period of time, If they tried to login before the duration expires: the bot will automatically kick them until the duration expires.
+Duration format:
+The duration format is very customizable. Here's an example to ban someone for 10 minutes.
+/udb test 10m
+You can separate duration by a colon, ":" to specify a longer duration. For example, I want to ban someone for 1 hour, 44 minutes, 51 seconds, The format would look like the following:
+/udb test 1h:44m:51s
+Available durations: s for seconds, m for minutes, h for hours, d for days, w for weeks, mo for months.
+Please note, All these commands are available only for authorized users, of course.
+* Added the command "/b message" to send a broadcast message, only for authorized users. This is useful for clients that do not support sending a broadcast message.
+* Added the command "/clear" To clear the duration bans and kicks for everyone, or for a specified user.
+When typed with arguments, If you type a username after the command: it will try to remove the ban for that username. If you provide a nickname instead: It will try to clear the kick duration for that nickname.
+If you don't provide an argument: It will clear the duration kick and ban for everyone.
+* Removed the command "/ask": Because the API is broken, And we haven't found another solution.
+* Added 2 new settings in the exclusion section configuration which are.
+nicknames: To exclude someone by nickname.
+Username: To exclude someone by username. In total there are now 3 types of exclusions, By IP address, By username, Or by nickname.
+* Now the bot will never crash if an error occurred. The error message will be logged in the console but the bot will continue working without crashing or freezing.
+* Now the bot only makes one request when you use the command "/weather", This is only one time request per IP address, The bot will then store these info from Ipinfo.io service and use it later when you use the command "/weather". Previously each time you type /weather it makes another request. Because the IP address never changes if the user is logged in: This solution will save lots of redundant requests.
+* Now if the connection to the server is lost: The bot will try to reconnect every 3 seconds. Please note that this feature is experimental, Please report any bugs or high CPU usage when testing this feature.
+* Code optimization. For people who use the bot from source: You will notice new code files. Please make sure to check that all code files are present.
+
+New in version 1.8
+* Now the bot will intercept channel messages from all users, if the bot is in a channel and anyone types a message containing a black listed word: they will be kicked or banned accordingly, regardless of their channel.
+* some commands work regardless of the bot's channel, such as /weather and /ask, these commands work from anywhere in any channel, so now there is no need to move the bot to a spicific channel.
+* Many bug fixes.
+New in version 1.7
+This version has some cool new features, as well as critical bug fixes
+* We compiled the bot to work on windows without having to install python or anything, just run the executable found in the current directory of the bot.
+* Now you can choose the action if a user with a nickname is longer than the specified character limit, either to kick the user, or ban
+In case of ban: If the user uses guest account: The IP address will be banned, otherwise: the username of the account
+* You can also choose the action if a black listed user logs in to the server, either kick or ban the user, And this allows for more customizability.
+* Important note: Please recreate your config file, some values have to be added to the config file in order for the bot to run correctly, or use the default config file which is config_default.ini
+* Integrated something similar to chat gpt into the bot, you can now talk and ask questions directly, using /ask command, either in a private message, or a channel message
+* Fixed the bug where if you choose the detection mode as custom username, it didn't work, now it has been fixed, Thanks @Tewhongjun for discovering this bug
+* Fixed a few typos when sending broadcast messages if the bot detects a nickname who's name is longer than the specified nickname, sorry for incorrect messages :).
+* Fixed a bug in ipinfo while retrieving your local IP address, Now it should throw an error message in the console if the IP address is incorrect, Example: 127.0.0.1
+New in version 1.6
+This version includes changes to the code, mainly focuses on bug fixes and small features
+* Due to recent changes in ipinfo.io, the service that we use to detect VPN users, some ipinfo accounts don't have the flag when getting the response from the service, We're not sure if this will be completely removed for free accounts, But now if your ipinfo account doesn't support VPN flag detection: the bot will notify you, instead of being unresponsive, and that was a major bug because previously: if your ipinfo account doesn't support that: the bot would remain unresponsive and you wouldn't be able to use it, So now that has been fixed.
+* When someone kicks the bot from the server: it will login again, sending a broadcast message to notify you about that.
+* The bot is now much faster when connecting and login to your server due to some changes in the code, And you should be able to see the difference.
+New in version 1.5
+* Added another translation mode, it's called private translation, and works as follows: 
+You activate it by sending the command /pt source_lang target_lang: and then: when you send messages: the bot will send these messages directly to the channel in that format, user1 says: translated message
+This is useful when you want to translate privately, without having to send the messages on the channel directly, Also: This mode has a seperate settings for each username in your server
+So each user can choose the source language and target language they want to translate from and to, and it will translate for each user seperately.
+That's all for this version, Stay tuned for more updates.
+New in version 1.4: 
+This version includes many bug fixes and some new features
+New features: 
+* added a feature to change the bot's gender and status.
+* Added live translation feature, this feature translates channel and broadcast messages to the specified target language, the command to toggle it is /t source_lang target_lang
+example: /t ar en: will translate from arabic to english
+Please note that you have to type the language code, I will implement another command to get all language codes later
+* Added a cool time period when turning on / off live translation, as it can be used by spammers, So we've added a cool down timer of 10 seconds
+* fixed many bugs related to missing configuration parts in the config file, as well as miner bug fixes
+* Now: When an error occured due to a missing part of the configuration file: it will inform you to close the app and recreate the config file again, It will also display the error message before quit
+* Fixed wrong values when you attempt to connect to a server from the config file due to wrong value, such as setting the port number to characters instead of numbers.

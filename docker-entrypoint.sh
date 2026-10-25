@@ -8,6 +8,10 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/sntalkbot-runtime}"
 export TTUTIL_MPV_AO="${TTUTIL_MPV_AO:-pulse}"
 mkdir -p "$TTUTIL_DATA_DIR"
 if [ ! -f "$TTUTIL_CONFIG" ]; then
+  if [ "${SNTALKBOT_MANAGED_INSTANCE:-0}" = "1" ]; then
+    echo "[BLOCKED] Managed instance config is missing; refusing to create CHANGE_ME defaults." >&2
+    exit 1
+  fi
   cp /app/config_default.ini "$TTUTIL_CONFIG"
   echo "Created $TTUTIL_CONFIG from config_default.ini" >&2
 fi

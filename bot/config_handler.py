@@ -2,6 +2,9 @@ import gettext
 import configparser
 import os
 import ast
+import threading
+import tempfile
+from contextlib import contextmanager
 import TeamTalk5 as teamtalk
 import mpv
 import getpass
@@ -16,13 +19,18 @@ class ConfigHandler:
 
     def __init__(self, config_file="config.ini"):
         self.config_file = config_file
-        self.config = configparser.ConfigParser()
+        self._config_write_lock = threading.RLock()
+        self.config = configparser.ConfigParser(interpolation=None)
         self.language = "en"
         self._ = gettext.gettext  # Initialize _ for default language
         self.CONFIG_STRUCTURE = self._get_config_structure()        
         self.read_config_file()
 
     def reload_config_file(self):
+        with self._config_write_lock:
+            return self._reload_config_file_locked()
+
+    def _reload_config_file_locked(self):
         """Reload the existing config.ini without running setup or migrations.
 
         This is used by the authenticated loopback runtime API after the Web
@@ -31,7 +39,7 @@ class ConfigHandler:
         """
         if not os.path.isfile(self.config_file):
             raise FileNotFoundError(self.config_file)
-        refreshed = configparser.ConfigParser()
+        refreshed = configparser.ConfigParser(interpolation=None)
         with open(self.config_file, "r", encoding="utf-8") as handle:
             refreshed.read_file(handle)
         self.config = refreshed
@@ -182,6 +190,10 @@ class ConfigHandler:
             self._ = gettext.gettext
 
     def read_config_file(self):
+        with self._config_write_lock, self._file_lock():
+            return self._read_config_file_locked()
+
+    def _read_config_file_locked(self):
         """Read config.ini and use the terminal wizard for missing configuration."""
         if not os.path.isfile(self.config_file):
             self.select_language()
@@ -234,8 +246,7 @@ class ConfigHandler:
             sec["udp_port"] = legacy
             changed = True
         if changed:
-            with open(self.config_file, "w", encoding="utf-8") as configfile:
-                self.config.write(configfile)
+            self._save()
 
     def _migrate_google_standard_tts(self):
         """Migrate pre-r3 Cloud/Microsoft defaults to Google standard gTTS once."""
@@ -276,8 +287,7 @@ class ConfigHandler:
             changed = True
 
         if changed:
-            with open(self.config_file, "w", encoding="utf-8") as configfile:
-                self.config.write(configfile)
+            self._save()
 
 
     def _migrate_telegram_settings(self):
@@ -308,8 +318,7 @@ class ConfigHandler:
                 del account[key]
                 changed = True
         if changed:
-            with open(self.config_file, "w", encoding="utf-8") as configfile:
-                self.config.write(configfile)
+            self._save()
 
     def _migrate_legacy_broadcast_settings(self):
         """Fold pre-5.1.13 announcement settings into Central Global Broadcast.
@@ -350,8 +359,7 @@ class ConfigHandler:
         central.setdefault("interval_minutes", "60")
         central.setdefault("tts_enabled", "False")
         if changed:
-            with open(self.config_file, "w", encoding="utf-8") as configfile:
-                self.config.write(configfile)
+            self._save()
             print("Migrated legacy broadcast settings to [global_broadcast]; Central Broadcast remains disabled until explicitly enabled.")
 
     @staticmethod
@@ -403,8 +411,7 @@ class ConfigHandler:
                     changed = True
 
         if changed:
-            with open(self.config_file, "w", encoding="utf-8") as configfile:
-                self.config.write(configfile)
+            self._save()
             if migrated:
                 print("Migrated missing optional config settings: " + "; ".join(migrated))
 
@@ -606,9 +613,9 @@ class ConfigHandler:
                 target.add_section(section)
             target.set(section, key, str(value))
 
-        with open(self.config_file, "w", encoding="utf-8") as configfile:
-            target.write(configfile)
-            print(self._("\nConfiguration saved to config.ini! You can now start the bot normally."))
+        self.config = target
+        self._save()
+        print(self._("\nConfiguration saved to config.ini! You can now start the bot normally."))
 
         self.config = target
 
@@ -625,10 +632,44 @@ class ConfigHandler:
         return self.config[section]
 
     def _save(self):
-        with open(self.config_file, "w", encoding="utf-8") as configfile:
-            self.config.write(configfile)
+        directory = os.path.dirname(os.path.abspath(self.config_file))
+        fd, temporary = tempfile.mkstemp(prefix=".config-", dir=directory)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                self.config.write(handle)
+                handle.flush()
+                os.fsync(handle.fileno())
+            mode = os.stat(self.config_file).st_mode & 0o777 if os.path.exists(self.config_file) else 0o660
+            os.chmod(temporary, mode)
+            os.replace(temporary, self.config_file)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    @contextmanager
+    def _file_lock(self):
+        # Lock a stable sidecar inode: config.ini itself is atomically replaced.
+        descriptor = os.open(str(self.config_file) + ".lock", os.O_CREAT | os.O_RDWR, 0o660)
+        with os.fdopen(descriptor, "a", encoding="utf-8") as lock:
+            try:
+                import fcntl
+            except ImportError:
+                yield
+            else:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
     def _update_section(self, section, values):
+        with self._config_write_lock, self._file_lock():
+            if not os.path.isfile(self.config_file):
+                raise FileNotFoundError("Active config missing; refusing to recreate it from stale memory")
+            self.reload_config_file()
+            self._merge_section(section, values)
+
+    def _merge_section(self, section, values):
         target = self._ensure_section(section)
         for key, value in values.items():
             if value is None:
@@ -718,6 +759,10 @@ class ConfigHandler:
             "channel_messages_mode": sec.get("channel_messages_mode", "private"),
             "volume_fading": sec.getfloat("volume_fading", 0.0),
             "cookiefile_path": sec.get("cookiefile_path", "") or None,
+            "cache_cleanup_enabled": sec.getboolean("cache_cleanup_enabled", True),
+            "cache_cleanup_time": sec.get("cache_cleanup_time", "00:00"),
+            "cache_cleanup_timezone": sec.get("cache_cleanup_timezone", "Asia/Bangkok"),
+            "cache_cleanup_sound": sec.get("cache_cleanup_sound", "sounds/cache-cleanup.mp3"),
             "audio_quality": sec.get("audio_quality", "High"),
             "audio_buffer": sec.get("audio_buffer", "0.5"),
             "is_stereo_wide": sec.getboolean("is_stereo_wide", False),
@@ -727,6 +772,8 @@ class ConfigHandler:
             "fade_enabled": sec.getboolean("fade_enabled", True),
             "queue_mode": sec.getboolean("queue_mode", False),
             "persist_queue": sec.getboolean("persist_queue", True),
+            "playback_retry_attempts": max(1, min(5, sec.getint("playback_retry_attempts", 3))),
+            "playback_retry_delay": max(0, min(30, sec.getfloat("playback_retry_delay", 2.0))),
             "resume_queue_on_start": sec.getboolean("resume_queue_on_start", False),
             "play_mode": sec.getint("play_mode", 2),
             "autoplay_enabled": sec.getboolean("autoplay_enabled", True),
@@ -762,7 +809,10 @@ class ConfigHandler:
         self._update_section("playback", updates)
 
     def save_bot_config(self, bot_config):
-        self._update_section("bot", bot_config)
+        # A general runtime save must not revert web-edited default room/login.
+        values = {key: value for key, value in bot_config.items()
+                  if key not in {"default_channel", "channel_password"}}
+        self._update_section("bot", values)
 
     def update_bot_settings(self, updates):
         self._update_section("bot", updates)

@@ -17,6 +17,17 @@ import configparser
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# The publisher installs this small portable set before running the validator.
+# Standalone invocation also explains setup without leaking a long import stack.
+try:
+    import requests
+    import tqdm
+except ImportError as exc:
+    print(f"[FAIL] Validator dependency unavailable: {exc}", file=sys.stderr)
+    print("Run Publish-SNTalkBot.cmd to prepare validation automatically, or run:", file=sys.stderr)
+    print("  python -m pip install -r tools/validation/requirements.txt", file=sys.stderr)
+    raise SystemExit(2)
+
 
 def fail(message: str) -> None:
     print(f"[FAIL] {message}")
@@ -1545,6 +1556,8 @@ def validate_playback_extraction_recovery():
             return False
         def extract_info(self, target, download=False):
             temp_calls.append((str(target), dict(self.opts)))
+            if "music.youtube.com" in str(target) or ("cookie123" in str(target) and self.opts.get("use_cookies")):
+                raise RuntimeError("stale cookie or music domain")
             return {"title": "Recovered", "url": "https://cdn.example/audio"}
     fake_yt = types.ModuleType("yt_dlp")
     fake_yt.YoutubeDL = TempYDL
@@ -1567,14 +1580,14 @@ def validate_playback_extraction_recovery():
         temp_calls.clear()
         info = player._extract_play_info_resilient("https://music.youtube.com/watch?v=abc123")
         assert info.get("title") == "Recovered", info
-        assert temp_calls and temp_calls[0][0] == "https://www.youtube.com/watch?v=abc123", temp_calls
+        assert temp_calls and temp_calls[-1][0] == "https://www.youtube.com/watch?v=abc123", temp_calls
 
         player._active_cookiefile = lambda: "/fake/cookies.txt"
         temp_calls.clear()
         info = player._extract_play_info_resilient("https://www.youtube.com/watch?v=cookie123")
         assert info.get("title") == "Recovered", info
         assert temp_calls and temp_calls[0][0].endswith("v=cookie123"), temp_calls
-        assert temp_calls[0][1].get("use_cookies") is False, temp_calls
+        assert temp_calls[-1][1].get("use_cookies") is False, temp_calls
         return True
     except Exception as exc:
         fail(f"playback extraction recovery regression: {exc!r}")
@@ -1664,7 +1677,7 @@ def validate_mpv_endfile_queue_skip_runtime():
             enableVoiceTransmission=lambda value: voice.append(bool(value)),
             doChangeStatus=lambda *a, **k: None,
             bot_config={"gender": 0},
-            playback_config={"send_channel_messages": True},
+            playback_config={"send_channel_messages": True, "playback_retry_attempts": 1, "playback_retry_delay": 0},
             get_idle_status_message=lambda: "idle",
         )
         qplayer = types.SimpleNamespace(
@@ -1674,7 +1687,7 @@ def validate_mpv_endfile_queue_skip_runtime():
             last_end_reason="error", last_end_error=-13, play_mode=2, current_link="bad",
             collection_results=[], media_title="Broken", is_playing=False, pause=False,
             stop_transport=lambda: None,
-            play_stream=lambda link: retried.append(link),
+            play_stream=lambda link, **kwargs: retried.append(link),
         )
         cog = mod2.PlayerCog.__new__(mod2.PlayerCog)
         cog.bot=bot; cog.player=qplayer; cog._=lambda value: value
@@ -1683,6 +1696,12 @@ def validate_mpv_endfile_queue_skip_runtime():
         cog._prefetch_next_for_current=lambda: None
         cog._play_from_queue=lambda index: played.append(index)
         cog._set_playback_context("queue", "bad", "token-bad")
+        qplayer.active_playback_epoch = 1
+        def fake_retry_load(link, **kwargs):
+            retried.append(link)
+            qplayer.active_playback_epoch += 1
+            qplayer.last_end_reason = None
+        qplayer.play_stream = fake_retry_load
 
         # First failure retries the exact same logical item. Queue/index remain
         # unchanged, so a transient extractor/player error cannot silently skip Q2.
@@ -1690,7 +1709,7 @@ def validate_mpv_endfile_queue_skip_runtime():
         assert retried == ["bad"], retried
         assert [x["title"] for x in qplayer.queue] == ["Broken", "Good"], qplayer.queue
         assert qplayer.queue_index == 0 and played == [], (qplayer.queue_index, played)
-        assert any("Retrying the same item once" in msg for msg in messages), messages
+        assert any("Retrying the same item" in msg for msg in messages), messages
 
         # If the same item fails again, it is now genuinely considered broken:
         # remove only that item, do not put it in history, continue with Good.
@@ -1864,7 +1883,11 @@ def validate_radio_webpage_resolver():
             def extract_info(self, url, download=False):
                 assert url == "https://known-provider.example/embed/abc", url
                 return {"title": "Known embedded station", "url": "https://cdn.known.example/live.m3u8"}
-        player.ydl = FakeYDLInstance()
+        from contextlib import contextmanager
+        @contextmanager
+        def fake_fresh(**kwargs):
+            yield FakeYDLInstance()
+        player._fresh_ydl = fake_fresh
         player._ydl_lock = module.threading.Lock()
         module.requests.get = fake_get_known
         try:
@@ -1946,7 +1969,7 @@ if validate_radio_webpage_resolver():
 # webpage crawler is a fallback only, so normal YouTube/media behavior is not
 # replaced by custom HTML parsing.
 _player_core_for_url = (ROOT / "bot" / "player.py").read_text(encoding="utf-8")
-_play_url_start = _player_core_for_url.find("    def play_stream(self, link):")
+_play_url_start = _player_core_for_url.find("    def play_stream(self, link, *, cancel_event=None):")
 _play_url_end = _player_core_for_url.find("    def fade_out_and_stop", _play_url_start)
 _play_url_block = _player_core_for_url[_play_url_start:_play_url_end]
 if not (
@@ -1980,7 +2003,7 @@ _player_core = (ROOT / "bot" / "player.py").read_text(encoding="utf-8")
 _play_start = _player_core.find("def play_stream")
 _play_end = _player_core.find("def fade_out_and_stop", _play_start)
 _play_block = _player_core[_play_start:_play_end]
-if _play_block.count("self._prefetch_cache.pop(link, None)") < 2 or "with self._ydl_lock" not in _play_block:
+if _play_block.count("self._pop_prefetched(link)") < 2 or "with self._ydl_lock" not in _play_block:
     fail("queue handoff prefetch race guard is missing from play_stream")
 else:
     ok("queue handoff reuses in-flight prefetch after yt-dlp lock instead of extracting the next track twice")
@@ -2098,12 +2121,12 @@ if "cookiefile_path = /app/data/cookies.txt" not in config_default_source or 'or
     fail("Player cookie path is not defaulted to persistent /app/data/cookies.txt")
 elif 'self.bundled_cookiefile = os.path.join(' not in player_core_source or '"defaults", "cookies.txt"' not in player_core_source:
     fail("Player has no bundled default cookie fallback")
-elif 'def _active_cookiefile(self):' not in player_core_source or 'if self.cookiefile and self._cookiefile_has_records(self.cookiefile):' not in player_core_source or 'if self.bundled_cookiefile and self._cookiefile_has_records(self.bundled_cookiefile):' not in player_core_source:
-    fail("Player cookie precedence does not require a real persistent cookie before the bundled default")
+elif 'def _active_cookiefile(self):' not in player_core_source or 'return newest_cookie(' not in player_core_source:
+    fail("Player does not select the newest usable cookie publication")
 elif 'opts["cookiefile"] = active_cookiefile' not in player_core_source or 'use_cookies=False' not in player_core_source:
     fail("Player does not support persistent/bundled cookie selection with a bounded no-cookie recovery")
 else:
-    ok("Player prefers a real persistent/user cookie, falls back to bundled default, and retries public media without stale cookies on failure")
+    ok("Player selects newest usable shared/local/bundled cookies and retries public media without cookies on failure")
 if 'shutil.which("deno")' not in player_core_source or 'opts["js_runtimes"]' not in player_core_source:
     fail("yt-dlp Python API does not explicitly bind the Docker Deno runtime")
 else:
@@ -2368,7 +2391,7 @@ elif "!defaults/cookies.txt" not in gitignore_source:
     fail("Git ignore rules also hide the bundled defaults/cookies.txt, so git archive would omit the default")
 else:
     ok("Git ignores personal cookies but explicitly allows the bundled defaults/cookies.txt")
-cookie_guide_path = ROOT / "YOUTUBE_COOKIES_TH.md"
+cookie_guide_path = ROOT / "Document/YOUTUBE_COOKIES_TH.md"
 cookie_export_path = ROOT / "tools" / "export_youtube_cookies.ps1"
 if not cookie_guide_path.is_file() or not cookie_export_path.is_file():
     fail("YouTube cookie guide/export helper is missing from the package")
@@ -2648,7 +2671,7 @@ else:
 
 # The shipped Thai command reference mirrors runtime help output. Commands are
 # prefix-free in both Private and Channel; keep each line within TeamTalk limits.
-commands_th = ROOT / "COMMANDS_TH.md"
+commands_th = ROOT / "Document/COMMANDS_TH.md"
 # Every command-reference row is authoritative.  Do not filter unknown names
 # out before comparing, otherwise a removed command can remain documented forever
 # while the validator reports a false pass.  Prose/code examples are excluded by
@@ -2667,13 +2690,13 @@ if commands_th.exists():
 th_lines = _all_command_rows
 th_names = [line.split(" : ", 1)[0].split()[0].lstrip("/").lower() for line in th_lines]
 if any(line.startswith("/") for line in th_lines):
-    fail("COMMANDS_TH.md contains slash-prefixed command syntax")
+    fail("Document/COMMANDS_TH.md contains slash-prefixed command syntax")
 else:
-    ok("COMMANDS_TH.md presents prefix-free syntax for both private and channel use")
+    ok("Document/COMMANDS_TH.md presents prefix-free syntax for both private and channel use")
 if len(th_lines) != len(names) or set(th_names) != set(names):
-    fail("COMMANDS_TH.md does not exactly match registered commands")
+    fail("Document/COMMANDS_TH.md does not exactly match registered commands")
 else:
-    ok(f"COMMANDS_TH.md matches all registered commands ({len(th_lines)})")
+    ok(f"Document/COMMANDS_TH.md matches all registered commands ({len(th_lines)})")
 commands_th_text = commands_th.read_text(encoding="utf-8") if commands_th.exists() else ""
 # Current help/source references must not advertise slash-prefixed command syntax.
 help_source = (ROOT / "bot" / "help.py").read_text(encoding="utf-8")
@@ -2684,9 +2707,9 @@ else:
     ok("runtime help advertises prefix-free commands for both private and channel use")
 missing_alias_docs = sorted(alias for alias in aliases if not re.search(rf"(?:คำสั่งย่อ|Short aliases):[^\n]*\b{re.escape(alias)}\b", commands_th_text))
 if missing_alias_docs:
-    fail("COMMANDS_TH.md is missing short-alias documentation: " + ", ".join(missing_alias_docs))
+    fail("Document/COMMANDS_TH.md is missing short-alias documentation: " + ", ".join(missing_alias_docs))
 else:
-    ok(f"COMMANDS_TH.md documents all intentional aliases ({len(aliases)})")
+    ok(f"Document/COMMANDS_TH.md documents all intentional aliases ({len(aliases)})")
 long_help_lines = [(len(line.encode("utf-8")), line) for line in th_lines if len(line.encode("utf-8")) > 480]
 if long_help_lines:
     longest = max(long_help_lines, key=lambda item: item[0])
@@ -3011,7 +3034,7 @@ else:
 for required in [
     "Dockerfile", "docker-compose.yml", "docker-entrypoint.sh", "run_linux.sh",
     "tools/setup_pulse_bridge.sh", "tools/download_teamtalk_sdk.py",
-    "README_TH.md", "DEPENDENCIES_TH.md", "COMMANDS_TH.md", "COMMAND_ACTION_AUDIT_TH.md",
+    "Document/README_TH.md", "Document/DEPENDENCIES_TH.md", "Document/COMMANDS_TH.md", "Document/COMMAND_ACTION_AUDIT_TH.md",
 ]:
     if not (ROOT / required).exists():
         fail(f"required release file missing: {required}")

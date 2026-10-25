@@ -110,7 +110,13 @@ class SNTalkBot(TeamTalk):
         self._register_cogs()
         self.update_notifier = UpdateNotifier(self)
         self.runtime_snapshot_builder = RuntimeSnapshotBuilder(self)
+        from bot.web_controls import WebControls
+        self.web_controls = WebControls(self)
         self.local_status_api = LocalStatusApi(self)
+        from bot.maintenance import CacheMaintenance
+        self.cache_maintenance = CacheMaintenance(self) if self.player is not None else None
+        if self.cache_maintenance:
+            self.cache_maintenance.start()
         self.local_status_api.start()
 
     # Settings which can be applied safely through the loopback API without
@@ -127,6 +133,8 @@ class SNTalkBot(TeamTalk):
         "jail_flood_count", "reconnection_attempts", "reconnection_timeout",
     }
     _LIVE_PLAYBACK_KEYS = {
+        "playback_retry_attempts", "playback_retry_delay",
+        "cache_cleanup_enabled", "cache_cleanup_time", "cache_cleanup_timezone", "cache_cleanup_sound",
         "seek_step", "default_volume", "max_volume", "send_channel_messages",
         "channel_messages_mode", "volume_fading", "is_stereo_wide",
         "is_stereo_echo", "is_bass_boosted", "speed", "fade_enabled",
@@ -335,6 +343,10 @@ class SNTalkBot(TeamTalk):
     def shutdown(self):
         """Cleanly shuts down all resources used by the bot instance."""
         try:
+            if getattr(self, "web_controls", None) is not None:
+                self.web_controls.close()
+            if getattr(self, "cache_maintenance", None) is not None:
+                self.cache_maintenance.close()
             if getattr(self, "local_status_api", None) is not None:
                 self.local_status_api.stop()
             if getattr(self, "player_cog", None) is not None and hasattr(self.player_cog, "shutdown"):
@@ -893,6 +905,11 @@ class SNTalkBot(TeamTalk):
         return chunks
 
     def onCmdUserTextMessage(self, textmessage: TextMessage):
+        # Our own announcements are output, never input commands (e.g. a web
+        # announcement containing the word "shutdown"). Ignore server echoes.
+        if self.getMyUserID() and textmessage.nFromUserID == self.getMyUserID():
+            super().onCmdUserTextMessage(textmessage)
+            return
         message_text = utils.ensure_text(ttstr(textmessage.szMessage))
         from_uid = textmessage.nFromUserID
         from_username = utils.ensure_text(ttstr(textmessage.szFromUsername))
@@ -1145,6 +1162,10 @@ class SNTalkBot(TeamTalk):
         return chunks
 
     def privateMessage(self, user_id, message_text):
+        from bot.web_controls import WEB_ACTOR_ID
+        if user_id == WEB_ACTOR_ID:
+            self.state_store.set_meta("web_control_feedback", str(message_text))
+            return
         chunks = self._split_private_message(message_text)
         self.log_runtime_action(
             "private_message", to_user=int(user_id or 0), chunks=len(chunks),

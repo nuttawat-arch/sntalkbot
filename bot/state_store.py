@@ -17,7 +17,7 @@ from collections.abc import MutableSequence, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _QUEUE_GAP = 1024
 
 _SCHEMA_SQL = r"""
@@ -28,6 +28,13 @@ _SCHEMA_SQL = r"""
                 CREATE TABLE IF NOT EXISTS queue_entries (
                     seq INTEGER PRIMARY KEY,
                     payload TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS queue_failures (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    payload TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    attempts INTEGER NOT NULL,
+                    failed_at REAL NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS favorites (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -244,6 +251,36 @@ class StateStore:
                 "INSERT INTO queue_entries(seq,payload) VALUES(?,?)",
                 [((idx + 1) * _QUEUE_GAP, payload) for idx, payload in enumerate(serialized)],
             )
+
+    def archive_failed_queue_item(self, index, reason, attempts):
+        # Persist the failed item and consume the active row in one transaction.
+        # A crash can never leave it absent from BOTH queue and failed history.
+        with self.transaction() as db:
+            row = db.execute("SELECT seq,payload FROM queue_entries ORDER BY seq LIMIT 1 OFFSET ?", (int(index),)).fetchone()
+            if row is None:
+                raise IndexError(index)
+            db.execute("INSERT INTO queue_failures(payload,reason,attempts,failed_at) VALUES(?,?,?,?)",
+                       (row["payload"], str(reason)[:2000], int(attempts), time.time()))
+            db.execute("DELETE FROM queue_entries WHERE seq=?", (row["seq"],))
+            return json.loads(row["payload"])
+
+    def list_queue_failures(self, limit=100):
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM queue_failures ORDER BY id DESC LIMIT ?", (max(1, min(int(limit), 500)),)).fetchall()
+        return [{"id": row["id"], "item": json.loads(row["payload"]), "reason": row["reason"],
+                 "attempts": row["attempts"], "failed_at": row["failed_at"]} for row in rows]
+
+    def restore_queue_failure(self, failure_id):
+        with self.transaction() as db:
+            row = db.execute("SELECT payload FROM queue_failures WHERE id=?", (int(failure_id),)).fetchone()
+            if row is None:
+                return False
+            item = json.loads(row["payload"])
+            item["_queue_token"] = f"restored-{time.time_ns()}-{failure_id}"
+            seq = int(db.execute("SELECT COALESCE(MAX(seq),0) FROM queue_entries").fetchone()[0]) + _QUEUE_GAP
+            db.execute("INSERT INTO queue_entries(seq,payload) VALUES(?,?)", (seq, json.dumps(item, ensure_ascii=False)))
+            db.execute("DELETE FROM queue_failures WHERE id=?", (int(failure_id),))
+            return True
 
     # ---------- favorites ----------
     def load_favorites(self):

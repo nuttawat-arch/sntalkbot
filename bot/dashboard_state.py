@@ -38,12 +38,12 @@ class RuntimeSnapshotBuilder:
         queue_obj = getattr(player, "queue", []) or []
         if lock is None:
             queue_count = len(queue_obj)
-            queue_index = int(getattr(player, "queue_index", -1) or -1)
+            queue_index = int(getattr(player, "queue_index", -1))
             entries = queue_obj[: min(queue_count, 250)]
         else:
             with lock:
                 queue_count = len(queue_obj)
-                queue_index = int(getattr(player, "queue_index", -1) or -1)
+                queue_index = int(getattr(player, "queue_index", -1))
                 entries = queue_obj[: min(queue_count, 250)]
         for index, item in enumerate(entries):
             if not isinstance(item, dict):
@@ -215,6 +215,7 @@ class RuntimeSnapshotBuilder:
                 "link": str(getattr(player, "current_link", "") or ""),
                 "volume": int(getattr(player, "current_volume", lambda: getattr(player, "volume", 0))() or 0),
                 "speed": float(getattr(player, "speed", 1.0) or 1.0),
+                "max_volume": int(bot.playback_config.get("max_volume", 150)),
                 "queue_mode": bool(getattr(player, "queue_mode", False)),
                 "queue_count": queue_count,
                 "queue_index": queue_index,

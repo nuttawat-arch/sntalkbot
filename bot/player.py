@@ -13,6 +13,12 @@ from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 import requests
 import yt_dlp
 from bot.prefetch import LinkPrefetcher
+from bot.cookie_policy import newest_cookie
+from contextlib import contextmanager
+
+class MediaAccessError(RuntimeError):
+    category = "age_auth"
+
 
 class Player(mpv.MPV):
     def __init__(self, config_handler, cookiefile=None, state_store=None, *args, **kwargs):
@@ -66,6 +72,7 @@ class Player(mpv.MPV):
         self.radio_source = "youtube"
         self.play_mode = int(self.playback_config.get("play_mode", 2) or 2)
         self._prefetch_cache = {}
+        self._prefetch_times = {}
         self._ydl_lock = threading.Lock()
         self.recent_history = {}
         self.end_callback = None
@@ -73,6 +80,8 @@ class Player(mpv.MPV):
         self._end_dispatch_lock = threading.Lock()
         self._end_event_handled = True
         self._mpv_end_event_registered = False
+        self._active_mpv_entry_id = None
+        self._mpv_start_event_registered = False
         self.last_end_reason = None
         self.last_end_error = 0
         # A new external item can start before libmpv delivers the terminal event
@@ -88,6 +97,8 @@ class Player(mpv.MPV):
         # leave a Queue item stalled. Register one permanent END_FILE listener and
         # keep idle-active only as a compatibility fallback for older bindings.
         try:
+            self.event_callback('START_FILE')(self._on_start_file_event)
+            self._mpv_start_event_registered = True
             self.event_callback('END_FILE')(self._on_end_file_event)
             self._mpv_end_event_registered = True
         except Exception as exc:
@@ -114,7 +125,7 @@ class Player(mpv.MPV):
         self.speed = self.playback_config.get("speed", 1.0)
         self.set_output_device()
         self.update_filters()
-        self.ydl = yt_dlp.YoutubeDL(self._base_ydl_opts(noplaylist=True))
+        # Extraction clients are created per operation to reload published cookies.
         try:
             ytdlp_version = getattr(getattr(yt_dlp, "version", None), "__version__", "unknown")
             deno_path = shutil.which("deno") or "NOT FOUND"
@@ -147,11 +158,35 @@ class Player(mpv.MPV):
         return False
 
     def _active_cookiefile(self):
-        if self.cookiefile and self._cookiefile_has_records(self.cookiefile):
-            return self.cookiefile
-        if self.bundled_cookiefile and self._cookiefile_has_records(self.bundled_cookiefile):
-            return self.bundled_cookiefile
-        return None
+        return newest_cookie(
+            self.cookiefile,
+            os.getenv("SNTALKBOT_SHARED_COOKIES_FILE", "/app/shared/cookies.txt"),
+            self.bundled_cookiefile,
+        )
+
+    @contextmanager
+    def _fresh_ydl(self, extra_opts=None, **kwargs):
+        # yt-dlp loads a cookie jar lazily and may save it on close. A private
+        # snapshot prevents an old extraction from overwriting a newer upload
+        # and keeps the shared read-only publication immutable.
+        opts = self._base_ydl_opts(**kwargs)
+        opts.update(extra_opts or {})
+        source = opts.get("cookiefile")
+        snapshot = None
+        try:
+            if source:
+                fd, snapshot = tempfile.mkstemp(prefix="sntalkbot_cookie_", suffix=".txt")
+                with os.fdopen(fd, "wb") as handle, open(source, "rb") as original:
+                    shutil.copyfileobj(original, handle)
+                opts["cookiefile"] = snapshot
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                yield ydl
+        finally:
+            if snapshot:
+                try:
+                    os.unlink(snapshot)
+                except FileNotFoundError:
+                    pass
 
     def _base_ydl_opts(self, *, extract_flat=False, noplaylist=False, playlistend=None, use_cookies=True):
         """Return yt-dlp Python API options shared by search and playback.
@@ -296,7 +331,7 @@ class Player(mpv.MPV):
 
     def _fetch_playlist_details(self, link, max_items=None):
         try:
-            with yt_dlp.YoutubeDL(self._base_ydl_opts(extract_flat=True, playlistend=max_items)) as ydl:
+            with self._fresh_ydl(extract_flat=True, playlistend=max_items) as ydl:
                 info = ydl.extract_info(link, download=False)
         except Exception as exc:
             print(f"Error loading playlist videos: {exc}")
@@ -323,7 +358,7 @@ class Player(mpv.MPV):
 
     def _fetch_channel_videos(self, link, max_items=100):
         try:
-            with yt_dlp.YoutubeDL(self._base_ydl_opts(extract_flat=True, playlistend=max_items)) as ydl:
+            with self._fresh_ydl(extract_flat=True, playlistend=max_items) as ydl:
                 info = ydl.extract_info(link, download=False)
         except Exception as e:
             print(f"Error loading channel videos: {e}")
@@ -339,9 +374,7 @@ class Player(mpv.MPV):
 
     def _search_once(self, target, limit=50, *, use_cookies=True):
         results = []
-        with yt_dlp.YoutubeDL(
-            self._base_ydl_opts(extract_flat=True, playlistend=limit, use_cookies=use_cookies)
-        ) as ydl:
+        with self._fresh_ydl(extract_flat=True, playlistend=limit, use_cookies=use_cookies) as ydl:
             info = ydl.extract_info(target, download=False)
         for entry in self._iter_entries(info or {}):
             item = self._entry_to_result(entry)
@@ -902,7 +935,7 @@ class Player(mpv.MPV):
             # dedicated yt-dlp extractor. Never do this for ordinary navigation.
             if (
                 embedded_ydl_attempts < max_embedded_ydl_attempts
-                and hasattr(self, "ydl")
+                and hasattr(self, "_fresh_ydl")
                 and hasattr(self, "_ydl_lock")
                 and time.monotonic() < deadline
             ):
@@ -913,7 +946,8 @@ class Player(mpv.MPV):
                     candidate = target["url"]
                     try:
                         with self._ydl_lock:
-                            embedded_info = self.ydl.extract_info(candidate, download=False)
+                            with self._fresh_ydl(noplaylist=True) as ydl:
+                                embedded_info = ydl.extract_info(candidate, download=False)
                         embedded_url = (embedded_info or {}).get("url")
                         if embedded_url:
                             return {
@@ -943,11 +977,15 @@ class Player(mpv.MPV):
         with self._end_dispatch_lock:
             self.playback_epoch = int(getattr(self, "playback_epoch", 0) or 0) + 1
             self.active_playback_epoch = self.playback_epoch
+            self._previous_mpv_entry_id = getattr(self, "_active_mpv_entry_id", None)
+            self._active_mpv_entry_id = None
+            self._awaiting_mpv_start = bool(getattr(self, "_mpv_start_event_registered", False))
             self.active_playback_started = time.monotonic()
             self._intentional_stop = False
             self._end_event_handled = False
             self.last_end_reason = None
             self.last_end_error = 0
+            self.last_error_category = None
             return self.active_playback_epoch
 
     def _cancel_end_detection(self):
@@ -1009,6 +1047,14 @@ class Player(mpv.MPV):
         except Exception:
             return False
 
+    def _on_start_file_event(self, event):
+        entry_id = getattr(getattr(event, "data", None), "playlist_entry_id", None)
+        if entry_id is not None:
+            if getattr(self, "_awaiting_mpv_start", False) and int(entry_id) == getattr(self, "_previous_mpv_entry_id", None):
+                return
+            self._active_mpv_entry_id = int(entry_id)
+        self._awaiting_mpv_start = False
+
     def _on_end_file_event(self, event):
         """Handle libmpv END_FILE; ERROR means the current item is unplayable.
 
@@ -1017,6 +1063,12 @@ class Player(mpv.MPV):
         queue. ABORTED/RESTARTED are expected during explicit transport changes.
         """
         data = getattr(event, "data", None)
+        entry_id = getattr(data, "playlist_entry_id", None)
+        active_id = getattr(self, "_active_mpv_entry_id", None)
+        if entry_id is not None and getattr(self, "_awaiting_mpv_start", False):
+            return
+        if entry_id is not None and active_id is not None and int(entry_id) != active_id:
+            return
         reason = getattr(data, "reason", None)
         error = getattr(data, "error", 0)
         try:
@@ -1025,7 +1077,7 @@ class Player(mpv.MPV):
             return
         if reason not in (0, 4):
             return
-        if self._terminal_event_looks_stale():
+        if (entry_id is None or active_id is None) and self._terminal_event_looks_stale():
             print("Ignoring stale MPV END_FILE from previous playback generation")
             return
         if reason == 4:
@@ -1042,6 +1094,7 @@ class Player(mpv.MPV):
         if not direct:
             return False
         self.media_title = resolved.get("title") or str(link)
+        self._apply_stream_headers({})
         self._arm_end_detection()
         self.is_playing = True
         try:
@@ -1082,20 +1135,18 @@ class Player(mpv.MPV):
         a source change to the caller.
         """
         errors = []
+        access_error = None
         candidates = self._canonical_youtube_playback_candidates(link)
         if not candidates:
             candidates = [str(link or "")]
         has_cookie = bool(self._active_cookiefile())
         for candidate in candidates:
             for use_cookies in ((True, False) if has_cookie else (True,)):
+                if not use_cookies and access_error is not None:
+                    continue  # Signing out cannot authorize an age-restricted item.
                 try:
-                    if candidate == str(link) and use_cookies:
-                        info = self.ydl.extract_info(candidate, download=False)
-                    else:
-                        with yt_dlp.YoutubeDL(
-                            self._base_ydl_opts(noplaylist=True, use_cookies=use_cookies)
-                        ) as ydl:
-                            info = ydl.extract_info(candidate, download=False)
+                    with self._fresh_ydl(noplaylist=True, use_cookies=use_cookies) as ydl:
+                        info = ydl.extract_info(candidate, download=False)
                     if info:
                         if candidate != str(link):
                             print("yt-dlp playback recovered through canonical YouTube URL")
@@ -1104,17 +1155,39 @@ class Player(mpv.MPV):
                         return info
                 except Exception as exc:
                     errors.append((candidate, use_cookies, exc))
+                    message = str(exc).casefold()
+                    if any(text in message for text in ("confirm your age", "age-restricted", "age restricted")):
+                        access_error = exc
+        if access_error is not None:
+            raise MediaAccessError("YouTube requires an eligible signed-in session. Verify age in YouTube, then export that session's cookies again.") from access_error
         if errors:
             candidate, use_cookies, exc = errors[-1]
             mode = "cookies" if use_cookies else "no-cookies"
             raise RuntimeError(f"yt-dlp extraction failed ({mode}, {candidate}): {exc}") from exc
         raise RuntimeError("yt-dlp extraction returned no playable metadata")
 
-    def play_stream(self, link):
+    def _apply_stream_headers(self, info):
+        # yt-dlp resolves the URL; mpv performs a separate HTTP request. Keep
+        # relevant request headers consistent, and reset them for EVERY item.
+        allowed = {"user-agent", "referer", "origin", "accept", "accept-language"}
+        headers = []
+        for key, value in (info.get("http_headers") or {}).items():
+            if str(key).lower() not in allowed or not isinstance(value, str):
+                continue
+            if "\r" in value or "\n" in value:
+                continue
+            headers.append(f"{key}: {value}")
+        try:
+            self.http_header_fields = headers
+        except Exception:
+            # Retain compatibility with bindings that cannot change this option.
+            print("MPV request headers could not be updated with this binding")
+
+    def play_stream(self, link, *, cancel_event=None):
         """Play a URL using yt-dlp, with a direct HTTP stream fallback for radio/stream URLs."""
         try:
             self.pause = False
-            info = self._prefetch_cache.pop(link, None)
+            info = self._pop_prefetched(link)
             if not info:
                 try:
                     with self._ydl_lock:
@@ -1122,7 +1195,7 @@ class Player(mpv.MPV):
                         # while play_stream() waited for the shared yt-dlp lock.
                         # Re-check after acquiring the lock so we consume that fresh
                         # result instead of paying for a duplicate extraction.
-                        info = self._prefetch_cache.pop(link, None)
+                        info = self._pop_prefetched(link)
                         if not info:
                             info = self._extract_play_info_resilient(link)
                 except Exception:
@@ -1131,10 +1204,15 @@ class Player(mpv.MPV):
                         if self._play_resolved_radio(link):
                             return
                     raise
+            if cancel_event is not None and cancel_event.is_set():
+                return False
             self.media_title = info.get('title') or "Unknown title"
             if self._requires_temp_download(info, link):
                 temp_path = self._download_temp_media(info, link)
                 self._cache_temp_file(link, temp_path, ttl_seconds=240)
+                if cancel_event is not None and cancel_event.is_set():
+                    self._clear_temp_cache(link)
+                    return False
                 self._arm_end_detection()
                 self.is_playing = True
                 try:
@@ -1151,6 +1229,7 @@ class Player(mpv.MPV):
                         if self._play_resolved_radio(link):
                             return
                     raise ValueError("No playable URL found for the requested link.")
+                self._apply_stream_headers(info)
                 self._arm_end_detection()
                 self.is_playing = True
                 try:
@@ -1190,6 +1269,26 @@ class Player(mpv.MPV):
         if original_volume is not None:
             self.volume = original_volume
 
+    def _pop_prefetched(self, link):
+        info = self._prefetch_cache.pop(link, None)
+        stamps = getattr(self, "_prefetch_times", {})
+        stamp = stamps.pop(link, None)
+        if stamp is not None and time.monotonic() - stamp > 300:
+            return None
+        if info:
+            try:
+                expiry = parse_qs(urlparse(str(info.get("url", ""))).query).get("expire", [None])[0]
+                if expiry and float(expiry) <= time.time() + 60:
+                    return None
+            except (ValueError, TypeError):
+                return None
+        return info
+
+    def invalidate_stream_info(self, link):
+        with self._ydl_lock:
+            self._prefetch_cache.pop(link, None)
+            self._prefetch_times.pop(link, None)
+
     def prefetch_stream_info(self, link):
         if link in self._prefetch_cache:
             return
@@ -1205,6 +1304,7 @@ class Player(mpv.MPV):
                 # causing the next queue item to be extracted a second time.
                 if info:
                     self._prefetch_cache[link] = info
+                    self._prefetch_times[link] = time.monotonic()
         except Exception as e:
             print(f"Error prefetching stream: {e}")
             return
@@ -1212,7 +1312,8 @@ class Player(mpv.MPV):
     def get_channel_link(self, link):
         try:
             with self._ydl_lock:
-                info = self.ydl.extract_info(link, download=False)
+                with self._fresh_ydl(noplaylist=True) as ydl:
+                    info = ydl.extract_info(link, download=False)
         except Exception as e:
             print(f"Error fetching channel info: {e}")
             return None
@@ -1255,7 +1356,7 @@ class Player(mpv.MPV):
 
     def _extract_tab_entries(self, link, max_items=1):
         try:
-            with yt_dlp.YoutubeDL(self._base_ydl_opts(extract_flat=True, playlistend=max_items)) as ydl:
+            with self._fresh_ydl(extract_flat=True, playlistend=max_items) as ydl:
                 info = ydl.extract_info(link, download=False)
         except Exception as e:
             if "not currently live" not in str(e).lower():
@@ -1452,18 +1553,35 @@ class Player(mpv.MPV):
             "skip_download": False,
             "outtmpl": os.path.join(temp_dir, "%(title)s.%(ext)s"),
         })
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(link, download=True)
-            filename = ydl.prepare_filename(info_dict)
-        return filename
+        try:
+            with self._fresh_ydl(extra_opts=ydl_opts, noplaylist=True) as ydl:
+                info_dict = ydl.extract_info(link, download=True)
+                filename = ydl.prepare_filename(info_dict)
+            return filename
+        except Exception:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
 
     def _cache_temp_file(self, link, path, ttl_seconds=240):
         self._clear_temp_cache(link)
         timer = threading.Timer(ttl_seconds, self._clear_temp_cache, args=(link,))
         self._temp_cache[link] = {"path": path, "timer": timer, "expires_at": time.time() + ttl_seconds}
+        timer.daemon = True
         timer.start()
 
     def _clear_temp_cache(self, link):
+        # A download fallback can outlive its original four-minute TTL. Keep
+        # the media file until playback releases it (also works on Windows).
+        if link == self.current_link and self.is_playing and link in self._temp_cache:
+            cached = self._temp_cache[link]
+            previous = cached.get("timer")
+            if previous:
+                previous.cancel()
+            timer = threading.Timer(60, self._clear_temp_cache, args=(link,))
+            timer.daemon = True
+            cached.update(timer=timer, expires_at=time.time() + 60)
+            timer.start()
+            return
         cached = self._temp_cache.pop(link, None)
         if not cached:
             return
@@ -1498,11 +1616,17 @@ class Player(mpv.MPV):
 
     def clear_cache(self):
         """Clear prefetched metadata and temporary downloaded media."""
-        prefetched = len(self._prefetch_cache)
-        temporary = len(self._temp_cache)
-        self._prefetch_cache.clear()
-        for link in list(self._temp_cache):
-            self._clear_temp_cache(link)
+        with self._ydl_lock:
+            self.prefetcher.clear()
+            prefetched = len(self._prefetch_cache)
+            self._prefetch_cache.clear()
+            self._prefetch_times.clear()
+            temporary = 0
+            for link in list(self._temp_cache):
+                if link == self.current_link and self.is_playing:
+                    continue
+                self._clear_temp_cache(link)
+                temporary += 1
         return prefetched, temporary
 
     def cache_size_bytes(self):
@@ -1518,6 +1642,7 @@ class Player(mpv.MPV):
         return total
 
     def close_player(self):
+        self.is_playing = False
         try:
             self.prefetcher.close()
         except Exception:

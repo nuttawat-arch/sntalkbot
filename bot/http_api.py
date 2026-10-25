@@ -81,6 +81,40 @@ class LocalStatusApi:
                     self._json(401, {"ok": False, "error": "unauthorized"})
                     return
                 parsed = urlparse(self.path)
+                if parsed.path == "/v1/maintenance":
+                    worker = getattr(outer.bot, "cache_maintenance", None)
+                    if worker is None:
+                        self._json(409, {"ok": False, "error": "player_disabled"})
+                        return
+                    player = outer.bot.player
+                    active = player._active_cookiefile()
+                    try:
+                        result = json.loads(outer.bot.state_store.get_meta("cache_cleanup_result", "null"))
+                    except ValueError:
+                        result = None
+                    self._json(200, {"ok": True, "settings": {
+                        k: v for k, v in player.playback_config.items() if k.startswith("cache_cleanup_")
+                    }, "last_cleanup": result, "cache_bytes": player.cache_size_bytes(),
+                        "queue_count": len(player.queue), "cleanup_running": worker.lock.locked(),
+                        "cookie_source": ("shared" if active and "/shared/" in active else "instance_or_bundled") if active else "none",
+                        "cookie_updated_at": os.path.getmtime(active) if active and os.path.isfile(active) else None})
+                    return
+                if parsed.path == "/v1/controls":
+                    controls = getattr(outer.bot, "web_controls", None)
+                    if controls is None:
+                        self._json(503, {"ok": False, "error": "controls_unavailable"})
+                        return
+                    users = []
+                    if outer.bot.server_management_enabled:
+                        for user in outer.bot.getServerUsers() or []:
+                            users.append({"id": int(user.nUserID), "nickname": str(user.szNickname), "channel_id": int(user.nChannelID)})
+                    self._json(200, {"ok": True, "users": users,
+                        "favorites": list(getattr(getattr(outer.bot, "player_cog", None), "favorites", [])),
+                        "queue_failures": outer.bot.state_store.list_queue_failures() if outer.bot.player_enabled else [],
+                        "actions": controls.available(), "last": controls.snapshot(),
+                        "feedback": outer.bot.state_store.get_meta("web_control_feedback", ""),
+                        "status": outer.bot.runtime_snapshot_builder.build_snapshot()})
+                    return
                 if parsed.path == "/healthz":
                     self._json(200, {"ok": True})
                     return
@@ -111,7 +145,7 @@ class LocalStatusApi:
                         self._json(200, {
                             "ok": True,
                             "queue_count": total,
-                            "queue_index": int(getattr(getattr(outer.bot, "player", None), "queue_index", -1) or -1),
+                            "queue_index": int(getattr(getattr(outer.bot, "player", None), "queue_index", -1)),
                             "items": items,
                             "next_cursor": next_cursor,
                             "complete": next_cursor is None,
@@ -130,6 +164,31 @@ class LocalStatusApi:
                 payload = self._body_json()
                 if not isinstance(payload, dict):
                     self._json(400, {"ok": False, "error": "invalid_json"})
+                    return
+                if parsed.path == "/v1/maintenance/clear":
+                    worker = getattr(outer.bot, "cache_maintenance", None)
+                    if worker is None:
+                        self._json(409, {"ok": False, "error": "player_disabled"})
+                        return
+                    if worker.lock.locked():
+                        self._json(409, {"ok": False, "error": "cleanup_running"})
+                        return
+                    outer.bot.io_pool.submit(worker.run)
+                    self._json(202, {"ok": True, "accepted": True, "playlist_preserved": True})
+                    return
+                if parsed.path == "/v1/controls":
+                    from bot.web_controls import ControlError
+                    controls = getattr(outer.bot, "web_controls", None)
+                    if controls is None:
+                        self._json(503, {"ok": False, "error": "controls_unavailable"})
+                        return
+                    try:
+                        self._json(202, controls.submit(payload))
+                    except ControlError as exc:
+                        self._json(400, {"ok": False, "error": str(exc)})
+                    except Exception:
+                        logging.exception("Web control request failed")
+                        self._json(500, {"ok": False, "error": "control_unavailable"})
                     return
                 if parsed.path == "/v1/config/apply":
                     changed = payload.get("changed_keys")

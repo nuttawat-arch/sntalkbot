@@ -82,7 +82,7 @@ class JailCog:
             
             if username not in self.bot.bot_config["jail_users"]:
                 self.bot.bot_config["jail_users"].append(username)
-                self.bot.config_handler.save_bot_config(self.bot.bot_config)
+                self.bot.config_handler.save_bot_config({"jail_users": self.bot.bot_config["jail_users"]})
             
             jail_channel_id = self.bot.getChannelIDFromPath(ttstr(self.bot.bot_config["jail_channel"]))
             if jail_channel_id:
@@ -101,7 +101,7 @@ class JailCog:
             username = ttstr(user.szUsername)
             if username in self.bot.bot_config.get("jail_users", []):
                 self.bot.bot_config["jail_users"].remove(username)
-                self.bot.config_handler.save_bot_config(self.bot.bot_config)
+                self.bot.config_handler.save_bot_config({"jail_users": self.bot.bot_config["jail_users"]})
             
             root_channel_id = self.bot.getRootChannelID()
             self.bot.doMoveUser(user.nUserID, root_channel_id)

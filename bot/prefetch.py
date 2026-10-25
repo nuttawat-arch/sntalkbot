@@ -25,6 +25,8 @@ class LinkPrefetcher:
             with self._lock:
                 if link in self._queued:
                     continue
+                if len(self._queued) >= self.max_pending:
+                    break
                 self._queued.add(link)
             self._queue.put(link)
             added += 1
