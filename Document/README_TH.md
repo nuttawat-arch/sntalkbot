@@ -2,7 +2,7 @@
 
 > รุ่นปรับปรุง 26 ตุลาคม 2026: อ่าน `MAINTENANCE_UPDATE_TH.md` สำหรับคุกกี้ส่วนกลางและเวลาล้างแคช
 
-> **SNTalkBot 5.1.27:** All-in-One รุ่นปัจจุบัน — แยก Full/Player/Manager ชัดเจน, Queue/playlist/Related Radio, default YouTube cookies, dashboard `status`, recent `events` และ moderation ที่ตามทันการแก้ nickname/status/channel แบบ event-driven
+> **SNTalkBot 5.1.28:** All-in-One รุ่นปัจจุบัน — แยก Full/Player/Manager ชัดเจน, Queue/playlist/Related Radio, default YouTube cookies, dashboard `status`, recent `events` และ moderation ที่ตามทันการแก้ nickname/status/channel แบบ event-driven
 
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 

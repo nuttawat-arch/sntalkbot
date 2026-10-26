@@ -1,6 +1,6 @@
 # SNTalkBot — TeamTalk Server Administration (Development Draft)
 
-พัฒนาต่อจาก Bot 5.1.27 / Web Manager 1.1.26 / TTUHelper 1.5.10 ยังไม่ได้เผยแพร่เป็น Release ใหม่
+ระบบชุดนี้เตรียมเผยแพร่ใน Bot 5.1.28 โดยใช้ Web Manager 1.1.26 และ TTUHelper 1.5.10; การทดสอบคำสั่งกับ TeamTalk Server จริงยังต้องทำหลังเผยแพร่
 
 ## แหล่งทางการที่อ้างอิง
 

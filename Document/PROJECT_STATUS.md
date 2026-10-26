@@ -1,4 +1,14 @@
-# sntalkbot 5.1.27
+# sntalkbot 5.1.28
+
+## รอบ 27 ต.ค. 2569: เตรียม Release 5.1.28 แก้ความขัดแย้งของ Git tag
+
+- **DONE (ซอร์ส):** เปลี่ยน `VERSION` และ `BotUtils.VERSION` เป็น `5.1.28` โดยคงฟีเจอร์ Playlist, Web Manager, TeamTalk และไฟล์ Cookie ทั้งหมดตามรุ่นที่พัฒนาก่อนหน้า
+- **DONE (เอกสาร):** อัปเดตชื่อรุ่นปัจจุบันในคู่มือหลัก โดยไม่เปลี่ยนบันทึกประวัติรุ่นเก่า
+- **DONE (QA offline):** SNTalkBot unit tests 82 ผ่าน; `tools/validate_project.py` ผ่าน (123 canonical commands); TTUHelper validator ผ่าน; Web Manager portable validator และ unit tests 25 ผ่าน; Python AST 37 ไฟล์ผ่าน; `git diff --check` ผ่าน
+- **DOING (Windows QA):** ต้องรัน PowerShell Publisher จริงบน Windows; ยังทดสอบ Docker push, website transport และ GitHub tag `v5.1.28` จากเครื่องนี้ไม่ได้
+- **KNOWN WARNING:** Starlette เตือน `TemplateResponse(name, context)` เป็นรูปแบบเก่า แต่ Web Manager unit tests ยังผ่าน 25/25; พิจารณาปรับ API นี้ในรอบ Web Manager ใหม่โดยไม่แตะ Release 1.1.26 ที่ใช้งานอยู่
+- **TODO (Windows):** นำแพตช์เวอร์ชันใหม่ไปวางทับโค้ดล่าสุดบนเครื่อง Windows ที่ HEAD `c757b98` แล้วใช้ Publisher หมายเลข 1 เพื่อ Commit/Push และสร้าง tag `v5.1.28` ใหม่ โดยห้าม force-move tag `v5.1.27`
+- **TODO (Live):** ตรวจ GitHub Actions, Docker digest, ZIP/เว็บไซต์ และ Linux runtime/TeamTalk/YouTube หลัง Publish บนเครื่องจริง
 
 ## รอบ 26 ต.ค. 2569: บัญชี YouTube สำหรับบอต (Cookie Default)
 
