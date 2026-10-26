@@ -43,6 +43,50 @@ class ControlsTests(unittest.TestCase):
         self.assertEqual(args[0].nFromUserID,WEB_ACTOR_ID)
         self.assertEqual(args[1],'shutdown; restart / x')
 
+    def test_playlist_search_is_read_only_until_selected(self):
+        expected=[{'title':'Thai Classics','link':'https://www.youtube.com/playlist?list=PL123456789AB','channel':'SN'}]
+        self.bot.player=SimpleNamespace(search_playlists=Mock(return_value=expected),queue_mode=True)
+        self.controls.submit({'action':'playlist_search','query':'Thai Classics'})
+        self.drain()
+        found=self.controls.playlist_search_snapshot()
+        self.assertEqual(found['items'],expected)
+        self.cog.handle_append_playlist_command.assert_not_called()
+        self.controls.submit({'action':'playlist_choose','position':'1','search_token':found['token']})
+        self.drain()
+        args=self.cog.handle_append_playlist_command.call_args.args
+        self.assertEqual(args[0].nFromUserID,WEB_ACTOR_ID)
+        self.assertEqual(args[1],expected[0]['link'])
+        self.assertEqual(self.controls.playlist_search_snapshot()['items'],[])
+
+    def test_playlist_search_rejects_stale_or_forged_result(self):
+        self.bot.player=SimpleNamespace(search_playlists=Mock(return_value=[
+            {'title':'A','link':'https://www.youtube.com/playlist?list=PL123456789AB'}]))
+        self.controls.submit({'action':'playlist_search','query':'A'});self.drain()
+        token=self.controls.playlist_search_snapshot()['token']
+        for payload in ({'action':'playlist_choose','position':1,'search_token':'forged'},
+                        {'action':'playlist_choose','position':2,'search_token':token},
+                        {'action':'playlist_search','query':''}):
+            with self.assertRaises(ControlError):self.controls.submit(payload)
+        self.assertFalse(self.cog.handle_append_playlist_command.called)
+
+    def test_manager_timed_moderation_is_admin_only_and_validated(self):
+        self.bot.player_enabled=False;self.bot.server_management_enabled=True
+        self.bot.teamtalk_admin=SimpleNamespace(is_admin=lambda:True,available=lambda:[])
+        self.bot.admin_cog=Mock();self.bot.jail_cog=Mock()
+        self.bot.getMyChannelID=lambda:0
+        for duration in ('1hour','-10m','0s','31d','1h:0m','999999w'):
+            with self.assertRaises(ControlError):
+                self.controls.submit({'action':'manager_timed_kick','nickname':'Alice','duration':duration})
+        with self.assertRaises(ControlError):self.controls.submit({'action':'manager_clear_timed'})
+        self.controls.submit({'action':'manager_timed_kick','nickname':'Alice','duration':'1h:30m'});self.drain()
+        self.bot.admin_cog.handle_duration_kick_nickname.assert_called_with(unittest.mock.ANY,'Alice','1h:30m')
+        self.controls.submit({'action':'manager_jail','nickname':'Alice'});self.drain()
+        self.bot.jail_cog.handle_jail_command.assert_called_with(unittest.mock.ANY,'Alice')
+        self.controls.submit({'action':'manager_clear_timed','confirm':'CLEAR'});self.drain()
+        self.bot.admin_cog.handle_clear_command.assert_called_with(unittest.mock.ANY)
+        self.bot.teamtalk_admin.is_admin=lambda:False
+        self.assertNotIn('manager_jail',self.controls.available())
+
     def test_unknown_action_is_rejected(self):
         for action in ('exec','reboot','__dict__',None,[]):
             with self.assertRaises(ControlError):self.controls.submit({'action':action})
@@ -72,6 +116,48 @@ class ControlsTests(unittest.TestCase):
         self.controls.submit({'action':'announce_server','message':'hello all'});self.drain()
         self.bot.send_broadcast_message.assert_called_once_with('hello all')
         self.assertNotIn('play_youtube',self.controls.available())
+
+    def test_role_sets_keep_playback_and_management_separate(self):
+        self.assertIn('play_youtube',self.controls.available())
+        self.assertNotIn('announce_channel',self.controls.available())
+        self.assertNotIn('manager_filter',self.controls.available())
+        self.bot.player_enabled=False;self.bot.server_management_enabled=True
+        self.assertIn('announce_channel',self.controls.available())
+        self.assertIn('manager_filter',self.controls.available())
+        self.assertNotIn('delete_queue',self.controls.available())
+        self.bot.player_enabled=True
+        self.assertIn('delete_queue',self.controls.available())
+        self.assertIn('manager_filter',self.controls.available())
+
+    def test_manager_settings_use_existing_persistent_handlers(self):
+        self.bot.player_enabled=False;self.bot.server_management_enabled=True
+        self.bot.admin_cog=Mock()
+        self.bot.general_cog=Mock()
+        self.bot.getMyChannelID=lambda:0
+        self.controls.submit({'action':'manager_filter','value':'on'})
+        self.drain()
+        args=self.bot.admin_cog.handle_filter_toggle_command.call_args.args
+        self.assertEqual((args[0].nFromUserID,args[1]),(WEB_ACTOR_ID,'on'))
+        self.controls.submit({'action':'manager_global_broadcast_interval','value':'180'})
+        self.drain()
+        self.bot.admin_cog.handle_central_global_broadcast_command.assert_called_with(
+            unittest.mock.ANY, 'interval', '180')
+        self.controls.submit({'action':'manager_intercept','value':'off'})
+        self.drain()
+        self.bot.general_cog.handle_intercept_command.assert_called_with(unittest.mock.ANY,'off')
+        for value in ('0','10081','invalid'):
+            with self.assertRaises(ControlError):
+                self.controls.submit({'action':'manager_global_broadcast_interval','value':value})
+
+    def test_queue_search_choice_targets_selected_entry_only(self):
+        self.bot.player=SimpleNamespace(queue_mode=True)
+        self.controls.submit({'action':'search_next','position':'4'});self.drain()
+        self.cog.handle_next_search_result_selection.assert_called_once()
+        args=self.cog.handle_next_search_result_selection.call_args.args
+        self.assertEqual(args[1], '4')
+        self.bot.player.queue_mode=False
+        with self.assertRaises(ControlError):
+            self.controls.submit({'action':'search_previous','position':'4'})
 
     def test_disconnected_requests_rejected(self):
         self.bot.getMyUserID=lambda:0

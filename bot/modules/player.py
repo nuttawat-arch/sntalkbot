@@ -31,6 +31,8 @@ class PlayerCog:
         self.autoplay_enabled = bool(self.bot.playback_config.get("autoplay_enabled", self.player.play_mode == 2))
         self.pending_channel_tabs = {}
         self.pending_playlist_tabs = {}
+        self.pending_playlist_searches = {}
+        self.pending_playlist_search_lock = threading.Lock()
         self.pending_channel_timeout = 60
         self.player.end_callback = self.on_playback_end
         data_dir = os.getenv("TTUTIL_DATA_DIR", ".")
@@ -540,6 +542,7 @@ class PlayerCog:
         """Registers all the player commands with the command handler."""
         command_handler.register_command('u', self.handle_play_url_command)
         command_handler.register_command('pp', self.handle_append_playlist_command)
+        command_handler.register_command('pps', self.handle_playlist_search_selection_command)
         command_handler.register_command('p', self.handle_play_search_or_pause_command)
         command_handler.register_command('pm', self.handle_ytmusic_search_command)
         command_handler.register_command('n', self.handle_next_track_command)
@@ -940,18 +943,67 @@ class PlayerCog:
             self.bot.privateMessage(user_id, self._("Error adding to queue: {e}").format(e=str(e)))
 
     def handle_append_playlist_command(self, textmessage, *args):
-        """Append a YouTube/YouTube Music playlist without replacing playback."""
+        """Append a playlist URL or search playlists by name without altering the queue."""
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
         if not args:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: pp <playlist_link>"))
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Usage: pp <playlist link or name>; pps <number> selects a search result."))
             return
         link = " ".join(args).strip()
-        if self.player.classify_collection_link(link) != "playlist":
-            self.bot.privateMessage(textmessage.nFromUserID, self._("pp accepts a YouTube or YouTube Music playlist link."))
+        if self.player.classify_collection_link(link) == "playlist":
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Appending playlist..."))
+            self.bot.io_pool.submit(self._play_collection_task, link, textmessage.nFromUserID, True)
             return
-        self.bot.privateMessage(textmessage.nFromUserID, self._("Appending playlist..."))
-        self.bot.io_pool.submit(self._play_collection_task, link, textmessage.nFromUserID, True)
+        if link.lower().startswith(("http://", "https://")):
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Use a YouTube or YouTube Music playlist link, or search by playlist name."))
+            return
+        if len(link) > 500:
+            self.bot.privateMessage(textmessage.nFromUserID, self._("Playlist search is too long (maximum 500 characters)."))
+            return
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Searching YouTube playlists..."))
+        self.bot.io_pool.submit(self._search_playlists_for_user, link, textmessage.nFromUserID)
+
+    def _search_playlists_for_user(self, query, user_id):
+        try:
+            playlists = self.player.search_playlists(query, limit=10)
+        except Exception as exc:
+            self.bot.privateMessage(user_id, self._("Playlist search failed: {error}").format(error=type(exc).__name__))
+            return
+        with self.pending_playlist_search_lock:
+            if playlists:
+                self.pending_playlist_searches[user_id] = {
+                    "options": playlists, "expires_at": time.monotonic() + 180,
+                }
+            else:
+                self.pending_playlist_searches.pop(user_id, None)
+        if not playlists:
+            self.bot.privateMessage(user_id, self._("No playlists found. Try another name or paste a playlist link."))
+            return
+        self.bot.privateMessage(user_id, self._("Playlist search results (use pps <number> to add to the end):"))
+        for number, item in enumerate(playlists, 1):
+            self.bot.privateMessage(user_id, f"{number}. {item['title'][:160]} — {item.get('channel') or 'YouTube'}")
+
+    def handle_playlist_search_selection_command(self, textmessage, *args):
+        if not self._is_in_same_channel(textmessage.nFromUserID):
+            return
+        user_id = textmessage.nFromUserID
+        with self.pending_playlist_search_lock:
+            pending = self.pending_playlist_searches.get(user_id)
+            if not pending or time.monotonic() >= pending["expires_at"]:
+                self.pending_playlist_searches.pop(user_id, None)
+                self.bot.privateMessage(user_id, self._("No active playlist search. Search with pp <name> first."))
+                return
+            try:
+                selection = int(args[0]) if len(args) == 1 else 0
+            except (TypeError, ValueError):
+                selection = 0
+            if not 1 <= selection <= len(pending["options"]):
+                self.bot.privateMessage(user_id, self._("Invalid playlist number. Choose a number shown in your search results."))
+                return
+            chosen = pending["options"][selection - 1]
+            del self.pending_playlist_searches[user_id]
+        self.bot.privateMessage(user_id, self._("Adding selected playlist to the end: {title}").format(title=chosen["title"]))
+        self.bot.io_pool.submit(self._play_collection_task, chosen["link"], user_id, True)
 
     def _play_collection_task(self, link, user_id, append=False):
         collection_type, collection_title, results = self.player.fetch_collection_details(link)

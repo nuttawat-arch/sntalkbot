@@ -56,6 +56,9 @@ class RuntimeSnapshotBuilder:
                 "added_by": str(item.get("added_by") or ""),
                 "added_by_user_id": self._primitive(item.get("added_by_user_id")),
                 "added_at": self._primitive(item.get("added_at")),
+                "has_search_alternatives": bool(item.get("_search_results")) and len(item.get("_search_results") or []) > 1,
+                "search_choice": int(item.get("_search_index") or 0) + 1,
+                "search_choices": len(item.get("_search_results") or []),
             })
         return result, queue_count, queue_index
 
@@ -239,6 +242,11 @@ class RuntimeSnapshotBuilder:
                 "commands_locked": bool(getattr(bot, "commands_locked", False)),
                 "welcome_mode": int(getattr(bot, "welcome_mode", 0) or 0),
                 "welcome_broadcast": bool(getattr(bot, "welcome_broadcast", False)),
+                "vpn_detection": bool(bot.bot_config.get("vpn_detection", False)),
+                "prevent_noname": bool(bot.bot_config.get("prevent_noname", False)),
+                "global_broadcast_enabled": bool(getattr(bot, "global_broadcast_config", {}).get("enabled", False)),
+                "global_broadcast_tts": bool(getattr(bot, "global_broadcast_config", {}).get("tts_enabled", False)),
+                "global_broadcast_interval": int(getattr(bot, "global_broadcast_config", {}).get("interval_minutes", 60) or 60),
             }
 
         try:

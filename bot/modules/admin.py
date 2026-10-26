@@ -112,6 +112,7 @@ class AdminCog:
         command_handler.register_command('dk', self.handle_duration_kick_nickname, admin_only=True)
         command_handler.register_command('udk', self.handle_duration_kick_by_username, admin_only=True)
         command_handler.register_command('bm', self.handle_admin_broadcast, admin_only=True)
+        command_handler.register_command('ttadmin', self.handle_teamtalk_admin_command, admin_only=True)
         command_handler.register_command('clear', self.handle_clear_command, admin_only=True)
         command_handler.register_command('new', self.handle_new_account_command, admin_only=True)
         command_handler.register_command('join', self.handle_join_command, admin_only=True)
@@ -407,8 +408,11 @@ class AdminCog:
             account.uUserType = UserType.USERTYPE_DEFAULT
             account.uUserRights = self.bot.account_creator.calculate_user_rights(rights)
 
-            self.bot.doNewUserAccount(account)
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Account '{username}' created successfully.").format(username=username))
+            command_id = self.bot.doNewUserAccount(account)
+            if command_id > 0:
+                self.bot.privateMessage(textmessage.nFromUserID, f"ส่งคำขอสร้างบัญชี '{username}' แล้ว (TeamTalk Command ID {command_id}) รอผลจากเซิร์ฟเวอร์")
+            else:
+                self.bot.privateMessage(textmessage.nFromUserID, "TeamTalk ไม่รับคำขอสร้างบัญชี")
         except ValueError:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Invalid command format. Usage: new <username> <password> [rights separated by space]"))
 
@@ -463,6 +467,51 @@ class AdminCog:
         message = " ".join(args)
         self.bot.send_broadcast_message(self._("Message from administrators: {message}").format(message=message))
 
+    def handle_teamtalk_admin_command(self, textmessage, *args):
+        """Admin-only, prefix-free TeamTalk SDK operations (no OS commands)."""
+        from bot.teamtalk_admin import AdminInputError
+        admin = getattr(self.bot, 'teamtalk_admin', None)
+        sender = textmessage.nFromUserID
+        if admin is None or not admin.is_admin():
+            self.bot.privateMessage(sender, 'บัญชีบอตต้องเป็น TeamTalk Administrator')
+            return
+        operation = args[0].lower() if args else 'status'
+        if operation in ('help', '?'):
+            self.bot.privateMessage(sender, 'ttadmin status|stats|save|accounts|bans|banip IP|unban IP|banuser USERNAME|unbanuser USERNAME|op USER_ID ROOM_ID on/off|kickroom USER_ID ROOM_ID|name ชื่อใหม่|motd ข้อความใหม่')
+            return
+        if operation == 'status':
+            snap = admin.snapshot()
+            props = snap['properties']
+            self.bot.privateMessage(sender, f"TeamTalk: {props.get('server_name', 'unavailable')}; users limit {props.get('max_users', '?')}; channels {len(snap['channels'])}. ttadmin help สำหรับคำสั่ง")
+            return
+        try:
+            payload = {}
+            action = {
+                'stats': 'server_stats', 'save': 'server_save', 'accounts': 'accounts_refresh',
+                'bans': 'bans_refresh', 'banip': 'ban_ip', 'unban': 'unban_ip',
+                'banuser': 'ban_username', 'unbanuser': 'unban_username',
+                'op': 'operator_set', 'kickroom': 'kick_channel',
+                'name': 'server_update', 'motd': 'server_update',
+            }.get(operation)
+            if action is None:
+                raise AdminInputError('ไม่รู้จักคำสั่ง ใช้ ttadmin help')
+            if operation in ('banip', 'unban'):
+                payload['ip'] = args[1] if len(args) == 2 else ''
+            elif operation in ('banuser', 'unbanuser'):
+                payload['username'] = args[1] if len(args) == 2 else ''
+            elif operation in ('op', 'kickroom'):
+                payload.update(user_id=args[1] if len(args) > 1 else '',
+                               channel_id=args[2] if len(args) > 2 else '')
+                if operation == 'op':
+                    payload['enabled'] = args[3] if len(args) == 4 else ''
+            elif operation in ('name', 'motd'):
+                payload['server_name' if operation == 'name' else 'motd'] = ' '.join(args[1:])
+            command_id = admin.dispatch(action, admin.validate(action, payload))
+        except (AdminInputError, IndexError, ValueError) as exc:
+            self.bot.privateMessage(sender, f'ไม่สามารถส่งคำสั่งได้: {exc}')
+            return
+        self.bot.privateMessage(sender, f'ส่งคำสั่ง {operation} ให้ TeamTalk แล้ว (Command ID {command_id}) รอการยืนยันจากเซิร์ฟเวอร์')
+
     def ban_user(self, user_id, ban_type=BanType.BANTYPE_USERNAME):
         """Ban a currently connected user without relying on a placeholder stub.
 
@@ -499,8 +548,10 @@ class AdminCog:
         path = " ".join(args)
         chan_id = self.bot.getChannelIDFromPath(ttstr(path))
         if chan_id:
-            self.bot.doJoinChannelByID(chan_id, ttstr(""))
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Joined channel: {path}").format(path=path))
+            command_id = self.bot.doJoinChannelByID(chan_id, ttstr(""))
+            self.bot.privateMessage(textmessage.nFromUserID, (
+                f"ส่งคำขอเข้าห้อง {path} แล้ว รอ TeamTalk ยืนยัน (Command ID {command_id})" if command_id > 0
+                else "TeamTalk ไม่รับคำขอเข้าห้อง"))
         else:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Channel not found."))
 
@@ -519,9 +570,9 @@ class AdminCog:
         count = 0
         for u in users:
             if u.nUserID != self.bot.getMyUserID():
-                self.bot.doMoveUser(u.nUserID, target_chan)
-                count += 1
-        self.bot.send_message(self._("Moved {count} users to target channel.").format(count=count))
+                if self.bot.doMoveUser(u.nUserID, target_chan) > 0:
+                    count += 1
+        self.bot.send_message(f"ส่งคำขอย้ายผู้ใช้ {count} รายไปยังห้องปลายทางแล้ว (รอ TeamTalk ยืนยัน)")
 
     def handle_kick_channel_command(self, textmessage, *args):
         if not args:

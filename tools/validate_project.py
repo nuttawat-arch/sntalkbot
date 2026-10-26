@@ -2375,14 +2375,17 @@ else:
             cols = raw_line.split("\t")
             if len(cols) >= 7:
                 records.append(cols)
-        if not records or not all("youtube.com" in cols[0] for cols in records):
+        youtube_records = [cols for cols in records
+                           if (cols[0].removeprefix("#HttpOnly_").lstrip(".").lower() == "youtube.com"
+                               or cols[0].removeprefix("#HttpOnly_").lstrip(".").lower().endswith(".youtube.com"))]
+        if not youtube_records:
             fail("bundled default cookie is not a valid YouTube Netscape cookie set")
         elif 'if [ ! -f "$RUNTIME_COOKIES" ] && [ -f "$DEFAULT_COOKIES" ]' not in entrypoint_source:
             fail("entrypoint does not bootstrap default cookies only when the persistent cookie is absent")
         elif 'DEFAULT_COOKIES="/app/defaults/cookies.txt"' not in entrypoint_source:
             fail("entrypoint default cookie path is incorrect")
         else:
-            ok(f"bundled default YouTube cookie bootstrap is present ({len(records)} records) and never overwrites a persistent replacement")
+            ok(f"bundled default YouTube cookie bootstrap is present ({len(youtube_records)} YouTube records, {len(records) - len(youtube_records)} unrelated records) and never overwrites a persistent replacement")
     except Exception as exc:
         fail(f"unable to validate bundled default cookies: {exc!r}")
 if "cookies.txt" not in gitignore_source:

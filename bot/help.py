@@ -15,7 +15,7 @@ HELP_CATEGORY_ORDER = (
 HELP_CATEGORY_COMMANDS = {
     "general": {"help", "about", "status", "myinfo", "admins", "gcid", "search", "weather", "dr", "report"},
     "player": {
-        "p", "pm", "u", "pp", "s", "x", "n", "b", "+", "-", "t", "v", "l", "pg", "d", "r", "dl",
+        "p", "pm", "u", "pp", "pps", "s", "x", "n", "b", "+", "-", "t", "v", "l", "pg", "d", "r", "dl",
         "autoplay", "channel", "m", "m1", "m2", "m3", "3d", "3d2", "bass", "sp", "f", "hide", "select", ".", ",",
     },
     "queue": {"q", "ql", "qc", "dq", "cq", "fav", "playfav", "delfav", "favorites", "shuffle"},
@@ -28,7 +28,7 @@ HELP_CATEGORY_COMMANDS = {
     "moderation": {
         "db", "udb", "dk", "udk", "clear", "jail", "unjail", "jails", "k", "ks", "moveall", "join",
         "filter", "welcome", "welcomebroadcast", "noname", "vpn", "lock", "blockcmd", "channelinput", "intercept",
-        "cm", "events", "globalbroadcast", "bm", "cn", "cs", "cg",
+        "cm", "events", "globalbroadcast", "bm", "cn", "cs", "cg", "ttadmin",
     },
     "system": {"restart", "shutdown", "reboot", "exec", "save", "clearlog", "language", "voicetx", "cc", "csize"},
 }
@@ -79,6 +79,7 @@ class HelpCommands:
             'clear argument': self._('Admins only: Clears the duration ban or kick for a specified user. If sent without arguments: Clears all duration ban and kick.'),
             'st': self._('Admins only: Stop the current speech stream.'),
             'bm message': self._('Admins only: Sends a broadcast message to the server.'),
+            'ttadmin [operation]': self._('Manager/Full administrators: TeamTalk SDK server controls. Use ttadmin help to see status, stats, save, accounts, bans, banip, unban, op, kickroom, name and motd.'),
             'jail <name>': self._('For authorized users only, Adds someone to the jails list and move them to the jail channel. This adds the username to the list and not the nickname.'),
             'unjail <name>': self._('For authorized users. Removes someone from the jails list and moves them back to the root channel'),
             'jails': self._('Admins only: Gets the list of users who are in the jails list'),
@@ -94,7 +95,8 @@ class HelpCommands:
             'p <query>': self._('Search and play/enqueue from YouTube.'),
             'pm <query>': self._('Search and play/enqueue from YouTube Music.'),
             'u <link>': self._('Play a URL or start the first playlist. In Queue Mode, enqueue the URL/playlist.'),
-            'pp <playlist_link>': self._('Player/Full: append another YouTube or YouTube Music playlist without interrupting the current track. In Queue Mode, append the whole playlist to FIFO queue.'),
+            'pp <playlist_link_or_name>': self._('Player/Full: append a playlist URL unchanged, or search by name and choose a result with pps. Queue Mode appends every song to the FIFO tail.'),
+            'pps <number>': self._('Player/Full: select one playlist from your latest pp name search and append it without moving existing queue items.'),
             's': self._('Stop playback only; keep queue, playlist, and current item.'),
             'x': self._('Pause or resume playback.'),
             'n': self._('Queue mode: play next queued item. Normal mode: play the next related Radio track.'),

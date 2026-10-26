@@ -137,6 +137,49 @@ class RecoveryTests(unittest.TestCase):
         try:self.assertEqual(store.queue_count(),1000);self.assertEqual(store.list_queue_failures(),[])
         finally:store.close()
 
+    def test_playlist_name_selection_keeps_queue_fifo(self):
+        playlist_url='https://www.youtube.com/playlist?list=PL1234567890ABC'
+        self.player.classify_collection_link=lambda link:'playlist' if 'list=' in link else None
+        self.player.search_playlists=Mock(return_value=[{'title':'Thai Mix','link':playlist_url,'channel':'Creator'}])
+        self.cog.pending_playlist_searches={}
+        self.cog.pending_playlist_search_lock=threading.Lock()
+        self.cog._play_collection_task=Mock()
+        user=SimpleNamespace(nFromUserID=7)
+        self.cog.handle_append_playlist_command(user,'Thai','Mix')
+        self.assertEqual(len(self.pool.jobs),1)
+        self.pool.run()
+        self.player.search_playlists.assert_called_once_with('Thai Mix',limit=10)
+        self.assertEqual([row['title'] for row in self.player.queue[:2]],['0','1'])
+        self.cog.handle_playlist_search_selection_command(user,'1')
+        self.pool.run()
+        self.cog._play_collection_task.assert_called_once_with(playlist_url,7,True)
+        self.assertEqual(len(self.player.queue),1000)
+
+    def test_playlist_search_selection_is_private_to_requester(self):
+        playlist_url='https://www.youtube.com/playlist?list=PL1234567890ABC'
+        self.player.classify_collection_link=lambda link:None
+        self.player.search_playlists=lambda _name,limit=10:[{'title':'Thai Mix','link':playlist_url}]
+        self.cog.pending_playlist_searches={}
+        self.cog.pending_playlist_search_lock=threading.Lock()
+        self.cog._play_collection_task=Mock()
+        self.cog.handle_append_playlist_command(SimpleNamespace(nFromUserID=7),'Thai')
+        self.pool.run()
+        self.cog.handle_playlist_search_selection_command(SimpleNamespace(nFromUserID=8),'1')
+        self.assertFalse(self.pool.jobs)
+        self.cog.handle_playlist_search_selection_command(SimpleNamespace(nFromUserID=7),'1')
+        self.pool.run()
+        self.cog._play_collection_task.assert_called_once_with(playlist_url,7,True)
+
+    def test_playlist_url_is_still_accepted_without_search(self):
+        playlist_url='https://www.youtube.com/playlist?list=PL1234567890ABC'
+        self.player.classify_collection_link=lambda link:'playlist' if link==playlist_url else None
+        self.player.search_playlists=Mock()
+        self.cog._play_collection_task=Mock()
+        self.cog.handle_append_playlist_command(SimpleNamespace(nFromUserID=7),playlist_url)
+        self.pool.run()
+        self.cog._play_collection_task.assert_called_once_with(playlist_url,7,True)
+        self.player.search_playlists.assert_not_called()
+
 
 class StreamMetadataTests(unittest.TestCase):
     def setUp(self):

@@ -109,9 +109,16 @@ class LocalStatusApi:
                         for user in outer.bot.getServerUsers() or []:
                             users.append({"id": int(user.nUserID), "nickname": str(user.szNickname), "channel_id": int(user.nChannelID)})
                     self._json(200, {"ok": True, "users": users,
+                        "teamtalk": (outer.bot.teamtalk_admin.snapshot() if
+                                     outer.bot.server_management_enabled and
+                                     getattr(outer.bot, "teamtalk_admin", None) is not None else None),
                         "favorites": list(getattr(getattr(outer.bot, "player_cog", None), "favorites", [])),
+                        "playlist_search": controls.playlist_search_snapshot() if outer.bot.player_enabled else None,
+                        "moderation_rules": outer.bot.state_store.active_moderation() if outer.bot.server_management_enabled else [],
+                        "jailed_accounts": list(outer.bot.bot_config.get('jail_users', [])) if outer.bot.server_management_enabled else [],
                         "queue_failures": outer.bot.state_store.list_queue_failures() if outer.bot.player_enabled else [],
                         "actions": controls.available(), "last": controls.snapshot(),
+                        "history": controls.history_snapshot(),
                         "feedback": outer.bot.state_store.get_meta("web_control_feedback", ""),
                         "status": outer.bot.runtime_snapshot_builder.build_snapshot()})
                     return

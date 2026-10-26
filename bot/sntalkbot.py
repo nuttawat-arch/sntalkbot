@@ -110,6 +110,8 @@ class SNTalkBot(TeamTalk):
         self._register_cogs()
         self.update_notifier = UpdateNotifier(self)
         self.runtime_snapshot_builder = RuntimeSnapshotBuilder(self)
+        from bot.teamtalk_admin import TeamTalkAdministration
+        self.teamtalk_admin = TeamTalkAdministration(self)
         from bot.web_controls import WebControls
         self.web_controls = WebControls(self)
         self.local_status_api = LocalStatusApi(self)
@@ -1078,6 +1080,9 @@ class SNTalkBot(TeamTalk):
             self.record_activity("stream", "state", f"{nickname}: {', '.join(changes)}", user_id=user_id, channel_id=int(getattr(user, "nChannelID", 0) or 0))
 
     def onUserAccount(self, useraccount: UserAccount):
+        admin = getattr(self, "teamtalk_admin", None)
+        if admin is not None:
+            admin.on_account(useraccount)
         username = ttstr(useraccount.szUsername)
         user_type = useraccount.uUserType
 
@@ -1087,12 +1092,31 @@ class SNTalkBot(TeamTalk):
                 nickname = ttstr(user.szNickname)
                 ip_address = ttstr(user.szIPAddress)
                 status_message = ttstr(user.szStatusMsg)
-                password = ttstr(useraccount.szPassword)
-
-                info_message = self._("User Info:\n Nickname: {nickname}\n Username: {username}\n Password: {password}\n  IP Address: {ip_address}\n Status Message: {status_message}").format(nickname=nickname, username=username, password=password, status_message=status_message, ip_address=ip_address)
+                # Never echo TeamTalk account passwords (including on a list reply).
+                info_message = self._("User Info:\n Nickname: {nickname}\n Username: {username}\n IP Address: {ip_address}\n Status Message: {status_message}").format(nickname=nickname, username=username, status_message=status_message, ip_address=ip_address)
                 self.privateMessage(self.last_command_sender_id, info_message)
                 self.last_command_sender_id = None
                 self.last_command_sender_username = None
+
+    def onBannedUser(self, banneduser):
+        admin = getattr(self, "teamtalk_admin", None)
+        if admin is not None:
+            admin.on_ban(banneduser)
+
+    def onServerStatistics(self, serverstatistics):
+        admin = getattr(self, "teamtalk_admin", None)
+        if admin is not None:
+            admin.on_statistics(serverstatistics)
+
+    def onCmdProcessing(self, cmdId, complete):
+        controls = getattr(self, "web_controls", None)
+        if controls is not None:
+            controls.on_command_processing(cmdId, complete)
+
+    def onCmdError(self, cmdId, errmsg):
+        controls = getattr(self, "web_controls", None)
+        if controls is not None:
+            controls.on_command_error(cmdId, errmsg)
 
     def getUserByName(self, nickname):
         nickname = ttstr(nickname)

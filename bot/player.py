@@ -4,12 +4,13 @@ import shutil
 import base64
 import binascii
 import html
+import json
 import mpv
 import tempfile
 import threading
 import time
 from html.parser import HTMLParser
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urlencode, urljoin, urlparse
 import requests
 import yt_dlp
 from bot.prefetch import LinkPrefetcher
@@ -305,6 +306,111 @@ class Player(mpv.MPV):
             if "/channel/" in path or path.startswith("/@") or path.startswith("/c/") or path.startswith("/user/"):
                 return "channel"
         return None
+
+    @staticmethod
+    def _playlist_search_entry(entry):
+        """Normalize yt-dlp's flat playlist result without accepting video IDs."""
+        if not isinstance(entry, dict):
+            return None
+        link = str(entry.get("webpage_url") or entry.get("url") or "")
+        parsed = urlparse(link)
+        playlist_id = (parse_qs(parsed.query).get("list") or [""])[0]
+        if not playlist_id and ("playlist" in str(entry.get("ie_key", "")).lower()
+                                or "playlist" in str(entry.get("_type", "")).lower()):
+            playlist_id = str(entry.get("id") or "")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{10,100}", playlist_id):
+            return None
+        title = str(entry.get("title") or "").strip()
+        if not title:
+            return None
+        return {"title": title[:250],
+                "link": "https://www.youtube.com/playlist?list=" + playlist_id,
+                "channel": str(entry.get("channel") or entry.get("uploader") or "")[:150],
+                "count": entry.get("playlist_count")}
+
+    @staticmethod
+    def _playlist_search_html_entries(page, limit):
+        """Fallback for yt-dlp search pages; parse published search metadata only."""
+        decoder = json.JSONDecoder()
+        data = None
+        for marker in ("var ytInitialData = ", 'window["ytInitialData"] = ', "ytInitialData = "):
+            offset = page.find(marker)
+            if offset < 0:
+                continue
+            try:
+                data, _ = decoder.raw_decode(page[offset + len(marker):].lstrip())
+                break
+            except ValueError:
+                continue
+        if not isinstance(data, dict):
+            return []
+
+        def text_of(node):
+            if not isinstance(node, dict):
+                return ""
+            return str(node.get("simpleText") or "".join(
+                str(run.get("text", "")) for run in node.get("runs", []) if isinstance(run, dict)))
+
+        found, seen, stack = [], set(), [data]
+        while stack and len(found) < limit:
+            node = stack.pop()
+            if isinstance(node, list):
+                stack.extend(reversed(node))
+                continue
+            if not isinstance(node, dict):
+                continue
+            renderer = node.get("playlistRenderer")
+            lockup = node.get("lockupViewModel")
+            if isinstance(renderer, dict):
+                playlist_id = str(renderer.get("playlistId") or "")
+                title = text_of(renderer.get("title"))
+                channel = text_of(renderer.get("shortBylineText"))
+                count = renderer.get("videoCount")
+            elif isinstance(lockup, dict) and "PLAYLIST" in str(lockup.get("contentType", "")):
+                playlist_id = str(lockup.get("contentId") or "")
+                metadata = lockup.get("metadata") or {}
+                title = str(((metadata.get("lockupMetadataViewModel") or {}).get("title") or {}).get("content") or "")
+                channel, count = "", None
+            else:
+                stack.extend(reversed(list(node.values())))
+                continue
+            if re.fullmatch(r"[A-Za-z0-9_-]{10,100}", playlist_id) and title and playlist_id not in seen:
+                seen.add(playlist_id)
+                found.append({"title": title[:250],
+                              "link": "https://www.youtube.com/playlist?list=" + playlist_id,
+                              "channel": channel[:150], "count": count})
+        return found
+
+    def search_playlists(self, query, limit=10):
+        """Discover playlists by name; never alter queue or current playback."""
+        query = str(query or "").strip()
+        if not query or len(query) > 500:
+            return []
+        limit = max(1, min(int(limit), 15))
+        search_url = "https://www.youtube.com/results?" + urlencode(
+            {"search_query": query, "sp": "EgIQAw=="})
+        matches = []
+        try:
+            with self._fresh_ydl(extract_flat=True, noplaylist=False,
+                                 playlistend=limit * 3) as ydl:
+                info = ydl.extract_info(search_url, download=False)
+            for entry in self._iter_entries(info or {}):
+                item = self._playlist_search_entry(entry)
+                if item and item["link"] not in {row["link"] for row in matches}:
+                    matches.append(item)
+                if len(matches) >= limit:
+                    break
+        except Exception as exc:
+            print(f"Playlist name search extractor unavailable: {type(exc).__name__}")
+        if not matches:
+            try:
+                response = requests.get(search_url, timeout=12,
+                                        headers={"User-Agent": "Mozilla/5.0"})
+                response.raise_for_status()
+                matches = self._playlist_search_html_entries(response.text[:5_000_000], limit)
+            except (requests.RequestException, ValueError) as exc:
+                print(f"Playlist search fallback unavailable: {type(exc).__name__}")
+        return matches[:limit]
 
     def fetch_collection_details(self, link, max_items=None):
         """Return ``(type, title, items)`` for YouTube/YouTube Music collections.
