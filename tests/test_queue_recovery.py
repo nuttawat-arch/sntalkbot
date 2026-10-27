@@ -451,8 +451,8 @@ class StreamMetadataTests(unittest.TestCase):
 
     def test_fast_youtube_resolver_prefers_opus_and_caches_result(self):
         self.player._fast_stream_cache={};self.player._fast_stream_cache_lock=threading.Lock()
-        self.player._fast_stream_cache_ttl=7200;self.player._youtube_video_id=self.module.Player._youtube_video_id.__get__(self.player)
-        self.player._stream_url_ttl=self.module.Player._stream_url_ttl.__get__(self.player)
+        self.player._fast_stream_cache_ttl=7200;self.player._youtube_video_id=self.module.Player._youtube_video_id
+        self.player._stream_url_ttl=self.module.Player._stream_url_ttl
         self.player._fast_stream_get=self.module.Player._fast_stream_get.__get__(self.player)
         self.player._fast_stream_put=self.module.Player._fast_stream_put.__get__(self.player)
         response=SimpleNamespace(status_code=200,json=lambda:{
@@ -472,7 +472,7 @@ class StreamMetadataTests(unittest.TestCase):
 
     def test_fast_youtube_resolver_restricted_media_falls_back_cleanly(self):
         self.player._fast_stream_cache={};self.player._fast_stream_cache_lock=threading.Lock()
-        self.player._fast_stream_cache_ttl=7200;self.player._youtube_video_id=self.module.Player._youtube_video_id.__get__(self.player)
+        self.player._fast_stream_cache_ttl=7200;self.player._youtube_video_id=self.module.Player._youtube_video_id
         self.player._fast_stream_get=self.module.Player._fast_stream_get.__get__(self.player)
         self.player._fast_stream_put=self.module.Player._fast_stream_put.__get__(self.player)
         response=SimpleNamespace(status_code=200,json=lambda:{'playabilityStatus':{'status':'LOGIN_REQUIRED'}})
