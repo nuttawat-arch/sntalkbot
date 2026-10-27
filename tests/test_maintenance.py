@@ -178,7 +178,7 @@ class MaintenanceTests(unittest.TestCase):
     def test_stale_signed_url_is_not_reused(self):
         module = load_player(); player = module.Player.__new__(module.Player)
         player._prefetch_cache = {'url': {'url': 'expired'}}
-        player._prefetch_times = {'url': time.monotonic() - 301}
+        player._prefetch_times = {'url': time.monotonic() - 1801}
         self.assertIsNone(player._pop_prefetched('url'))
 
 

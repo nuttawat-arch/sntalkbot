@@ -1,8 +1,29 @@
-# SNTalkBot 5.1.31 — Windows Publisher Compatibility Fix
+# SNTalkBot 5.1.34 — เพลงจบแล้วเลื่อนคิวเองและไม่ค้าง Speaking (ยังไม่เผยแพร่)
 
-- Windows ไม่มี `os.geteuid()` จึงแก้ `config.ini.lock` permission handling ให้ใช้เฉพาะ Linux/POSIX
-- แก้ Validator fail จากรายงาน 5.1.30 โดยคง lock mode `0660` บน Linux และข้อมูลบอตทั้งหมด
-- unit tests 85 ผ่าน (มี mock Windows regression), project validator ผ่าน
+- เพิ่มตัวตรวจจับสำรองเมื่อ MPV ไม่ส่ง END_FILE: เช็ก idle ทุก 1 วินาที พร้อม guard กันสลับเพลงซ้ำและข้ามเพลงเก่า; เมื่อมี time-pos หยุดเดินผิดปกติจึงเข้า retry/skip ที่มีอยู่แล้ว
+- คิวเพลงสุดท้ายจบ: ปิดการส่งเสียง TeamTalk, เปลี่ยนสถานะกลับเป็น idle ตามที่ตั้งไว้ และล้าง now-playing; หาก Autoplay ไม่มีเพลงถัดไปให้หยุดอย่างเรียบร้อย
+- อิงแนวคิด final-stop และ watchdog จากซอร์ส TTMediaBot โดยไม่เปลี่ยนระบบ MPV, FFmpeg path, SQLite, cookie 18+ หรือแพลตฟอร์มที่รองรับ
+- รวมงาน 5.1.32–5.1.33 ที่ยังไม่เผยแพร่ (เตรียมเพลงถัดไป + เริ่มเพลงแรกเร็วขึ้น)
+- ออฟไลน์ Unit tests 104 ผ่าน; ต้องทดสอบ TeamTalk/Docker จริงก่อนถือว่ายืนยันแก้อาการบนเซิร์ฟเวอร์แล้ว
+
+---
+
+# SNTalkBot 5.1.33 — Fast First Track / TTMediaBot comparison (ยังไม่เผยแพร่)
+
+- เลือกนำแนวคิดค้นหาผลแรกจำนวนน้อยจาก TTMediaBot มาใช้กับทั้ง Queue Mode และโหมดปกติ; เริ่มเพลงก่อนขอผลค้นหาครบ 50/20 รายการ
+- เติมผลการเลือกเพลงใน background โดยไม่เปลี่ยนเพลงที่กำลังเล่นและไม่เขียนทับคำค้นหา/รายการคิวใหม่
+- รักษาความเข้ากันได้ของ 18+, yt-dlp ทั่วไป, mpv บน Docker, YouTube Music และ Web Manager เดิม
+- ดู `Document/TTMEDIABOT_COMPARISON_TH.md` สำหรับหลักฐานข้อดี/ข้อจำกัดและเหตุผลที่ไม่ย้ายเครื่องเล่น
+
+---
+
+# SNTalkBot 5.1.32 — Playback Handoff Latency Patch (ยังไม่เผยแพร่)
+
+- ลดงาน prefetch เหลือเพลงถัดไปเพียงเพลงเดียวใน Queue และ Playlist เพื่อหลีกเลี่ยงการรอ yt-dlp lock ของเพลงลำดับไกล
+- ปรับ cache ของ metadata ที่เตรียมไว้ให้มีอายุสูงสุด 30 นาที พร้อมตรวจลิงก์ที่มีวันหมดอายุจริงก่อนเล่น
+- เพิ่ม log เตือนการเตรียมเพลงนานกว่า 2 วินาที; ไม่บันทึก URL หรือความลับใน log
+- คงระบบคุกกี้สำหรับคลิปจำกัดอายุและ config lock Windows/Linux ของรุ่น 5.1.31; Web Manager 1.1.29 ไม่ต้องเปลี่ยน
+- ต้องวัดช่องว่างเสียงจริงหลังอัปเดต Docker/TeamTalk; ยังไม่อ้างว่าได้เวลา 0 วินาที
 
 ---
 

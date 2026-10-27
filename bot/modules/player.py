@@ -527,6 +527,33 @@ class PlayerCog:
         self.player.radio_index = len(self.player.radio_history) - 1
         return self._play_next_related(user_id=user_id, announce_private=announce_private, autoplay=autoplay) if self.player.radio_candidates else False
 
+    def _autoplay_related_or_finish(self):
+        """A finished radio track must not leave voice enabled if discovery ends."""
+        try:
+            if self._play_next_related(None, False, True):
+                return
+        except Exception as exc:
+            print(f"Autoplay continuation failed: {type(exc).__name__}: {exc}")
+        self._finish_natural_playback()
+
+    def _finish_natural_playback(self):
+        """Release the TeamTalk microphone and clear stale now-playing state."""
+        self.player.is_playing = False
+        self.player.pause = False
+        self.player.current_link = None
+        self.player.media_title = ""
+        try:
+            self.bot.enableVoiceTransmission(False)
+        except Exception as exc:
+            print(f"Unable to disable TeamTalk voice after playback: {type(exc).__name__}: {exc}")
+        try:
+            self.bot.doChangeStatus(
+                ttstr(self.bot.bot_config['gender']),
+                ttstr(self.bot.get_idle_status_message()),
+            )
+        except Exception as exc:
+            print(f"Unable to set TeamTalk idle status: {type(exc).__name__}: {exc}")
+
     def _play_previous_related(self, user_id=None, announce_private=False):
         if not self._ensure_radio_seed() or self.player.radio_index <= 0:
             if user_id:
@@ -1282,13 +1309,30 @@ class PlayerCog:
     def _search_and_play_task(self, query, user_id, source='youtube'):
         """Search and play with visible failure reporting for async workers."""
         try:
+            search_started = time.monotonic()
+            # The first playable result is sufficient to start mpv. Keeping
+            # the historical 50/20-result search on the critical path makes
+            # every cold start wait for alternatives the listener may not use.
             if source == 'ytmusic':
-                results = self.player.search_ytmusic(query)
+                results = self.player.search_ytmusic(query, limit=1)
             else:
-                results = self.player.search_youtube(query)
+                results = self.player.search_youtube(query, limit=1)
+            needs_expansion = bool(results)
+            if not results:
+                # Keep the historical complete-search recovery when YouTube's
+                # one-hit search temporarily gives no usable result.
+                results = (self.player.search_ytmusic(query) if source == 'ytmusic'
+                           else self.player.search_youtube(query))
+            search_elapsed = time.monotonic() - search_started
+            if search_elapsed >= 2.0:
+                print(f"First-track search took {search_elapsed:.2f}s (source={source})")
 
             if results:
-                self.player.search_results = results
+                # This list object acts as the search-session identity. A
+                # subsequent p/pm creates a different list, so an older
+                # background completion cannot overwrite a newer search.
+                search_session = list(results)
+                self.player.search_results = search_session
                 self.player.current_search_index = 0
                 first_video = results[0]
                 self.player.reset_radio_history(first_video, source)
@@ -1317,6 +1361,8 @@ class PlayerCog:
                 self._log_action(
                     "playback_started", source=source, title=first_video.get("title", ""), mode="search"
                 )
+                if needs_expansion:
+                    self.bot.io_pool.submit(self._expand_active_search_results, query, source, search_session)
             else:
                 print(f"{source} search returned no results for query {query!r}")
                 self._send_playback_message(self._("No results found for '{query}'.").format(query=query), user_id)
@@ -1327,13 +1373,52 @@ class PlayerCog:
                 self._("Error playing track: {error}").format(error=f"{type(exc).__name__}: {exc}"),
             )
 
+    def _expand_active_search_results(self, query, source, search_session):
+        """Load navigation results after playback without hijacking newer p/pm."""
+        try:
+            results = (self.player.search_ytmusic(query) if source == 'ytmusic'
+                       else self.player.search_youtube(query))
+        except Exception as exc:
+            print(f"Background search expansion failed: {type(exc).__name__}")
+            return
+        if not results or self.player.search_results is not search_session:
+            return
+        seen = {str(item.get("link") or "") for item in search_session}
+        for item in results:
+            link = str(item.get("link") or "")
+            if link and link not in seen:
+                seen.add(link)
+                search_session.append(dict(item))
+        if not self.player.queue_mode:
+            self._prefetch_next_for_current()
+
     def _search_and_enqueue_task(self, query, user_id, source='youtube'):
         """Search and enqueue with visible failure reporting for async workers."""
         try:
+            search_started = time.monotonic()
+            # Asking yt-dlp for all 50 search hits before resolving the first
+            # item can noticeably delay a cold queue. Fetch one result first,
+            # start it, then enrich the same queue entry in a separate worker.
+            # A non-empty/busy queue retains the complete original search path.
+            with self.player.queue_lock:
+                fast_start = (
+                    self.player.queue_mode and not self.player.queue
+                    and self.player.queue_index < 0
+                    and not self.player.queue_transition
+                    and not self.player.playback_end_transition
+                    and not self.player.is_playing
+                )
             if source == 'ytmusic':
-                results = self.player.search_ytmusic(query)
+                results = self.player.search_ytmusic(query, limit=1) if fast_start else self.player.search_ytmusic(query)
             else:
-                results = self.player.search_youtube(query)
+                results = self.player.search_youtube(query, limit=1) if fast_start else self.player.search_youtube(query)
+            if fast_start and not results:
+                results = (self.player.search_ytmusic(query) if source == 'ytmusic'
+                           else self.player.search_youtube(query))
+                fast_start = False
+            search_elapsed = time.monotonic() - search_started
+            if search_elapsed >= 2.0:
+                print(f"Queue search took {search_elapsed:.2f}s (source={source}; first_only={fast_start})")
 
             if results:
                 # Keep this result set attached to the queue item instead of only in
@@ -1345,6 +1430,11 @@ class PlayerCog:
                 video["_search_source"] = source
                 queue_range = self._enqueue_queue_items([video], user_id=user_id)
                 start, _end, should_start = queue_range or (None, None, False)
+                expansion_token = None
+                if fast_start and start is not None:
+                    with self.player.queue_lock:
+                        if 0 < start <= len(self.player.queue):
+                            expansion_token = self.player.queue[start - 1].get("_queue_token")
                 user_nickname = self._nickname(user_id)
                 self._send_playback_message(
                     self._("{nickname} added to queue {position}: {title}").format(
@@ -1354,6 +1444,10 @@ class PlayerCog:
                 )
                 self._announce_queue(title=video['title'], start=start, nickname=user_nickname)
                 self._after_queue_enqueue(should_start)
+                if expansion_token:
+                    # The initial play() has already been invoked here. Do not
+                    # delay it while fetching the remaining search alternatives.
+                    self.bot.io_pool.submit(self._expand_queued_search_results, query, source, expansion_token)
                 self._log_action(
                     "queue_added", source=source, position=start or "?", title=video.get("title", "")
                 )
@@ -1366,6 +1460,41 @@ class PlayerCog:
                 user_id,
                 self._("Error playing track: {error}").format(error=f"{type(exc).__name__}: {exc}"),
             )
+
+    def _expand_queued_search_results(self, query, source, queue_token):
+        """Restore full search navigation without delaying first-song playback.
+
+        A queue token, not an array index or URL, identifies the original
+        request. Deleted/replaced entries cannot receive stale search results.
+        """
+        try:
+            results = (self.player.search_ytmusic(query) if source == 'ytmusic'
+                       else self.player.search_youtube(query))
+        except Exception as exc:
+            print(f"Background queue search expansion failed: {type(exc).__name__}")
+            return
+        if not results:
+            return
+        with self.player.queue_lock:
+            for index, entry in enumerate(self.player.queue):
+                if not isinstance(entry, dict) or entry.get("_queue_token") != queue_token:
+                    continue
+                # The quick hit must stay at index 0 even if YouTube changes
+                # ranking between the two searches. Preserve any selection
+                # the user made while the full results were loading.
+                existing = list(entry.get("_search_results") or [])
+                merged = []
+                seen = set()
+                for item in existing + list(results):
+                    link = str(item.get("link") or "") if isinstance(item, dict) else ""
+                    if not link or link in seen:
+                        continue
+                    seen.add(link)
+                    merged.append(dict(item))
+                updated = dict(entry)
+                updated["_search_results"] = merged
+                self.player.queue[index] = updated
+                return
 
     def _play_from_queue(self, index):
         with self.player.queue_lock:
@@ -1610,18 +1739,14 @@ class PlayerCog:
             if self._advance_queue_after_current(remember=queue_has_current and end_reason != "error"):
                 return
             if queue_has_current:
-                self.bot.enableVoiceTransmission(False)
-                status_msg = self.bot.get_idle_status_message()
-                self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
+                self._finish_natural_playback()
                 return
 
         # Queue Mode is isolated from normal Related Radio. If q is still ON but
         # the queue is empty (for example after cq), the current audio may finish
         # naturally but must not fall through into M2/Autoplay recommendations.
         if self.player.queue_mode:
-            self.bot.enableVoiceTransmission(False)
-            status_msg = self.bot.get_idle_status_message()
-            self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
+            self._finish_natural_playback()
             return
 
         # Explicit playlists/channels/favorites keep their authored order. Ordinary
@@ -1629,9 +1754,7 @@ class PlayerCog:
         if self.player.play_mode == 3 and self.player.current_link:
             if end_reason == "error":
                 # Repeat-one must not loop a permanently broken item forever.
-                self.bot.enableVoiceTransmission(False)
-                status_msg = self.bot.get_idle_status_message()
-                self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
+                self._finish_natural_playback()
                 return
             self.bot.io_pool.submit(self._repeat_current_track)
             return
@@ -1639,12 +1762,10 @@ class PlayerCog:
             self.bot.io_pool.submit(self._play_next_from_active_list, None, False)
             return
         if (self.player.play_mode == 2 or self.autoplay_enabled) and self.player.current_link:
-            self.bot.io_pool.submit(self._play_next_related, None, False, True)
+            self.bot.io_pool.submit(self._autoplay_related_or_finish)
             return
 
-        self.bot.enableVoiceTransmission(False)
-        status_msg = self.bot.get_idle_status_message()
-        self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(status_msg))
+        self._finish_natural_playback()
 
 
     def _repeat_current_track(self):
@@ -1807,15 +1928,15 @@ class PlayerCog:
             self.bot.io_pool.submit(self.on_playback_end)
 
     def _prefetch_next_for_current(self):
-        # Queue Mode is independent from playlist/collection state.  A queued
-        # track deliberately clears collection_results before playback, so using
-        # only _get_active_results() here meant item 2 was never actually
-        # prefetched and the end-of-track handoff could block on yt-dlp.
+        # Queue Mode is independent from playlist/collection state.  Resolve
+        # only the immediate successor: yt-dlp extractions share _ydl_lock,
+        # so prefetching songs 3-6 can occupy that lock when song 2 needs a
+        # fresh URL at the handoff.  The next transition schedules song 3.
         if self.player.queue_mode:
             with self.player.queue_lock:
                 start = self.player.queue_index + 1 if self.player.queue_index >= 0 else 0
                 links = [
-                    item.get("link") for item in self.player.queue[start:start + 5]
+                    item.get("link") for item in self.player.queue[start:start + 1]
                     if isinstance(item, dict) and item.get("link")
                 ]
             if links:
@@ -1826,7 +1947,7 @@ class PlayerCog:
         if not results:
             return
         current_index = self._get_active_index()
-        links = [item.get("link") for item in results[current_index + 1: current_index + 6] if item.get("link")]
+        links = [item.get("link") for item in results[current_index + 1: current_index + 2] if item.get("link")]
         self.player.prefetcher.schedule(links)
 
     def handle_history_command(self, textmessage, *args):
@@ -2226,7 +2347,7 @@ class PlayerCog:
             # Keep queue provenance and the private search session while replacing
             # only the selected media fields.  Dashboard snapshots never expose the
             # underscore-prefixed search metadata.
-            for key in ("added_by", "added_by_user_id", "added_at"):
+            for key in ("added_by", "added_by_user_id", "added_at", "_queue_token"):
                 if key in current_entry:
                     video[key] = current_entry[key]
             video["_search_results"] = results

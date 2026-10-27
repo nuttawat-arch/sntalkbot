@@ -1,12 +1,38 @@
-# sntalkbot 5.1.31
+# sntalkbot 5.1.34
 
-## รอบ 27 ต.ค. 2569: Windows Publisher regression hotfix (5.1.31 ยังไม่เผยแพร่)
+## รอบ 27 ต.ค. 2569: Auto-Advance / Clear Speaking State (5.1.34 ยังไม่เผยแพร่)
 
-- **DONE (Root cause):** Windows Publisher เมนู 1 ตรวจ Bot 5.1.30 ล้มที่ `non-interactive config migration regression: module 'os' has no attribute 'geteuid'`; Windows ไม่มี POSIX `os.geteuid()` ซึ่ง Bot `_file_lock` เรียกโดยไม่ตรวจแพลตฟอร์ม
-- **DONE (Code):** จำกัด `fchmod`/`geteuid` เพื่อซ่อม group-write lock เฉพาะ POSIX (`os.name == 'posix'`) และตรวจว่าฟังก์ชันมีจริงก่อนเรียก; ยังรักษา Linux lock mode `0660` และไม่แตะข้อมูลเดิม
-- **DONE (Regression):** เพิ่ม unit test จำลอง Windows ที่ `geteuid` เรียกไม่ได้ และจำกัด test mode `0660` เฉพาะ POSIX; Bot tests **85/85 ผ่าน** บน Linux, project validator ผ่าน
-- **DOING:** ยังต้องรัน Publisher บน Windows จริงอีกครั้งและตรวจ GitHub/Docker/Linux live หลังเผยแพร่; Log ที่แนบเป็น run ล้มก่อน publish
-- **TODO:** ยืนยัน native Windows Python 3.14 validation แทน simulation และ Linux container permissions หลัง deploy
+- **DONE (root-cause risk):** MPV เดิมจะเฝ้าดู idle-active แค่เมื่อไม่มี END_FILE callback; ถ้า END_FILE/START_FILE สูญหายหรือถูกกรองเพราะ entry-id race จึงไม่มีสัญญาณสำรองให้ขยับคิว และ TeamTalk voice/status อาจค้าง
+- **DONE (MPV):** เพิ่ม background watchdog ทุก 1 วินาที แยกจาก event callbacks; กู้ terminal event เมื่อ MPV idle จริงต่อเนื่องหลังเริ่มเล่น, รวมเพลงสั้นที่ได้รับ START_FILE แต่ไม่ได้รับ END_FILE; ป้องกัน generation เก่า/การหยุดเอง/การแจ้งจบซ้ำ; ตั้ง grace 3 วินาทีและ idle เสถียร 1 วินาที
+- **DONE (stalled transport):** ถ้าตำแหน่งเสียงเคยเดินแล้วหยุดเกิน 40 วินาทีขณะไม่ได้กด Pause และไม่ได้รอบัฟเฟอร์ จะเข้า bounded retry/skip เดิม; ถ้าโหลดใหม่ค้าง idle 45 วินาทีโดยไม่เคยเริ่ม จะเข้า error retry แทน; ไม่บังคับข้ามสตรีมที่ไม่มี time-pos
+- **DONE (Queue/TeamTalk):** เมื่อคิวจบและไม่มีเพลงถัดไป ล้าง now-playing ในหน่วยความจำ ปิด voice transmission และตั้ง status idle ตามค่าที่ผู้ใช้กำหนด; รวมเมื่อ Related Radio ไม่มีเพลงต่อหรือเจอข้อผิดพลาดขณะค้นเพลงใหม่
+- **DONE (scope):** ไม่เปลี่ยนไฟล์ config, cookies, SQLite schema, การค้นหา generic URLs, 18+, playlist, MPV/PulseAudio หรือ Web Manager 1.1.29; รวมงานเร่งเพลงแรก/เพลงถัดไป 5.1.32–5.1.33 ที่ยังไม่เผยแพร่
+- **DONE (offline QA):** Unit tests 104/104 ผ่าน รวม watchdog idle/short/stall/pause และคิวสุดท้ายปิด mic+status; validator ผ่าน
+- **DOING (live QA):** ยังต้องฟัง TeamTalk Docker จริงโดยมีเพลงสั้น/ยาว/18+ และตรวจ User State VOICE/ข้อความ status หลังคิวหมด; รุ่น 5.1.31 เป็นรุ่นที่ผู้ใช้พบปัญหา
+- **TODO:** ถ้า TeamTalk บอก speaking หลัง disableVoiceTransmission(False) ให้เก็บ SDK event/server log เพื่อแยกการส่งเสียงจริงกับ state UI ที่รายงานล่าช้า
+
+## รอบ 27 ต.ค. 2569: TTMediaBot comparison / Fast First Track (5.1.33 ยังไม่เผยแพร่)
+
+- **DONE (evidence):** ตรวจซอร์ส `TTMediaBot_v2.3.5.zip` จริง; `bot/app_vars.py` ใน ZIP ระบุ runtime 3.2.4 แม้ชื่อ ZIP เป็น 2.3.5; โครงสร้างเป็น Windows FFmpeg direct PCM ไม่ใช่ Linux/Docker MPV ของเรา
+- **DONE (comparative):** พบการค้นหา YouTube เพียง 4 ผลและ YouTube Music 1 ผลก่อนเล่น, lazy dynamic track, prefetch เฉพาะเพลงถัดไปแบบตั้งเวลา, bounded search/extraction และ watchdog; คงโครงสร้างของเราแล้วเลือกใช้เฉพาะแนวคิดที่ไม่ทำลายฟีเจอร์
+- **DONE (Bot):** เมื่อเริ่มค้นหาเพลงแรกจาก Queue Mode (`p`/`pm`) หรือเล่นโหมดปกติ ให้ดึงผลแรกเพียงรายการเดียวก่อนเริ่ม MPV แล้วค่อยเติมชุดผลค้นหา 50/20 รายการแบบเบื้องหลัง
+- **DONE (observability):** เพิ่มการวัดขั้นค้นหาผลแรกใน `First-track search took` / `Queue search took` แยกจากขั้น yt-dlp resolve ของ MPV โดยไม่เปิดเผยข้อความคำค้นหาหรือ URL ในข้อความเวลา
+- **DONE (data safety):** ป้องกันผลค้นหาเก่าทับคิวด้วย `_queue_token` ป้องกันผลค้นหาโหมดปกติเก่าทับคำสั่งใหม่ด้วย search-session object identity; เก็บ Token ตอนเปลี่ยนผลค้นหาในคิว; รายการทางเลือกยังคงครบเมื่อการโหลดเบื้องหลังเสร็จ
+- **DONE (compatibility):** คงการดึงลิงก์ generic สำหรับ SoundCloud, Twitch, Vimeo และบริการอื่นผ่าน yt-dlp; คง cookies/18+, fallback YouTube Music, MPV/PulseAudio, Server Manager, SQLite และคำสั่งเดิมทั้งหมด
+- **DONE (offline QA):** Unit tests 97/97 และ `tools/validate_project.py` ผ่าน รวมการเริ่มเร็วของทั้งสองโหมด, การเติมผลครบ, fallback เมื่อค้นหาผลแรกไม่สำเร็จ, ยกเลิกการเขียนทับรายการใหม่, SoundCloud/Twitch/Vimeo ผ่าน generic resolver และ cookie-first วิดีโอ 18+
+- **DOING (live QA):** รอทดสอบเวลาจริงของ MPV/YouTube/TeamTalk หลังนำลง Linux/Docker; ยังไม่ได้ยืนยันว่าเริ่มเพลงเป็น 0 วินาที
+- **TODO:** เก็บเวลาที่เสียงออกจริงเพื่อแยกความช้าของ YouTube/yt-dlp, MPV buffer และ Network; พิจารณา watchdog หลังได้บันทึกจากการใช้งานจริง
+
+## รอบ 27 ต.ค. 2569: เร่งเริ่มเพลงและเปลี่ยนเพลง (5.1.32 ยังไม่เผยแพร่)
+
+- **DONE (source):** Prefetch เฉพาะเพลงถัดไปใน Queue Mode และ Playlist ป้องกันการ resolve เพลงลำดับไกลไปแย่งล็อก yt-dlp ตอนเปลี่ยนเพลง
+- **DONE (source):** ขยายอายุข้อมูลเตรียมไว้จาก 5 เป็น 30 นาทีสำหรับเพลงยาว โดยยังตรวจ signed-URL `expire` ล่วงหน้า 60 วินาทีเพื่อไม่ใช้ลิงก์หมดอายุ
+- **DONE (source):** บันทึกเวลาเตรียมเพลง/Prefetch ที่ช้ากว่า 2 วินาทีเพื่อช่วยแยกปัญหา extractor กับ MPV โดยไม่พิมพ์ URL/Cookie; รักษา policy ของวิดีโอจำกัดอายุ
+- **DONE (compatibility):** คงการป้องกันไฟล์ `config.ini.lock` บน Linux พร้อม guard สำหรับ Windows จากรุ่นที่เผยแพร่แล้ว; ไม่แก้ configuration, cookie หรือตัว Web Manager 1.1.29
+- **DONE (release baseline):** ผู้ใช้ส่ง Publisher log ยืนยันว่า Bot 5.1.31 เผยแพร่แล้ว; 5.1.32 เป็นแพตช์ต่อยอด ยังไม่ได้เผยแพร่
+- **DONE (offline QA):** Unit tests 90/90 ผ่าน และ `tools/validate_project.py` ผ่าน รวมการสลับคิว FIFO, URL expiry, cookie-first อายุ 18+ และ file lock ข้ามแพลตฟอร์ม
+- **DOING (live QA):** ตรวจการออกเสียงจริงบน Docker/TeamTalk และวัดช่องว่างเพลงหลังนำแพตช์ขึ้นเท่านั้น
+- **TODO (runtime):** วัดเวลาเริ่มเพลงแรก/ช่องว่างระหว่างเพลงจริง พร้อม log ก่อนปรับ MPV และ yt-dlp เพิ่มเติม เพราะ Publisher log ที่แนบไม่ใช่ performance trace
 
 ## รอบ 27 ต.ค. 2569: Lock File Permission Hotfix (5.1.30 ยังไม่เผยแพร่)
 

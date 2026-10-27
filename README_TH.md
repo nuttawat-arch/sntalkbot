@@ -1,4 +1,4 @@
-> **SNTalkBot 5.1.31:** แก้การตรวจสิทธิ์ไฟล์ล็อกให้ผ่านการตรวจบน Windows และคงระบบตั้งค่า Web Manager บน Linux โดยไม่เปลี่ยน Full/Player/Manager, Queue, Cookies หรือสถานะสด
+> **SNTalkBot 5.1.33 (เตรียมเผยแพร่):** เร่งเริ่มเพลงแรกโดยค้นหา 1 ผลลัพธ์แล้วเล่นทันที ก่อนเติมผลค้นหาที่เหลือแบบเบื้องหลัง ทั้ง YouTube และ YouTube Music; คงการจัดคิว 5.1.32, คุกกี้ 18+, แพลตฟอร์มอื่น และ Web Manager 1.1.29
 
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 

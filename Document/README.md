@@ -1,6 +1,6 @@
 # SNTalkBot
 
-> **SNTalkBot 5.1.31:** cross-platform safe validation of Linux `config.ini.lock` group permission handling for the Web Manager, preserving queue sessions, YouTube cookies, role-aware status, and live Player fields.
+> **SNTalkBot 5.1.34 (unpublished):** recovers missed MPV end events with a guarded playback watchdog, clears TeamTalk voice/status when the queue ends, and preserves the 5.1.32–5.1.33 fast first-track/next-track optimizations. No changes to age-restricted cookies, generic platform support, SQLite FIFO, or Web Manager 1.1.29.
 
 
 Registered commands are prefix-free in both private and channel/broadcast messages (for example `h`, `p song`, `ap on`). A leading `/` remains accepted only for backward compatibility. Admins can disable normal channel-text reactions with `ci off`; an enabled `filter` still moderates received text before the channel-input gate, and `cm on|off|status` independently controls Player announcements sent to the channel.

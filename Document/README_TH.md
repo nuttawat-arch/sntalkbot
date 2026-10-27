@@ -2,7 +2,7 @@
 
 > รุ่นปรับปรุง 26 ตุลาคม 2026: อ่าน `MAINTENANCE_UPDATE_TH.md` สำหรับคุกกี้ส่วนกลางและเวลาล้างแคช
 
-> **SNTalkBot 5.1.31:** ป้องกันไฟล์ `config.ini.lock` เป็น group read-only บน Linux และข้าม `os.geteuid()` บน Windows เพื่อให้ Publisher ตรวจผ่าน โดยรักษาฟีเจอร์เดิมทั้งหมด
+> **SNTalkBot 5.1.34 (เตรียมเผยแพร่):** เร่งเพลงแรกและเพลงถัดไป พร้อม MPV watchdog สำรองและการปิด TeamTalk voice/status เมื่อคิวหมด; ไม่แก้ cookie 18+, SQLite หรือ Web Manager 1.1.29
 
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 

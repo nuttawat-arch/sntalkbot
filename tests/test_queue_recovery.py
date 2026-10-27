@@ -77,6 +77,36 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len(self.player.queue),999);self.assertEqual(self.player.queue[0]['title'],'1')
         self.assertEqual(len(self.player.queue_history),1)
 
+    def test_last_queue_song_releases_voice_and_clears_now_playing(self):
+        self.store.replace_queue([{'title':'last','link':'https://youtube.com/watch?v=last','_queue_token':'last'}])
+        self.player.queue=self.store.queue();self.player.queue_index=0
+        self.player.last_end_reason='eof';self.player.media_title='Last song'
+        self.player.current_link='https://youtube.com/watch?v=last'
+        self.cog.on_playback_end()
+        self.assertEqual(len(self.player.queue),0)
+        self.assertEqual(self.player.queue_index,-1)
+        self.assertEqual(len(self.pool.jobs),0)
+        self.bot.enableVoiceTransmission.assert_called_once_with(False)
+        self.bot.doChangeStatus.assert_called_once_with(0,'idle')
+        self.assertIsNone(self.player.current_link)
+        self.assertEqual(self.player.media_title,'')
+        self.assertFalse(self.player.pause)
+
+    def test_autoplay_without_any_related_song_releases_voice(self):
+        self.store.replace_queue([])
+        self.player.queue=self.store.queue();self.player.queue_index=-1
+        self.player.queue_mode=False;self.player.play_mode=2
+        self.player.last_end_reason='eof'
+        self.cog.autoplay_enabled=False
+        self.cog._play_next_related=Mock(return_value=False)
+        self.cog.on_playback_end()
+        self.assertEqual(len(self.pool.jobs),1)
+        self.pool.run()
+        self.cog._play_next_related.assert_called_once_with(None,False,True)
+        self.bot.enableVoiceTransmission.assert_called_once_with(False)
+        self.bot.doChangeStatus.assert_called_once_with(0,'idle')
+        self.assertIsNone(self.player.current_link)
+
     def test_exhaustion_archives_once_and_duplicate_cannot_delete_next_song(self):
         for _ in range(3):self.fail_again();self.pool.run()
         self.fail_again()
@@ -106,6 +136,25 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len(self.player.queue),999);self.assertFalse(self.plays)
         row=self.store.list_queue_failures()[0];self.assertTrue(row['reason'].startswith('age_auth'))
         self.assertEqual(row['attempts'],1)
+
+    def test_prefetch_prioritizes_only_the_immediate_queue_successor(self):
+        self.player.prefetcher=SimpleNamespace(schedule=Mock())
+        module=load_cog()
+        module.PlayerCog._prefetch_next_for_current(self.cog)
+        self.player.prefetcher.schedule.assert_called_once_with(['https://youtube.com/watch?v=1'])
+        self.assertEqual(self.player.queue_index,0)
+        self.assertEqual(len(self.player.queue),1000)
+
+    def test_collection_prefetch_does_not_block_next_track_with_later_items(self):
+        self.player.queue_mode=False
+        self.player.prefetcher=SimpleNamespace(schedule=Mock())
+        self.cog._get_active_results=lambda:([
+            {'link':f'https://youtube.com/watch?v={i}'} for i in range(8)
+        ],'playlist')
+        self.cog._get_active_index=lambda:2
+        module=load_cog()
+        module.PlayerCog._prefetch_next_for_current(self.cog)
+        self.player.prefetcher.schedule.assert_called_once_with(['https://youtube.com/watch?v=3'])
 
     def test_legacy_queue_token_is_persisted_not_lost_in_dict_copy(self):
         item=self.player.queue[0];item.pop('_queue_token');self.player.queue[0]=item
@@ -181,6 +230,108 @@ class RecoveryTests(unittest.TestCase):
         self.player.search_playlists.assert_not_called()
 
 
+class FastFirstSearchTests(unittest.TestCase):
+    def setUp(self):
+        self.module=load_cog()
+        self.player=SimpleNamespace(
+            queue=[],queue_index=-1,queue_mode=True,queue_lock=threading.RLock(),
+            queue_transition=False,playback_end_transition=False,is_playing=False,
+            search_youtube=Mock(),search_ytmusic=Mock(),
+        )
+        self.pool=Pool()
+        self.bot=SimpleNamespace(io_pool=self.pool,privateMessage=Mock())
+        self.cog=self.module.PlayerCog.__new__(self.module.PlayerCog)
+        self.cog.bot=self.bot;self.cog.player=self.player;self.cog._=lambda value:value
+        self.cog._nickname=lambda user_id:'Listener'
+        self.cog._send_playback_message=Mock();self.cog._announce_queue=Mock()
+        self.cog._after_queue_enqueue=Mock();self.cog._log_action=Mock()
+
+    def test_first_song_uses_one_result_before_full_search_expands(self):
+        full=[{'title':f'Song {i}','link':f'https://youtube.com/watch?v={i}'} for i in range(50)]
+        self.player.search_youtube.side_effect=lambda query,**kwargs: full[:1] if kwargs.get('limit')==1 else full
+        self.cog._search_and_enqueue_task('Thai music',7)
+        self.player.search_youtube.assert_called_once_with('Thai music',limit=1)
+        self.cog._after_queue_enqueue.assert_called_once_with(True)
+        self.assertEqual(len(self.player.queue),1)
+        self.assertEqual(len(self.player.queue[0]['_search_results']),1)
+        self.assertEqual(len(self.pool.jobs),1)
+        self.pool.run()
+        self.assertEqual(len(self.player.queue[0]['_search_results']),50)
+        self.assertEqual(self.player.queue[0]['title'],'Song 0')
+        self.assertEqual(self.player.queue[0]['_search_index'],0)
+
+    def test_background_search_does_not_replace_user_selection_or_stale_queue(self):
+        first={'title':'First','link':'https://youtube.com/watch?v=first'}
+        second={'title':'Second','link':'https://youtube.com/watch?v=second'}
+        self.player.search_youtube.side_effect=lambda query,**kwargs:[first] if kwargs.get('limit')==1 else [second,first]
+        self.cog._search_and_enqueue_task('song',7)
+        original=self.player.queue[0]
+        token=original['_queue_token']
+        # A user's choice must not be silently replaced by a later full search.
+        selected=dict(original,title='Custom selection',link='https://youtube.com/watch?v=custom')
+        self.player.queue[0]=selected
+        self.pool.run()
+        self.assertEqual(self.player.queue[0]['title'],'Custom selection')
+        self.assertEqual(self.player.queue[0]['_queue_token'],token)
+        self.assertEqual(len(self.player.queue[0]['_search_results']),2)
+        # Deleting the original request while the full search is in flight
+        # must never modify another request occupying the same queue index.
+        self.player.queue[0]={'title':'Someone else','link':'https://youtube.com/watch?v=other','_queue_token':'other'}
+        self.cog._expand_queued_search_results('song','youtube',token)
+        self.assertEqual(self.player.queue[0]['title'],'Someone else')
+        self.assertNotIn('_search_results',self.player.queue[0])
+
+    def test_existing_queue_keeps_complete_search_and_ytmusic_intent(self):
+        self.player.queue=[{'title':'Playing','link':'https://youtube.com/watch?v=old','_queue_token':'old'}]
+        self.player.queue_index=0;self.player.is_playing=True
+        result=[{'title':'Music','link':'https://music.youtube.com/watch?v=music'}]
+        self.player.search_ytmusic.return_value=result
+        self.cog._search_and_enqueue_task('music',7,source='ytmusic')
+        self.player.search_ytmusic.assert_called_once_with('music')
+        self.cog._after_queue_enqueue.assert_called_once_with(False)
+        self.assertEqual(len(self.pool.jobs),0)
+        self.assertEqual(self.player.queue[-1]['_search_source'],'ytmusic')
+
+    def test_normal_play_starts_from_first_result_and_restores_full_navigation(self):
+        self.player.queue_mode=False
+        self.player.search_results=[];self.player.current_search_index=0
+        self.player.reset_radio_history=Mock();self.player.play_stream=Mock()
+        self.player.media_title='First';self.player.current_link=None
+        self.bot.bot_config={'gender':0};self.bot.enableVoiceTransmission=Mock()
+        self.bot.doChangeStatus=Mock()
+        self.cog._set_playback_context=Mock()
+        self.cog._announce_track=Mock();self.cog._prefetch_next_for_current=Mock()
+        tracks=[{'title':f'Track {i}','link':f'https://music.youtube.com/watch?v={i}'} for i in range(20)]
+        self.player.search_ytmusic.side_effect=lambda query,**kwargs: tracks[:1] if kwargs.get('limit')==1 else tracks
+        self.cog._search_and_play_task('songs',7,source='ytmusic')
+        self.player.search_ytmusic.assert_called_once_with('songs',limit=1)
+        self.player.play_stream.assert_called_once_with(tracks[0]['link'])
+        self.assertEqual(len(self.player.search_results),1)
+        self.assertEqual(len(self.pool.jobs),1)
+        self.pool.run()
+        self.assertEqual(len(self.player.search_results),20)
+        self.cog._prefetch_next_for_current.assert_called()
+
+    def test_background_normal_search_cannot_overwrite_newer_request(self):
+        self.player.search_results=[{'title':'Newer request','link':'https://youtube.com/watch?v=new'}]
+        newer=self.player.search_results
+        old=[{'title':'Old request','link':'https://youtube.com/watch?v=old'}]
+        self.player.search_youtube.return_value=[{'title':'Stale','link':'https://youtube.com/watch?v=stale'}]
+        self.cog._expand_active_search_results('old','youtube',old)
+        self.assertIs(self.player.search_results,newer)
+        self.assertEqual(len(newer),1)
+
+    def test_one_hit_search_failure_falls_back_without_double_background_search(self):
+        results=[{'title':'Recovered','link':'https://youtube.com/watch?v=ok'},
+                 {'title':'Alternate','link':'https://youtube.com/watch?v=alt'}]
+        self.player.search_youtube.side_effect=lambda query,**kwargs: [] if kwargs.get('limit')==1 else results
+        self.cog._search_and_enqueue_task('recovery',7)
+        self.assertEqual(self.player.search_youtube.call_count,2)
+        self.assertEqual(len(self.player.queue[0]['_search_results']),2)
+        self.cog._after_queue_enqueue.assert_called_once_with(True)
+        self.assertEqual(self.pool.jobs,[])
+
+
 class StreamMetadataTests(unittest.TestCase):
     def setUp(self):
         self.module=load_player();self.player=self.module.Player.__new__(self.module.Player)
@@ -190,6 +341,53 @@ class StreamMetadataTests(unittest.TestCase):
         self.player._prefetch_cache['song']={'url':f'https://cdn.example/audio?expire={int(time.time())+10}'}
         self.player._prefetch_times['song']=time.monotonic()
         self.assertIsNone(self.player._pop_prefetched('song'))
+
+    def test_non_youtube_platforms_still_use_the_generic_media_extractor(self):
+        from contextlib import contextmanager
+        seen=[]
+        self.player._active_cookiefile=lambda:None
+        @contextmanager
+        def extractor(**options):
+            yield SimpleNamespace(extract_info=lambda url,download: (seen.append(url) or {'url':url,'title':'Media'}))
+        self.player._fresh_ydl=extractor
+        links=[
+            'https://soundcloud.com/example/song',
+            'https://www.twitch.tv/videos/123456',
+            'https://vimeo.com/123456',
+        ]
+        for link in links:
+            self.assertEqual(self.player._extract_play_info_resilient(link)['url'],link)
+        self.assertEqual(seen,links)
+
+    def test_prefetch_survives_long_first_song_when_signed_url_is_valid(self):
+        info={'title':'Second','url':f'https://cdn.example/audio?expire={int(time.time())+3600}'}
+        self.player._prefetch_cache['second']=info
+        self.player._prefetch_times['second']=time.monotonic()-600
+        self.assertEqual(self.player._pop_prefetched('second'),info)
+
+    def test_prefetch_still_expires_after_safe_upper_bound(self):
+        self.player._prefetch_cache['second']={'title':'Second','url':'https://cdn.example/audio'}
+        self.player._prefetch_times['second']=time.monotonic()-1801
+        self.assertIsNone(self.player._pop_prefetched('second'))
+
+    def test_prefetched_next_song_starts_without_second_extractor_call(self):
+        link='https://www.youtube.com/watch?v=next'
+        media='https://cdn.example/music?expire='+str(int(time.time())+3600)
+        self.player._prefetch_cache[link]={'title':'Next song','url':media}
+        self.player._prefetch_times[link]=time.monotonic()
+        self.player.pause=False
+        self.player._ydl_lock=threading.Lock()
+        self.player._extract_play_info_resilient=Mock(side_effect=AssertionError('unexpected yt-dlp call'))
+        self.player._requires_temp_download=Mock(return_value=False)
+        self.player._apply_stream_headers=Mock()
+        self.player._arm_end_detection=Mock()
+        self.player._cancel_end_detection=Mock()
+        self.player._mpv_end_event_registered=True
+        self.player.play=Mock()
+        self.player.add_to_recent_history=Mock()
+        self.assertIsNone(self.player.play_stream(link))
+        self.player.play.assert_called_once_with(media)
+        self.player._extract_play_info_resilient.assert_not_called()
 
     def test_transport_headers_are_forwarded_and_reset_for_next_item(self):
         self.player._apply_stream_headers({'http_headers':{'User-Agent':'FixtureBrowser','Referer':'https://youtube.com/','Cookie':'never forward','Origin':'bad\nInjected: value'}})
@@ -220,6 +418,71 @@ class StreamMetadataTests(unittest.TestCase):
         self.player._on_start_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=10)))
         self.player._on_end_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=10,reason=4,error=-13)))
         self.player.end_callback.assert_called_once()
+
+    def _arm_watchdog_fixture(self):
+        self.player._end_dispatch_lock=threading.Lock()
+        self.player.playback_epoch=0
+        self.player._mpv_start_event_registered=True
+        self.player._mpv_end_event_registered=True
+        self.player._intentional_stop=False
+        self.player._end_event_handled=True
+        self.player._active_mpv_entry_id=None
+        self.player.is_playing=True
+        self.player.pause=False
+        self.player.end_callback=Mock()
+        self.player._arm_end_detection()
+
+    def test_watchdog_recovers_eof_when_native_end_event_is_missing(self):
+        self._arm_watchdog_fixture()
+        self.player.idle_active=False
+        self.player._playback_watchdog_tick()
+        self.player.idle_active=True
+        self.player.active_playback_started=time.monotonic()-10
+        self.player._watchdog_idle_since=time.monotonic()-2
+        self.player._playback_watchdog_tick()
+        self.player._playback_watchdog_tick()
+        self.player.end_callback.assert_called_once()
+        self.assertEqual(self.player.last_end_reason,'idle')
+
+    def test_watchdog_does_not_end_a_new_media_during_initial_idle(self):
+        self._arm_watchdog_fixture()
+        self.player.idle_active=True
+        self.player.active_playback_started=time.monotonic()-6
+        self.player._watchdog_idle_since=time.monotonic()-2
+        self.player._playback_watchdog_tick()
+        self.player.end_callback.assert_not_called()
+        self.assertFalse(self.player._end_event_handled)
+
+    def test_watchdog_recovers_very_short_song_with_start_event(self):
+        self._arm_watchdog_fixture()
+        self.player._on_start_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=3)))
+        self.player.idle_active=True
+        self.player.active_playback_started=time.monotonic()-4
+        self.player._watchdog_idle_since=time.monotonic()-2
+        self.player._playback_watchdog_tick()
+        self.player.end_callback.assert_called_once()
+
+    def test_watchdog_retries_transport_frozen_after_audio_progress(self):
+        self._arm_watchdog_fixture()
+        self.player.idle_active=False
+        self.player._watchdog_seen_active=True
+        self.player._watchdog_seen_position=True
+        self.player._watchdog_last_position=35.0
+        self.player._watchdog_last_progress_at=time.monotonic()-41
+        self.module.Player.__getitem__=lambda _self,key: 35.0 if key=='time-pos' else False
+        self.player._playback_watchdog_tick()
+        self.player.end_callback.assert_called_once()
+        self.assertEqual(self.player.last_end_reason,'error')
+
+    def test_watchdog_never_skips_a_manually_paused_song(self):
+        self._arm_watchdog_fixture()
+        self.player.idle_active=False
+        self.player.pause=True
+        self.player._watchdog_seen_position=True
+        self.player._watchdog_last_position=20.0
+        self.player._watchdog_last_progress_at=time.monotonic()-100
+        self.player._playback_watchdog_tick()
+        self.player.end_callback.assert_not_called()
 
     def test_explicit_age_error_does_not_try_anonymous_session(self):
         calls=[];self.player._active_cookiefile=lambda:'fixture'

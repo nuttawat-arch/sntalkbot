@@ -70,13 +70,13 @@ class ConfigWriteTests(unittest.TestCase):
             os.umask(prior_umask)
         self.assertEqual(Path(str(self.path)+'.lock').stat().st_mode & 0o777,0o660)
 
-    def test_bot_lock_does_not_call_missing_windows_geteuid(self):
+    def test_bot_lock_skips_geteuid_for_windows(self):
         simulated_windows_os=Mock(wraps=os)
         simulated_windows_os.name='nt'
         simulated_windows_os.O_CREAT=os.O_CREAT
         simulated_windows_os.O_RDWR=os.O_RDWR
-        simulated_windows_os.geteuid.side_effect=AssertionError('geteuid does not exist on Windows')
-        with patch.object(self.module, 'os', simulated_windows_os):
+        simulated_windows_os.geteuid.side_effect=AssertionError('not available on Windows')
+        with patch.object(self.module,'os',simulated_windows_os):
             with self.handler._file_lock():
                 pass
         simulated_windows_os.geteuid.assert_not_called()

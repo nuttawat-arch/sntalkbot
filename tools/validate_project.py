@@ -1059,7 +1059,9 @@ def validate_player_queue_and_radio_regressions():
         first_player.queue=[{"title":"First","link":"first"},{"title":"Second","link":"second"},{"title":"Third","link":"third"}]
         first_player.queue_index=0; first_player.queue_mode=True
         module.PlayerCog._prefetch_next_for_current(first_cog)
-        assert scheduled == [["second","third"]], scheduled
+        # Resolving remote third/fourth tracks serially can monopolize the
+        # shared yt-dlp lock just as the next song needs it. Only warm item 2.
+        assert scheduled == [["second"]], scheduled
 
         # Exact historical race: mpv already flipped is_playing False, while A is
         # still the active queue item. Adding C must append only; it must not play C.
@@ -1242,8 +1244,8 @@ def validate_player_queue_and_radio_regressions():
             {"title":"Music hit","link":"https://music.youtube.com/watch?v=ym1","source":"ytmusic"},
             {"title":"Music alt","link":"https://music.youtube.com/watch?v=ym2","source":"ytmusic"},
         ]
-        player.search_youtube = lambda query: (youtube_queries.append(str(query)) or [dict(x) for x in youtube_fixture])
-        player.search_ytmusic = lambda query: (music_queries.append(str(query)) or [dict(x) for x in music_fixture])
+        player.search_youtube = lambda query, limit=None: (youtube_queries.append((str(query), limit)) or [dict(x) for x in youtube_fixture[:limit]])
+        player.search_ytmusic = lambda query, limit=None: (music_queries.append((str(query), limit)) or [dict(x) for x in music_fixture[:limit]])
         player.clear_collection = lambda: setattr(player, "collection_results", [])
         player.reset_radio_history = lambda seed, source=None: None
         player.stop_transport = lambda: None
@@ -1261,7 +1263,10 @@ def validate_player_queue_and_radio_regressions():
         original_after_queue_enqueue = cog._after_queue_enqueue
         cog._after_queue_enqueue = lambda should_start: queue_starts.append(bool(should_start))
         cog.handle_play_search_or_pause_command(msg, "รักรักรัก")
-        assert youtube_queries == ["รักรักรัก"] and music_queries == [], (youtube_queries, music_queries)
+        # ImmediatePool also runs the new background expansion synchronously.
+        # The first request must be limited to one hit; the second must restore
+        # the complete result set without delaying the logical first play.
+        assert youtube_queries == [("รักรักรัก", 1), ("รักรักรัก", None)] and music_queries == [], (youtube_queries, music_queries)
         assert len(player.queue) == 1 and player.queue[0]["link"].endswith("v=yt1"), player.queue
         assert player.queue[0].get("_search_source") == "youtube" and len(player.queue[0].get("_search_results") or []) == 2, player.queue[0]
         assert queue_starts == [True], queue_starts
@@ -1274,7 +1279,7 @@ def validate_player_queue_and_radio_regressions():
         player.is_playing = False
         queue_starts.clear()
         cog.handle_ytmusic_search_command(msg, "รักรักรัก")
-        assert youtube_queries == ["รักรักรัก"] and music_queries == ["รักรักรัก"], (youtube_queries, music_queries)
+        assert youtube_queries == [("รักรักรัก", 1), ("รักรักรัก", None)] and music_queries == [("รักรักรัก", 1), ("รักรักรัก", None)], (youtube_queries, music_queries)
         assert len(player.queue) == 1 and "music.youtube.com" in player.queue[0]["link"], player.queue
         assert player.queue[0].get("_search_source") == "ytmusic", player.queue[0]
 
@@ -1289,7 +1294,7 @@ def validate_player_queue_and_radio_regressions():
         player.play_stream = lambda link: (normal_plays.append(str(link)), setattr(player, "media_title", "YouTube hit"))[0]
         cog._after_queue_enqueue = original_after_queue_enqueue
         cog.handle_play_search_or_pause_command(msg, "รักรักรัก")
-        assert youtube_queries == ["รักรักรัก", "รักรักรัก"], youtube_queries
+        assert youtube_queries == [("รักรักรัก", 1), ("รักรักรัก", None)] * 2, youtube_queries
         assert normal_plays == ["https://www.youtube.com/watch?v=yt1"], normal_plays
 
         # Reset the playlist fixture before exercising a second, independent pp case.
@@ -2424,7 +2429,20 @@ if (
 ):
     fail("mpv END_FILE error/EOF dispatch and queue-boundary guard are incomplete")
 else:
-    ok("mpv END_FILE handles asynchronous load failures with a guarded one-shot queue transition; idle-active remains fallback")
+    ok("mpv END_FILE handles asynchronous load failures with a guarded one-shot queue transition")
+
+if (
+    "def _playback_watchdog_tick" not in player_core_source
+    or "expected_epoch=epoch" not in player_core_source
+    or "self._watchdog_stop.wait(1.0)" not in player_core_source
+    or "self._watchdog_seen_start" not in player_core_source
+    or "def _finish_natural_playback" not in player_source
+    or "self.bot.enableVoiceTransmission(False)" not in player_source
+    or "self.player.current_link = None" not in player_source
+):
+    fail("playback watchdog or final TeamTalk idle cleanup is incomplete")
+else:
+    ok("missed MPV END_FILE has a generation-guarded watchdog and exhausted queues release TeamTalk voice/status")
 
 # Queue playback must not retain a stale playlist/radio that could resume after
 # clearing or leaving the queue.

@@ -1,0 +1,35 @@
+# เปรียบเทียบ TTMediaBot กับ SNTalkBot เพื่อแก้เวลาเริ่มเพลง (27 ต.ค. 2569)
+
+## เพิ่มเติมใน SNTalkBot 5.1.34: จบเพลงและปิดไมค์
+
+ใน TTMediaBot เส้นทาง `_handle_track_finished()` ส่งต่อเพลงในคิวทันที; เมื่อไม่มีเพลงถัดไป `stop()` จะล้าง state และ `TTPlayerConnector` รับสถานะ Stopped เพื่อปิด TeamTalk voice transmission. มี watchdog ตรวจเวลาที่ไม่มี PCM เพื่อกู้การเล่นที่ค้างด้วย ใน SNTalkBot เราคง MPV/SQLite เดิม แล้วเพิ่ม watchdog สังเกต `idle-active` และ `time-pos` พร้อม generation/dedup guard ก่อนเรียก callback เดิม; เมื่อจบคิวจริงจัดการ voice, status และ now-playing ให้ครบ. ไม่ย้าย FFmpeg/PCM หรือระบบคิวของ TTMediaBot มาแทน
+
+การตรวจยืนยันนี้ทำจากซอร์ส ZIP และ Unit tests เท่านั้น ยังต้องทดสอบการเปลี่ยนเพลงและสถานะ TeamTalk SDK บนเซิร์ฟเวอร์จริง
+
+ตรวจซอร์สในไฟล์แนบ `TTMediaBot_v2.3.5.zip` จริง ไม่ได้ติดตั้งหรือเรียกใช้งานบอทอ้างอิงบน TeamTalk เซิร์ฟเวอร์จริง หมายเหตุ: `TTMediaBot/bot/app_vars.py` ภายใน ZIP ระบุ `app_version = "3.2.4"` แม้ชื่อ ZIP เขียน `2.3.5`; ใช้โค้ดจริงใน ZIP เป็นหลัก
+
+| ประเด็น | TTMediaBot ตามไฟล์แนบ | SNTalkBot 5.1.33 | การตัดสินใจ |
+| --- | --- | --- | --- |
+| ค้นหา YouTube | `bot/services/yt.py` ใช้ `VideosSearch` จำกัด 4 ผล | `bot/player.py` มีค้นหา 50 ผล | **นำแนวคิดมา:** ค้นผลแรก 1 รายการเพื่อเริ่มก่อน แต่เติมผล 50 ที่เหลือแบบ background หลังเริ่มเล่นแล้ว |
+| ค้นหา YouTube Music | `bot/services/ytm.py` ค้นเพลง 1 รายการ | ค้น 20 ผลและ fallback เป็น URL เพลงจาก YouTube | **นำแนวคิดมา:** เริ่มจาก 1 ผล เติมครบ 20 หลังเริ่ม และรักษา `music.youtube.com` กับ Cookie policy |
+| การเปลี่ยนเพลง | `QueueManager` ใช้ `deque`, `_handle_track_finished()` ส่งต่อการเล่นทันที | Queue Mode ใช้ SQLite-backed queue, ลำดับ FIFO และ retry แยกกรณี | **คงของเรา:** ป้องกัน duplicate end/retry และคิวข้าม restart; รอบ 5.1.32 prefetch เฉพาะเพลงถัดไป |
+| Prefetch | ใช้ dynamic `Track.url`, timer เตรียมก่อนจบประมาณ 120 วินาทีเมื่อทราบ duration | Cache ของ yt-dlp พร้อมตรวจ signed URL expiry และ TTL 30 นาที | **คงของเรา:** ดึงเพลงถัดไปเร็วตั้งแต่เพลงปัจจุบันเริ่มเพราะเหมาะกับเพลงสั้น; ยังไม่ใช้ timer ที่อาจพลาดเพลงสั้นหรือคลิปไม่มี duration |
+| เครื่องเล่น | FFmpeg decode เป็น PCM 48k stereo แล้วส่งตรงผ่าน TeamTalk SDK, เน้น Windows | `python-mpv` / PulseAudio virtual sink บน Linux/Docker | **ไม่แทนที่:** ต้องเปลี่ยนโครงสร้างเสียง/SDK และทดสอบ Server/Docker ใหม่; เสี่ยงต่อการเล่นที่ปัจจุบันใช้งานได้ |
+| อาการเสียงค้าง | มี watchdog นับเวลาที่ไม่มี PCM และ retry เริ่มต้น | มี MPV `END_FILE`/error handling และ queue recovery | **บันทึกไว้พิจารณา:** ต้องวัด event/output ของ MPV ก่อนสร้าง watchdog ไม่ใช่คัดลอกกลไก PCM ที่ใช้ไม่ได้โดยตรง |
+| yt-dlp และการเชื่อมต่อ | ตั้ง timeout การค้นหา/ดึงข้อมูล, retry, streaming ผ่าน downloader | `yt-dlp` ดึง URL, MPV โหลดแยก, รองรับ cookies 18+ | **คงของเรา:** ไม่ตัด cookie-first หรือ retry fallback; เก็บ timings สำหรับระบุที่ช้า แล้วจึงเลือก timeout ที่เหมาะสม |
+| แพลตฟอร์มอื่น | `Streamer` แยก Service ที่รู้จัก + fallback และ HTTP/RTMP/RTSP | yt-dlp รองรับลิงก์ทั่วไป รวม radio/webpage fallback และ URL/playlist | **ไม่จำกัดเพิ่ม:** เส้นทางใหม่ปรับเฉพาะคำสั่งค้นหา `p`/`pm`; URL ของบริการอื่นยังเข้าทางเดิม |
+
+## ข้อควรระวังด้านพฤติกรรม
+
+- การดึงผลแรกอย่างเดียวลดงานค้นหาบน critical path แต่ **ไม่ได้ทำให้ yt-dlp หรือ MPV สั่งเล่นใน 0 ms** เพราะต้องขอ stream URL และบัฟเฟอร์เสียงจากเครือข่ายจริง
+- ระหว่างโหลดทางเลือกครบ 50/20 รายการ การเลือกผลอื่นอาจยังมีเพียงผลแรกชั่วคราว เมื่อโหลดเสร็จแล้วจึงเลือกต่อได้ครบตามเดิม
+- งานค้นหา background จะผูกกับ queue token หรือ search session เพื่อไม่ทับรายการของผู้ใช้คนอื่นและไม่ทับคำสั่งเพลงที่สั่งมาทีหลัง
+- เพลง 18+ ยังคงผ่านกระบวนการ cookie-first; ไม่ให้ข้ามการยืนยันอายุด้วยการสลับกลับเป็น anonymous
+- ไม่มีการคัดลอก FFmpeg player หรือส่วนของซอร์สจาก TTMediaBot มาแทนคลาส Player ของเรา มีเพียงการนำหลักการลดงานก่อนเริ่มเล่นมาปรับใช้
+
+## การวัดผลหลังเผยแพร่
+
+1. ทดสอบเพลงแรกจากข้อความค้นหา `p` และ `pm` ทั้ง Queue Mode และโหมดปกติ
+2. ทดสอบเพลงต่อเนื่องสั้น/ยาว, การกดเปลี่ยนผลค้นหาและเปลี่ยนคำค้นหาก่อน background search เสร็จ
+3. ทดสอบ `u` ด้วยลิงก์เพลง/สตรีมจากแพลตฟอร์มอื่น, การเล่นเพลง 18+, และคำสั่งจัดการเพลงผ่าน Web Manager
+4. เทียบ `Playback preparation took`, `Next-track prefetch took` กับเวลาที่เสียงออกจริง หากยังช้า ให้ตรวจ MPV/network buffering แยกจากเวลาค้นหา

@@ -92,6 +92,13 @@ class Player(mpv.MPV):
         self.active_playback_epoch = 0
         self.active_playback_started = 0.0
         self._terminal_handoff_grace = 0.85
+        self._watchdog_epoch = 0
+        self._watchdog_seen_active = False
+        self._watchdog_seen_start = False
+        self._watchdog_seen_position = False
+        self._watchdog_last_position = None
+        self._watchdog_last_progress_at = 0.0
+        self._watchdog_idle_since = None
         # python-mpv/libmpv reports asynchronous load/playback failures through
         # END_FILE. yt-dlp extraction can succeed even when mpv later rejects the
         # resolved media, so relying only on play() exceptions or idle-active can
@@ -135,6 +142,14 @@ class Player(mpv.MPV):
         except Exception:
             pass
         self.prefetcher = LinkPrefetcher(self.prefetch_stream_info, max_pending=5)
+        # END_FILE callbacks are occasionally lost during libmpv/TeamTalk
+        # transport handoffs. A separate, bounded observer recovers end-of-track
+        # without changing the existing MPV player or its cookie/extractor path.
+        self._watchdog_stop = threading.Event()
+        self._watchdog_thread = threading.Thread(
+            target=self._playback_watchdog_loop, daemon=True, name="SNTalkBot_MPVWatchdog"
+        )
+        self._watchdog_thread.start()
 
     @staticmethod
     def _cookiefile_has_records(path):
@@ -524,7 +539,7 @@ class Player(mpv.MPV):
             item.setdefault("source", source)
         return results
 
-    def search_youtube(self, query):
+    def search_youtube(self, query, limit=50):
         """Search YouTube with independent extractor fallbacks.
 
         ``ytsearch:`` is the established API path and stays primary.  The normal
@@ -534,13 +549,14 @@ class Player(mpv.MPV):
         query = str(query or "").strip()
         if not query:
             return []
-        results = self._search(f"ytsearch50:{query}", limit=50)
+        limit = max(1, min(50, int(limit)))
+        results = self._search(f"ytsearch{limit}:{query}", limit=limit)
         if not results:
             target = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
-            results = self._search(target, limit=50)
+            results = self._search(target, limit=limit)
         return self._tag_source(results, "youtube")
 
-    def search_ytmusic(self, query):
+    def search_ytmusic(self, query, limit=20):
         """Search YouTube Music, with a playable ID fallback via YouTube search.
 
         YouTube Music search has historically had extractor-specific regressions.
@@ -551,10 +567,11 @@ class Player(mpv.MPV):
         query = str(query or "").strip()
         if not query:
             return []
+        limit = max(1, min(20, int(limit)))
         target = f"https://music.youtube.com/search?q={quote_plus(query)}#songs"
-        results = self._search(target, limit=20)
+        results = self._search(target, limit=limit)
         if not results:
-            fallback = self._search(f"ytsearch20:{query}", limit=20)
+            fallback = self._search(f"ytsearch{limit}:{query}", limit=limit)
             results = []
             for item in fallback:
                 item = dict(item)
@@ -1092,6 +1109,13 @@ class Player(mpv.MPV):
             self.last_end_reason = None
             self.last_end_error = 0
             self.last_error_category = None
+            self._watchdog_epoch = self.active_playback_epoch
+            self._watchdog_seen_active = False
+            self._watchdog_seen_start = False
+            self._watchdog_seen_position = False
+            self._watchdog_last_position = None
+            self._watchdog_last_progress_at = self.active_playback_started
+            self._watchdog_idle_since = None
             return self.active_playback_epoch
 
     def _cancel_end_detection(self):
@@ -1099,7 +1123,7 @@ class Player(mpv.MPV):
         with self._end_dispatch_lock:
             self._end_event_handled = True
 
-    def _dispatch_end_once(self, reason="eof", error=0):
+    def _dispatch_end_once(self, reason="eof", error=0, expected_epoch=None):
         """Dispatch one natural/error playback end, deduplicating mpv events.
 
         END_FILE and the legacy idle-active observer can both arrive for one
@@ -1107,6 +1131,8 @@ class Player(mpv.MPV):
         stop/restart events are never treated as completed media.
         """
         with self._end_dispatch_lock:
+            if expected_epoch is not None and expected_epoch != self.active_playback_epoch:
+                return False
             if self._intentional_stop or self._end_event_handled:
                 return False
             self._end_event_handled = True
@@ -1130,6 +1156,80 @@ class Player(mpv.MPV):
         finally:
             self.playback_end_transition = False
         return True
+
+    def _playback_watchdog_tick(self):
+        """Recover a missing END_FILE or an MPV transport that stopped progressing.
+
+        The initial load is allowed up to 45 seconds; short idle handoffs are
+        ignored. A stalled playing track must have demonstrated media progress
+        first, and paused/buffering tracks are never classified as stalled.
+        """
+        with self._end_dispatch_lock:
+            if self._intentional_stop or self._end_event_handled:
+                return
+            epoch = self.active_playback_epoch
+            started = self.active_playback_started
+        now = time.monotonic()
+        try:
+            idle = bool(self.idle_active)
+        except Exception:
+            return
+        try:
+            paused = bool(self.pause) or bool(self["paused-for-cache"])
+        except Exception:
+            paused = bool(getattr(self, "pause", False))
+        position = None
+        if not idle and not paused:
+            try:
+                value = self["time-pos"]
+                if value is not None:
+                    position = float(value)
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            except Exception:
+                pass
+
+        reason = None
+        with self._end_dispatch_lock:
+            if (epoch != self.active_playback_epoch or self._intentional_stop
+                    or self._end_event_handled):
+                return
+            if idle:
+                if self._watchdog_idle_since is None:
+                    self._watchdog_idle_since = now
+                if now - started < 3.0 or now - self._watchdog_idle_since < 1.0:
+                    return
+                if self._watchdog_seen_active or self._watchdog_seen_start:
+                    reason = "idle"
+                elif now - started >= 45.0:
+                    # The new media never reached active playback, and no
+                    # native ERROR arrived. Use the existing bounded retry path.
+                    reason = "error"
+            else:
+                self._watchdog_idle_since = None
+                self._watchdog_seen_active = True
+                if paused:
+                    # Manual pause/cache buffering must not consume stall time.
+                    self._watchdog_last_progress_at = now
+                    return
+                previous = self._watchdog_last_position
+                if position is not None:
+                    if previous is None or abs(position - previous) > 0.2:
+                        self._watchdog_last_position = position
+                        self._watchdog_last_progress_at = now
+                        self._watchdog_seen_position = True
+                    elif self._watchdog_seen_position and now - self._watchdog_last_progress_at >= 40.0:
+                        reason = "error"
+        if reason is not None:
+            if self._dispatch_end_once(reason, -1 if reason == "error" else 0, expected_epoch=epoch):
+                print(f"MPV watchdog recovered missing playback end (reason={reason}, epoch={epoch})")
+
+    def _playback_watchdog_loop(self):
+        while not self._watchdog_stop.wait(1.0):
+            try:
+                self._playback_watchdog_tick()
+            except Exception as exc:
+                print(f"MPV watchdog observation failed: {type(exc).__name__}")
 
     def _terminal_event_looks_stale(self):
         """Return True when a late terminal event belongs to the previous item.
@@ -1160,6 +1260,7 @@ class Player(mpv.MPV):
                 return
             self._active_mpv_entry_id = int(entry_id)
         self._awaiting_mpv_start = False
+        self._watchdog_seen_start = True
 
     def _on_end_file_event(self, event):
         """Handle libmpv END_FILE; ERROR means the current item is unplayable.
@@ -1291,9 +1392,11 @@ class Player(mpv.MPV):
 
     def play_stream(self, link, *, cancel_event=None):
         """Play a URL using yt-dlp, with a direct HTTP stream fallback for radio/stream URLs."""
+        prepare_started = time.monotonic()
         try:
             self.pause = False
             info = self._pop_prefetched(link)
+            from_prefetch = bool(info)
             if not info:
                 try:
                     with self._ydl_lock:
@@ -1304,6 +1407,8 @@ class Player(mpv.MPV):
                         info = self._pop_prefetched(link)
                         if not info:
                             info = self._extract_play_info_resilient(link)
+                        else:
+                            from_prefetch = True
                 except Exception:
                     host = (urlparse(str(link)).hostname or "").lower()
                     if str(link).lower().startswith(("http://", "https://")) and not any(x in host for x in ("youtube.com", "youtu.be", "music.youtube.com")):
@@ -1312,6 +1417,7 @@ class Player(mpv.MPV):
                     raise
             if cancel_event is not None and cancel_event.is_set():
                 return False
+            resolve_seconds = time.monotonic() - prepare_started
             self.media_title = info.get('title') or "Unknown title"
             if self._requires_temp_download(info, link):
                 temp_path = self._download_temp_media(info, link)
@@ -1345,6 +1451,10 @@ class Player(mpv.MPV):
                     self.is_playing = False
                     raise
             self.current_link = link
+            total_seconds = time.monotonic() - prepare_started
+            if total_seconds >= 2.0:
+                print(f"Playback preparation took {total_seconds:.2f}s "
+                      f"(resolve={resolve_seconds:.2f}s; prefetched={from_prefetch})")
             if not self._mpv_end_event_registered:
                 self.observe_property('idle-active', self._on_idle_active)
             self.add_to_recent_history(self.media_title, link)
@@ -1379,7 +1489,11 @@ class Player(mpv.MPV):
         info = self._prefetch_cache.pop(link, None)
         stamps = getattr(self, "_prefetch_times", {})
         stamp = stamps.pop(link, None)
-        if stamp is not None and time.monotonic() - stamp > 300:
+        # Tracks can last well over five minutes. Keep the pre-resolved next
+        # track until handoff, while rejecting actual signed-URL expiration
+        # below. A 30-minute upper bound avoids retaining unknown CDN URLs
+        # indefinitely across long-running radio/playlist sessions.
+        if stamp is not None and time.monotonic() - stamp > 1800:
             return None
         if info:
             try:
@@ -1398,6 +1512,7 @@ class Player(mpv.MPV):
     def prefetch_stream_info(self, link):
         if link in self._prefetch_cache:
             return
+        started = time.monotonic()
         try:
             with self._ydl_lock:
                 # Playback may have populated the cache while this worker waited.
@@ -1411,6 +1526,9 @@ class Player(mpv.MPV):
                 if info:
                     self._prefetch_cache[link] = info
                     self._prefetch_times[link] = time.monotonic()
+            elapsed = time.monotonic() - started
+            if elapsed >= 2.0:
+                print(f"Next-track prefetch took {elapsed:.2f}s (success={bool(info)})")
         except Exception as e:
             print(f"Error prefetching stream: {e}")
             return
@@ -1748,6 +1866,12 @@ class Player(mpv.MPV):
         return total
 
     def close_player(self):
+        watchdog_stop = getattr(self, "_watchdog_stop", None)
+        if watchdog_stop is not None:
+            watchdog_stop.set()
+        watchdog_thread = getattr(self, "_watchdog_thread", None)
+        if watchdog_thread is not None and watchdog_thread.is_alive() and watchdog_thread is not threading.current_thread():
+            watchdog_thread.join(timeout=1.5)
         self.is_playing = False
         try:
             self.prefetcher.close()
