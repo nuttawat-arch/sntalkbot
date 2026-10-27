@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 # yt-dlp flat-search usually returns a page of metadata at once. Keeping a
 # useful first page avoids trapping queue-selection users on a single hit.
-INITIAL_SEARCH_RESULTS = 4
+INITIAL_SEARCH_RESULTS = 1
 
 class PlayerCog:
     """
@@ -1360,7 +1360,7 @@ class PlayerCog:
         """Search and play with visible failure reporting for async workers."""
         try:
             search_started = time.monotonic()
-            # A compact four-result page is enough to navigate immediately,
+            # Start from one result so audio wins the cold-start race,
             # while the historical 50/20 options can arrive in the background.
             if source == 'ytmusic':
                 results = self.player.search_ytmusic(query, limit=INITIAL_SEARCH_RESULTS)
@@ -1445,7 +1445,7 @@ class PlayerCog:
         """Search and enqueue with visible failure reporting for async workers."""
         try:
             search_started = time.monotonic()
-            # Fetch four useful first choices, matching the fast reference player, not
+            # Fetch only the first choice on a cold queue, matching the fastest reference path, not
             # all 50 metadata entries before starting a cold queue.
             # A non-empty/busy queue retains the complete original search path.
             with self.player.queue_lock:
