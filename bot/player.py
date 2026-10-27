@@ -13,6 +13,7 @@ from html.parser import HTMLParser
 from urllib.parse import parse_qs, quote_plus, unquote, urlencode, urljoin, urlparse
 import requests
 import yt_dlp
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from bot.prefetch import LinkPrefetcher
 from bot.cookie_policy import newest_cookie
 from contextlib import contextmanager
@@ -145,18 +146,23 @@ class Player(mpv.MPV):
         self._watchdog_idle_since = None
         self._watchdog_eof_since = None
         self._watchdog_near_end_since = None
-        # python-mpv/libmpv reports asynchronous load/playback failures through
-        # END_FILE. yt-dlp extraction can succeed even when mpv later rejects the
-        # resolved media, so relying only on play() exceptions or idle-active can
-        # leave a Queue item stalled. Register one permanent END_FILE listener and
-        # keep idle-active only as a compatibility fallback for older bindings.
+        # Register every independent terminal signal permanently. Production
+        # libmpv can accept END_FILE registration yet occasionally miss delivery
+        # during a remote-stream handoff. END_FILE, eof-reached, idle-active and
+        # the watchdog all converge on _dispatch_end_once(), so duplicate signals
+        # are harmless while a lost signal no longer freezes Queue autoplay.
         try:
             self.event_callback('START_FILE')(self._on_start_file_event)
             self._mpv_start_event_registered = True
             self.event_callback('END_FILE')(self._on_end_file_event)
             self._mpv_end_event_registered = True
         except Exception as exc:
-            print(f"MPV END_FILE callback unavailable; using idle-active fallback: {exc}")
+            print(f"MPV native event callback unavailable: {exc}")
+        try:
+            self.observe_property('idle-active', self._on_idle_active)
+            self.observe_property('eof-reached', self._on_eof_reached)
+        except Exception as exc:
+            print(f"MPV terminal property observer unavailable; watchdog remains active: {exc}")
         self._temp_cache = {}
         self.cookiefile = (
             cookiefile
@@ -1217,11 +1223,6 @@ class Player(mpv.MPV):
         self.playback_end_transition = True
         try:
             self.is_playing = False
-            if not self._mpv_end_event_registered:
-                try:
-                    self.unobserve_property('idle-active', self._on_idle_active)
-                except Exception:
-                    pass
             if self.end_callback:
                 self.end_callback()
         finally:
@@ -1673,6 +1674,46 @@ class Player(mpv.MPV):
             # Retain compatibility with bindings that cannot change this option.
             print("MPV request headers could not be updated with this binding")
 
+    def _resolve_play_info_fastest(self, link):
+        """Race the lightweight YouTube resolver against the complete yt-dlp path.
+
+        5.1.37 tried the lightweight resolver first and could therefore add its
+        timeout to every cold start when YouTube returned cipher-only formats.
+        Racing both paths preserves full cookie/yt-dlp compatibility without
+        putting the optional fast path on the critical path.
+        """
+        if not self._youtube_video_id(link):
+            return self._extract_play_info_resilient(link)
+
+        executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="SNTalkResolve")
+        futures = {
+            executor.submit(self._resolve_youtube_direct_audio, link): "direct",
+            executor.submit(self._extract_play_info_resilient, link): "ytdlp",
+        }
+        errors = []
+        pending = set(futures)
+        try:
+            while pending:
+                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for future in done:
+                    try:
+                        info = future.result()
+                    except Exception as exc:
+                        errors.append(exc)
+                        continue
+                    if info and info.get("url"):
+                        for other in pending:
+                            other.cancel()
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        return info
+            if errors:
+                raise errors[-1]
+            return None
+        finally:
+            # If no path won, make sure worker resources are reclaimed.
+            if pending or not any(f.done() and not f.cancelled() for f in futures):
+                executor.shutdown(wait=False, cancel_futures=True)
+
     def play_stream(self, link, *, cancel_event=None):
         """Play a URL using yt-dlp, with a direct HTTP stream fallback for radio/stream URLs."""
         prepare_started = time.monotonic()
@@ -1691,13 +1732,7 @@ class Player(mpv.MPV):
                         info = self._pop_prefetched(link)
                         from_prefetch = bool(info)
                     if not info:
-                        # Reference players avoid a full yt-dlp extraction on
-                        # ordinary public YouTube tracks. Try the same bounded
-                        # structured endpoint first, then preserve yt-dlp as the
-                        # complete compatibility/cookie fallback.
-                        info = self._resolve_youtube_direct_audio(link)
-                    if not info:
-                        info = self._extract_play_info_resilient(link)
+                        info = self._resolve_play_info_fastest(link)
                 except Exception:
                     host = (urlparse(str(link)).hostname or "").lower()
                     if str(link).lower().startswith(("http://", "https://")) and not any(x in host for x in ("youtube.com", "youtu.be", "music.youtube.com")):
@@ -1744,8 +1779,6 @@ class Player(mpv.MPV):
             if total_seconds >= 2.0:
                 print(f"Playback preparation took {total_seconds:.2f}s "
                       f"(resolve={resolve_seconds:.2f}s; prefetched={from_prefetch})")
-            if not self._mpv_end_event_registered:
-                self.observe_property('idle-active', self._on_idle_active)
             self.add_to_recent_history(self.media_title, link)
 
         except Exception as e:
@@ -1998,19 +2031,25 @@ class Player(mpv.MPV):
             raise(ValueError)
 
     def _on_idle_active(self, name, value):
-        """Compatibility fallback when python-mpv END_FILE callbacks are unavailable."""
+        """Permanent terminal observer; END_FILE delivery is not trusted alone."""
         if value is not True:
             return
         if self._intentional_stop:
             self.is_playing = False
-            try:
-                self.unobserve_property('idle-active', self._on_idle_active)
-            except Exception:
-                pass
             return
         if self._terminal_event_looks_stale():
             return
         self._dispatch_end_once("idle", 0)
+
+    def _on_eof_reached(self, name, value):
+        """Advance immediately when libmpv exposes eof-reached=True.
+
+        This property is independent from END_FILE and remains observable even
+        when audio-stream-silence keeps the PulseAudio output open.
+        """
+        if value is not True or self._intentional_stop:
+            return
+        self._dispatch_end_once("eof", 0)
 
     def transport_is_active(self):
         """Best-effort real mpv transport state, independent of our callback flag."""
