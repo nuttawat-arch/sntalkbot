@@ -590,6 +590,22 @@ class StreamMetadataTests(unittest.TestCase):
         self.player._on_end_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=10,reason=4,error=-13)))
         self.player.end_callback.assert_called_once()
 
+    def test_native_end_without_start_uses_adopted_entry_id_for_terminal_check(self):
+        # A START_FILE race can leave an already-observed active ID while the
+        # current generation is still awaiting its matching start event. Once
+        # END_FILE proves a different, non-previous entry is current, the local
+        # active-id snapshot must be refreshed or the terminal event is dropped.
+        self._arm_watchdog_fixture()
+        self.player._previous_mpv_entry_id=40
+        self.player._active_mpv_entry_id=41
+        self.player._awaiting_mpv_start=True
+        self.player.idle_active=True
+        self.player._on_end_file_event(SimpleNamespace(
+            data=SimpleNamespace(playlist_entry_id=42,reason=0,error=0)))
+        self.player.end_callback.assert_called_once()
+        self.assertEqual(self.player._active_mpv_entry_id,42)
+        self.assertEqual(self.player.last_end_reason,'eof')
+
     def test_native_end_without_matching_start_advances_new_entry(self):
         # This is the intermittent silent-queue failure: MPV delivers the
         # terminal event for a new unique entry, but START_FILE was missed.
