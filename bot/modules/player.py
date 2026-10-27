@@ -314,6 +314,14 @@ class PlayerCog:
         delay = max(0.0, min(30.0, float(self.bot.playback_config.get("playback_retry_delay", 2.0))))
         if cancel.wait(min(30.0, delay * context["attempt"])):
             return
+        # The delay may run on the general IO pool, but the actual MPV
+        # stop/play sequence must join the same ordered executor as EOF and
+        # manual next. Concurrent retries used to stop a newly selected song.
+        self._submit_playback(self._perform_retry_playback_context, context)
+
+    def _perform_retry_playback_context(self, context):
+        link = str(context.get("link") or "")
+        cancel = context["cancel"]
         with self._ensure_failure_state():
             if self._retry_pending is not context or self._failure_key != context["key"]:
                 return
@@ -352,10 +360,16 @@ class PlayerCog:
             with self._ensure_failure_state():
                 if self._retry_pending is context:
                     self._retry_pending = None
-            if not cancel.is_set():
+            if cancel.is_set():
+                # A manual skip can cancel a retry after it has begun. Leaving
+                # loading_new_track=True here silently discards every future
+                # end-of-song callback (and leaves the queue stuck).
+                self._deferred_playback_end = False
+                self.loading_new_track = False
+            else:
                 self._finish_loading_transition()
         if error is not None and not cancel.is_set():
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
 
     def _teamtalk_voice_tx_active(self):
         """Read our actual TeamTalk voice state when SDK state is available."""
@@ -492,7 +506,7 @@ class PlayerCog:
         finally:
             self._finish_loading_transition()
         if play_error is not None:
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
         return True
 
     def _ensure_radio_seed(self):
@@ -905,7 +919,7 @@ class PlayerCog:
             self.bot.privateMessage(textmessage.nFromUserID, self._("Error playing stream: {e}").format(e=str(e)))
             self._mark_sync_play_error(e)
             self._finish_loading_transition()
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
             return
         finally:
             if self.loading_new_track:
@@ -1134,7 +1148,7 @@ class PlayerCog:
         finally:
             self._finish_loading_transition()
         if play_error is not None:
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
             return
         self._prefetch_next_for_current()
         user_nickname = self._nickname(user_id)
@@ -1273,7 +1287,7 @@ class PlayerCog:
                 if index < 0 or index >= len(self.player.queue):
                     index = 0
                     self.player.queue_index = 0
-            self._play_from_queue(index)
+            self._submit_playback(self._play_from_queue, index)
             return
         link = self.player.current_link
         if not link:
@@ -1300,7 +1314,7 @@ class PlayerCog:
         finally:
             self._finish_loading_transition()
         if play_error is not None:
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
 
     def handle_ytmusic_search_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -1368,7 +1382,7 @@ class PlayerCog:
                         user_id,
                     )
                     self._mark_sync_play_error(e)
-                    self.bot.io_pool.submit(self.on_playback_end)
+                    self._submit_playback(self.on_playback_end)
                     return
                 self._prefetch_next_for_current()
                 user_nickname = self._nickname(user_id)
@@ -1653,7 +1667,7 @@ class PlayerCog:
                 self._play_next_queue_manual(user_id=textmessage.nFromUserID)
             else:
                 self._play_next_related(user_id=textmessage.nFromUserID, announce_private=True)
-        self.bot.io_pool.submit(play_next_track)
+        self._submit_playback(play_next_track)
 
     def handle_previous_track_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -1665,7 +1679,7 @@ class PlayerCog:
                 self._play_previous_queue_manual(user_id=textmessage.nFromUserID)
             else:
                 self._play_previous_related(user_id=textmessage.nFromUserID, announce_private=True)
-        self.bot.io_pool.submit(play_previous_track)
+        self._submit_playback(play_previous_track)
         
     def handle_stop_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -1780,13 +1794,13 @@ class PlayerCog:
                 # Repeat-one must not loop a permanently broken item forever.
                 self._finish_natural_playback()
                 return
-            self.bot.io_pool.submit(self._repeat_current_track)
+            self._submit_playback(self._repeat_current_track)
             return
         if (self.player.play_mode == 2 or self.autoplay_enabled) and self.player.collection_results and self._has_next_in_active_list():
-            self.bot.io_pool.submit(self._play_next_from_active_list, None, False)
+            self._submit_playback(self._play_next_from_active_list, None, False)
             return
         if (self.player.play_mode == 2 or self.autoplay_enabled) and self.player.current_link:
-            self.bot.io_pool.submit(self._autoplay_related_or_finish)
+            self._submit_playback(self._autoplay_related_or_finish)
             return
 
         self._finish_natural_playback()
@@ -1810,7 +1824,7 @@ class PlayerCog:
         finally:
             self._finish_loading_transition()
         if str(getattr(self.player, "last_end_reason", "") or "").lower() == "error":
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
 
     def handle_autoplay_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -1912,7 +1926,7 @@ class PlayerCog:
         finally:
             self._finish_loading_transition()
         if play_error is not None:
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
 
     def _play_previous_from_active_list(self, user_id=None, announce_private=False):
         results, _ = self._get_active_results()
@@ -1949,7 +1963,7 @@ class PlayerCog:
         finally:
             self._finish_loading_transition()
         if play_error is not None:
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
 
     def _prefetch_next_for_current(self):
         # Queue Mode is independent from playlist/collection state.  Resolve
@@ -2229,7 +2243,7 @@ class PlayerCog:
                     self.player.queue_index = 0
                     self.player.queue_transition = True
             if has_next:
-                self._play_from_queue(0)
+                self._submit_playback(self._play_from_queue, 0)
             else:
                 self.loading_new_track = True
                 try:
@@ -2311,7 +2325,7 @@ class PlayerCog:
         finally:
             self._finish_loading_transition()
         if play_error is not None:
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
             return False
         return True
 
@@ -2495,7 +2509,7 @@ class PlayerCog:
         finally:
             self._finish_loading_transition()
         if play_error is not None:
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
 
     def handle_delfav_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -2639,14 +2653,13 @@ class PlayerCog:
         if list_type == "queue":
             try:
                 item = self._skip_queue_to_index(index)
-                self.player.stop_transport()
                 self._send_playback_message(
                     self._("Queue {position} selection changed to: {title}").format(
                         position=index + 1, title=item.get("title", self._("Unknown"))
                     ),
                     textmessage.nFromUserID,
                 )
-                self._play_from_queue(0)
+                self._submit_playback(self._play_from_queue, 0)
             except Exception as exc:
                 self.bot.privateMessage(textmessage.nFromUserID, self._("Error playing track: {error}").format(error=str(exc)))
             return

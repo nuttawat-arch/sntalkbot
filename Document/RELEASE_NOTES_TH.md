@@ -1,4 +1,15 @@
-# SNTalkBot 5.1.35 — คิวเพลงต่อเนื่องและผลค้นหา 12 ทางเลือก (ยังไม่เผยแพร่)
+# SNTalkBot 5.1.36 — แก้เพลงจบแล้วไม่ข้ามคิว (ยังไม่เผยแพร่)
+
+- แก้การยกเลิก retry ระหว่าง yt-dlp extraction แล้วไม่คืนสถานะ `loading_new_track` จน end callback ของเพลงใหม่ไม่ถูกประมวลผล
+- อ่าน MPV `playlist_entry_id` ยืนยัน EOF/ERROR เพลงใหม่แม้ START_FILE callback หาย คง guard เพลงเก่าและ dedupe เดิม
+- เพิ่ม watchdog สำหรับสตรีมมี duration ที่ time-pos ค้างตรงท้ายไฟล์ ≥3s; ไม่กระทบ live/paused/buffering streams
+- สั่ง stop/play จาก retry, manual next/previous, repeat, playlist/normal autoplay และ queue selection ผ่าน playback worker เฉพาะเดียวกัน
+- ตรวจเทียบกับ TT Utilities จาก `tt_utilities-main.zip`, TTMediaBot ที่ผู้ใช้ส่ง และ baseline 5.1.27; ยังคง 12 search results, 18+ cookies, generic URLs, SQLite, TeamTalk และ Web Manager เดิม
+- Unit tests 118 รายการผ่าน; ต้องยืนยัน MPV/PulseAudio/TeamTalk บน Linux จริงหลังเผยแพร่
+
+---
+
+# SNTalkBot 5.1.35 — คิวเพลงต่อเนื่องและผลค้นหา 12 ทางเลือก (เผยแพร่แล้วตาม Publisher log)
 
 - แยก ordered playback worker สำหรับ callback จบเพลง / ส่งต่อคิว / เล่นเพลงแรก / เปลี่ยนผลคิว ไม่ให้รอการค้นหา/download บน io_pool
 - ปรับผลค้นหาเบื้องต้นจาก 1 เป็น 12 ทางเลือกที่เลือกได้เลย ทั้ง YouTube และ YouTube Music; ยังคงเติม 50/20 รายการเต็มใน background

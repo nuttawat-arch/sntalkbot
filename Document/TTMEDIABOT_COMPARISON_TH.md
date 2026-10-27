@@ -1,5 +1,13 @@
 # เปรียบเทียบ TTMediaBot กับ SNTalkBot เพื่อแก้เวลาเริ่มเพลง (27 ต.ค. 2569)
 
+## เพิ่มเติมใน 5.1.36: เทียบ TT Utilities และ SNTalkBot baseline 5.1.27
+
+- ตรวจ `tt_utilities-main.zip` ที่ผู้ใช้อัปโหลดไว้ (อาจเป็นไฟล์ที่เรียกด้วยเสียงว่า GT Unity): `bot/player.py::_register_end_callback` ฟัง `end-file` เหตุผล EOF/ERROR แล้วเรียก callback ทันที; `bot/modules/player.py::on_playback_end` เลือกรายการถัดไปใน thread pool ทั่วไป ไม่มี queue generation guard ของเรา ส่วน `TTMediaBot` จบเพลงผ่าน `_handle_track_finished`/`play_from_queue` และล้างสถานะตอนคิวหมด
+- เทียบ `git show HEAD:bot/player.py` และ `git show HEAD:bot/modules/player.py` จาก baseline 5.1.27 ที่มีจริง: ระบบของเรามี MPV entry-ID filter อยู่ก่อนแล้ว แต่เวอร์ชันต่อมามีทางพิเศษที่ทิ้ง `END_FILE` เมื่อยังรอ `START_FILE` แม้ entry ID จะไม่ใช่เพลงเก่า; เพิ่ม watchdog/retry มากขึ้น แต่พบ `loading_new_track` ไม่ถูกคืนค่าเมื่อยกเลิก retry กลางงาน
+- **เลือกวิธี:** ใช้การส่งต่อ EOF/ERROR ทันทีแบบตัวอ้างอิงเมื่อ `playlist_entry_id` เป็นเพลงใหม่ที่พิสูจน์ได้; ถ้า ID เป็นเพลงเก่ายังต้องทิ้งเพื่อป้องกันข้ามซ้ำ; จัด stop/play และ retry ใน ordered worker เดียว; กู้ MPV ค้างที่เฟรมสุดท้ายแทนการใช้ PCM watchdog ของ TTMediaBot โดยตรง
+- ตรวจจากต้นฉบับ `python-mpv==1.0.8` ใน requirements: `MpvEvent.data` รองรับ `MpvEventEndFile.reason/error/playlist_entry_id` และ `MpvEventStartFile.playlist_entry_id`; การใช้ชื่อ callback `END_FILE`/`START_FILE` แบบปัจจุบันใช้ได้จริง
+- ยังไม่มีหลักฐานว่าแพตช์นี้แก้เวลาที่เสียงเริ่มออกจากอุปกรณ์ TeamTalk ได้ทุกกรณี ต้องทดสอบ Docker/TeamTalk จริง; ไม่ได้ใช้ FFmpeg/PCM หรือ InnerTube ที่ผูกกับแพลตฟอร์มเดียวมาแทนเครื่องเล่นเดิม
+
 ## เพิ่มเติมใน 5.1.35
 
 - TTMediaBot มีช่องทางส่งต่อคิวที่ชัดเจนผ่าน `_handle_track_finished()` และ `play_from_queue()`; นำหลักการแยกงานส่งต่อเพลงออกจากงานค้นหาทั่วไปมาใช้กับ SNTalkBot ด้วย ordered playback worker ไม่ได้ย้าย FFmpeg/PCM หรือ QueueManager ของ TTMediaBot มาแทน

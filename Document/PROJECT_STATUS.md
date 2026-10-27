@@ -1,4 +1,17 @@
-# sntalkbot 5.1.35
+# sntalkbot 5.1.36
+
+## รอบ 27 ต.ค. 2569: MPV Native EOF / Retry Cancellation / Historical Player Audit (5.1.36 ยังไม่เผยแพร่)
+
+- **DONE (หลักฐาน):** ตรวจต้นฉบับ `tt_utilities-main.zip` (`bot/player.py`, `bot/modules/player.py`) และ `TTMediaBot_v2.3.5.zip` รวมถึงซอร์ส Git baseline 5.1.27; สิ่งที่นัทเรียกว่า GT Unity น่าจะเป็น TT Utilities ที่แนบไว้ ไม่พบต้นฉบับชื่อ GT Unity โดยตรง จึงไม่อ้างว่าได้ตรวจตัวนั้นแล้ว
+- **DONE (runtime evidence):** Publisher log ล่าสุดยืนยันว่าผู้ใช้เผยแพร่ SNTalkBot 5.1.35 ผ่าน Docker, ZIP เว็บไซต์ และ GitHub tag; บรรทัด ServerManager ใน log ยังบอกบาง runtime ใช้ 5.1.34 ตอนจบการเผยแพร่ จึงต้องยืนยัน Docker instance ที่กำลังเล่นจริงก่อนตีความผลทดสอบสด
+- **DONE (root cause):** เส้นทางยกเลิก retry ขณะ `play_stream` ทำงานก่อนหน้านี้ไม่เรียก `_finish_loading_transition()` ส่งผล `loading_new_track=True` ค้างถาวร และ callback เพลงจบทุกเพลงหลังจากนั้นถูก defer; `_on_end_file_event` เดิมทิ้ง EOF/ERROR หาก `START_FILE` ยังไม่ถึง แม้ `playlist_entry_id` จะเป็นตัวใหม่ที่พิสูจน์ได้
+- **DONE (fix):** ทำให้ retry หลังรออยู่บน playback executor เดียวกับ end/next/previous เพื่อไม่ให้ retry แข่ง stop/play กับเพลงที่ผู้ใช้เลือก; เคลียร์ `loading_new_track` เมื่อยกเลิก retry ระหว่าง extraction; ใช้ MPV entry ID กู้ EOF/ERROR ของเพลงใหม่เมื่อ START_FILE หาย และคงกรอง stale ID ของเพลงเก่า
+- **DONE (finite stream recovery):** เพิ่ม MPV watchdog ตรวจว่าตำแหน่งเสียงหยุดนิ่งที่ท้ายเพลงจริง (`duration` ทราบ, ต่างไม่เกิน 0.35s, เคยมี progress, ไม่ pause/buffer และค้าง ≥3s) จึงแจ้ง EOF; live/unknown-duration ไม่ถูกข้ามจากเงื่อนไขนี้
+- **DONE (handoff):** normal autoplay, repeat, collection, manual next/previous, sync-error callback และคำสั่ง restart/select/delete queue ส่งงานเล่นลง worker เฉพาะ ไม่เข้าคิวค้นหา/download; คง FIFO/SQLite/TeamTalk API เดิม
+- **DONE (compatibility):** ไม่แก้โครงสร้าง DB, config, cookies, วิดีโอจำกัดอายุ 18+, MPV/PulseAudio output, การค้นหา 12 ผล, แพลตฟอร์มผ่าน generic yt-dlp และ Web Manager 1.1.29
+- **DONE (offline QA):** Unit tests 118/118 ผ่าน รวม cancel-while-retry, missed START_FILE, EOF ที่เฟรมท้ายและ unknown-duration, normal autoplay priority; `tools/validate_project.py` ผ่าน (123 commands/role mappings, Python syntax, schema policy); `git diff --check` และ live QA รอตรวจขั้นสุดท้าย
+- **DOING (Linux validation):** ทดสอบเพลง 3 เพลงต่อเนื่องหลายแหล่ง รวมเพลงสั้น/ยาว/คลิป 18+ และสถานะ speaking เมื่อหมดคิวบน instance ที่ยืนยันว่ารัน 5.1.36 แล้ว พร้อมเก็บเวลา `MPV start-file took` / `Playback preparation took` / `MPV watchdog recovered`
+- **TODO:** ถ้ายังเงียบ ให้เก็บ log runtime ระหว่างเพลงเพื่อแยก yt-dlp network, MPV startup, PulseAudio output และ TeamTalk voice device; การทดสอบออฟไลน์ไม่รับรองการส่งเสียงจริง
 
 ## รอบ 27 ต.ค. 2569: Playback Handoff Priority / 12-Result Selection (5.1.35 ยังไม่เผยแพร่)
 

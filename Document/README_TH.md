@@ -2,7 +2,7 @@
 
 > รุ่นปรับปรุง 26 ตุลาคม 2026: อ่าน `MAINTENANCE_UPDATE_TH.md` สำหรับคุกกี้ส่วนกลางและเวลาล้างแคช
 
-> **SNTalkBot 5.1.35 (เตรียมเผยแพร่):** ส่งต่อคิวผ่านงานเล่นเพลงเฉพาะ, ค้นหา 12 ผลแรกพร้อมเลือก, ไม่ติดงาน prefetch ของเพลงอื่น และตรวจ MPV EOF ซ้ำ; ไม่แก้ cookie 18+, SQLite หรือ Web Manager 1.1.29
+> **SNTalkBot 5.1.36 (เตรียมเผยแพร่):** แก้ callback เพลงจบที่ START_FILE สูญหาย, เฟรมสุดท้ายค้าง และตัวแปรกำลังโหลดค้างเมื่อยกเลิก retry; แยก worker เล่นเพลงเดิม, 12 ผลค้นหา, cookie 18+, SQLite และ Web Manager 1.1.29 ยังอยู่ครบ
 
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 

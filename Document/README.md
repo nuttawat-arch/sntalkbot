@@ -1,6 +1,6 @@
 # SNTalkBot
 
-> **SNTalkBot 5.1.35 (unpublished):** prioritizes queue playback in a dedicated worker, makes 12 search results immediately navigable, removes slow prefetch network I/O from the foreground lock, and supplements MPV EOF recovery. No changes to age-restricted cookies, generic platform support, SQLite FIFO, or Web Manager 1.1.29.
+> **SNTalkBot 5.1.36 (unpublished):** recovers native end-file events even if their start-file event was missed, detects a stalled final audio frame, resets loading state after cancelled retries, and serializes playback/navigation operations. Retains 12-result first-page search, cookies, generic platforms, SQLite FIFO, and Web Manager 1.1.29.
 
 
 Registered commands are prefix-free in both private and channel/broadcast messages (for example `h`, `p song`, `ap on`). A leading `/` remains accepted only for backward compatibility. Admins can disable normal channel-text reactions with `ci off`; an enabled `filter` still moderates received text before the channel-input gate, and `cm on|off|status` independently controls Player announcements sent to the channel.

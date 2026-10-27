@@ -101,6 +101,7 @@ class Player(mpv.MPV):
         self._watchdog_last_progress_at = 0.0
         self._watchdog_idle_since = None
         self._watchdog_eof_since = None
+        self._watchdog_near_end_since = None
         # python-mpv/libmpv reports asynchronous load/playback failures through
         # END_FILE. yt-dlp extraction can succeed even when mpv later rejects the
         # resolved media, so relying only on play() exceptions or idle-active can
@@ -1119,6 +1120,7 @@ class Player(mpv.MPV):
             self._watchdog_last_progress_at = self.active_playback_started
             self._watchdog_idle_since = None
             self._watchdog_eof_since = None
+            self._watchdog_near_end_since = None
             return self.active_playback_epoch
 
     def _cancel_end_detection(self):
@@ -1182,6 +1184,7 @@ class Player(mpv.MPV):
         except Exception:
             paused = bool(getattr(self, "pause", False))
         position = None
+        duration = None
         reached_eof = False
         if not idle and not paused:
             try:
@@ -1194,6 +1197,14 @@ class Player(mpv.MPV):
                 pass
             try:
                 reached_eof = bool(self["eof-reached"])
+            except Exception:
+                pass
+            try:
+                value = self["duration"]
+                if value is not None:
+                    duration = float(value)
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
             except Exception:
                 pass
 
@@ -1220,6 +1231,7 @@ class Player(mpv.MPV):
                     # Manual pause/cache buffering must not consume stall time.
                     self._watchdog_last_progress_at = now
                     self._watchdog_eof_since = None
+                    self._watchdog_near_end_since = None
                     return
                 if reached_eof and self._watchdog_seen_start and now - started >= 2.0:
                     if self._watchdog_eof_since is None:
@@ -1236,6 +1248,20 @@ class Player(mpv.MPV):
                         self._watchdog_seen_position = True
                     elif self._watchdog_seen_position and now - self._watchdog_last_progress_at >= 40.0:
                         reason = "error"
+                # Some remote streams never deliver END_FILE and leave MPV
+                # active at their final audio frame. A known finite duration
+                # lets us recover in seconds, without touching live streams
+                # (unknown duration) or paused/buffering media.
+                if (duration is not None and duration > 0 and position is not None
+                        and self._watchdog_seen_position and position >= duration - 0.35
+                        and position <= duration + 1.0):
+                    if self._watchdog_near_end_since is None:
+                        self._watchdog_near_end_since = now
+                    elif (now - self._watchdog_near_end_since >= 3.0
+                          and now - self._watchdog_last_progress_at >= 3.0):
+                        reason = "eof"
+                else:
+                    self._watchdog_near_end_since = None
         if reason is not None:
             if self._dispatch_end_once(reason, -1 if reason == "error" else 0, expected_epoch=epoch):
                 print(f"MPV watchdog recovered missing playback end (reason={reason}, epoch={epoch})")
@@ -1272,11 +1298,20 @@ class Player(mpv.MPV):
     def _on_start_file_event(self, event):
         entry_id = getattr(getattr(event, "data", None), "playlist_entry_id", None)
         if entry_id is not None:
+            # libmpv assigns unique playlist-entry IDs for the lifetime of
+            # one MPV instance. A late START_FILE for the previous item must
+            # not make its subsequent END_FILE look like the new item's EOF.
             if getattr(self, "_awaiting_mpv_start", False) and int(entry_id) == getattr(self, "_previous_mpv_entry_id", None):
                 return
             self._active_mpv_entry_id = int(entry_id)
         self._awaiting_mpv_start = False
         self._watchdog_seen_start = True
+        try:
+            startup = time.monotonic() - self.active_playback_started
+            if startup >= 2.0:
+                print(f"MPV start-file took {startup:.2f}s (epoch={self.active_playback_epoch})")
+        except Exception:
+            pass
 
     def _on_end_file_event(self, event):
         """Handle libmpv END_FILE; ERROR means the current item is unplayable.
@@ -1289,7 +1324,20 @@ class Player(mpv.MPV):
         entry_id = getattr(data, "playlist_entry_id", None)
         active_id = getattr(self, "_active_mpv_entry_id", None)
         if entry_id is not None and getattr(self, "_awaiting_mpv_start", False):
-            return
+            try:
+                entry_id = int(entry_id)
+            except (TypeError, ValueError):
+                return
+            if entry_id == getattr(self, "_previous_mpv_entry_id", None):
+                return  # Delayed END_FILE from the intentionally stopped item.
+            # Some MPV versions/streams deliver END_FILE for an item whose
+            # START_FILE observer never fired. The event's unique entry ID
+            # still proves it is the new item, so advance instead of leaving
+            # the queue frozen until an eventual watchdog timeout.
+            self._active_mpv_entry_id = entry_id
+            self._awaiting_mpv_start = False
+            self._watchdog_seen_start = True
+            print(f"MPV END_FILE arrived without START_FILE (epoch={self.active_playback_epoch})")
         if entry_id is not None and active_id is not None and int(entry_id) != active_id:
             return
         reason = getattr(data, "reason", None)

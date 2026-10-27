@@ -60,17 +60,17 @@ class RecoveryTests(unittest.TestCase):
     def test_duplicate_callback_before_retry_worker_never_skips(self):
         for _ in range(10):self.cog.on_playback_end()
         self.assertEqual(len(self.pool.jobs),1);self.assertEqual(len(self.player.queue),1000)
-        self.pool.run();self.assertEqual(self.plays,['https://youtube.com/watch?v=0'])
+        self.pool.run();self.pool.run();self.assertEqual(self.plays,['https://youtube.com/watch?v=0'])
         self.player.invalidate_stream_info.assert_called_once_with(self.plays[0])
 
     def test_duplicate_callback_after_success_cannot_advance_fresh_track(self):
-        self.cog.on_playback_end();self.pool.run();self.cog.on_playback_end()
+        self.cog.on_playback_end();self.pool.run();self.pool.run();self.cog.on_playback_end()
         self.assertEqual(len(self.player.queue),1000);self.assertEqual(self.player.queue_index,0)
         self.assertFalse(self.pool.jobs)
 
     def test_transient_failure_can_succeed_on_third_attempt_in_place(self):
-        self.cog.on_playback_end();self.pool.run()
-        self.fail_again();self.pool.run()
+        self.cog.on_playback_end();self.pool.run();self.pool.run()
+        self.fail_again();self.pool.run();self.pool.run()
         self.assertEqual(self.plays,[self.player.current_link]*2)
         self.assertEqual(len(self.player.queue),1000);self.assertEqual(self.store.list_queue_failures(),[])
         self.player.last_end_reason='eof';self.cog.on_playback_end()
@@ -167,7 +167,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertIsNone(self.player.current_link)
 
     def test_exhaustion_archives_once_and_duplicate_cannot_delete_next_song(self):
-        for _ in range(3):self.fail_again();self.pool.run()
+        for _ in range(3):self.fail_again();self.pool.run();self.pool.run()
         self.fail_again()
         for _ in range(10):self.cog.on_playback_end()
         self.assertEqual(len(self.player.queue),999);self.assertEqual(self.player.queue[0]['title'],'1')
@@ -189,6 +189,31 @@ class RecoveryTests(unittest.TestCase):
     def test_changed_context_cancels_queued_retry(self):
         self.cog.on_playback_end();self.cog._set_playback_context('direct','https://example.test/new','new')
         self.pool.run();self.assertFalse(self.plays)
+
+    def test_cancel_during_retry_extraction_never_leaves_loading_flag_stuck(self):
+        self.cog.on_playback_end()
+        context=self.cog._retry_pending
+        self.assertIsNotNone(context)
+        self.player.play_stream=Mock(side_effect=lambda _link,**_kw: context['cancel'].set())
+        self.cog._perform_retry_playback_context(context)
+        self.assertFalse(self.cog.loading_new_track)
+        self.assertFalse(self.cog._deferred_playback_end)
+
+    def test_collection_auto_advance_uses_playback_pool_not_busy_io_pool(self):
+        self.player.queue_mode=False;self.player.queue_index=-1
+        self.player.collection_results=[
+            {'title':'Current','link':self.player.current_link},
+            {'title':'Next','link':'https://youtube.com/watch?v=next'},
+        ]
+        self.player.current_collection_index=0
+        self.player.last_end_reason='eof'
+        dedicated=Pool();self.cog._playback_pool=dedicated
+        self.cog._play_next_from_active_list=Mock()
+        self.cog.on_playback_end()
+        self.assertEqual(self.pool.jobs,[])
+        self.assertEqual(len(dedicated.jobs),1)
+        dedicated.run()
+        self.cog._play_next_from_active_list.assert_called_once_with(None,False)
 
     def test_age_auth_is_retained_without_guest_retry_loop(self):
         self.player.last_error_category='age_auth';self.cog.on_playback_end()
@@ -533,6 +558,38 @@ class StreamMetadataTests(unittest.TestCase):
         self.player._on_end_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=10,reason=4,error=-13)))
         self.player.end_callback.assert_called_once()
 
+    def test_native_end_without_matching_start_advances_new_entry(self):
+        # This is the intermittent silent-queue failure: MPV delivers the
+        # terminal event for a new unique entry, but START_FILE was missed.
+        self._arm_watchdog_fixture()
+        self.player._active_mpv_entry_id=41
+        self.player._arm_end_detection()
+        self.player.idle_active=True
+        self.player._on_end_file_event(SimpleNamespace(
+            data=SimpleNamespace(playlist_entry_id=42,reason=0,error=0)))
+        self.player.end_callback.assert_called_once()
+        self.assertEqual(self.player.last_end_reason,'eof')
+
+    def test_native_error_without_start_is_not_dropped(self):
+        self._arm_watchdog_fixture()
+        self.player._active_mpv_entry_id=51
+        self.player._arm_end_detection()
+        self.player.idle_active=True
+        self.player._on_end_file_event(SimpleNamespace(
+            data=SimpleNamespace(playlist_entry_id=52,reason=4,error=-13)))
+        self.player.end_callback.assert_called_once()
+        self.assertEqual(self.player.last_end_reason,'error')
+
+    def test_old_native_start_id_does_not_adopt_previous_track(self):
+        self._arm_watchdog_fixture()
+        self.player._active_mpv_entry_id=61
+        self.player._arm_end_detection()
+        self.player._on_start_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=61)))
+        self.assertTrue(self.player._awaiting_mpv_start)
+        self.player._on_start_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=62)))
+        self.assertFalse(self.player._awaiting_mpv_start)
+        self.assertEqual(self.player._active_mpv_entry_id,62)
+
     def _arm_watchdog_fixture(self):
         self.player._end_dispatch_lock=threading.Lock()
         self.player.playback_epoch=0
@@ -587,6 +644,35 @@ class StreamMetadataTests(unittest.TestCase):
         self.player._playback_watchdog_tick()
         self.player.end_callback.assert_called_once()
         self.assertEqual(self.player.last_end_reason,'error')
+
+    def test_watchdog_detects_stuck_final_frame_without_native_eof(self):
+        self._arm_watchdog_fixture()
+        self.player.idle_active=False
+        self.player._watchdog_seen_position=True
+        self.player._watchdog_last_position=119.85
+        self.player._watchdog_last_progress_at=time.monotonic()-6
+        self.player._watchdog_near_end_since=time.monotonic()-4
+        self.module.Player.__getitem__=lambda _self,key: {
+            'time-pos':119.85,'duration':120.0,'eof-reached':False,
+            'paused-for-cache':False,
+        }.get(key)
+        self.player._playback_watchdog_tick()
+        self.player.end_callback.assert_called_once()
+        self.assertEqual(self.player.last_end_reason,'eof')
+
+    def test_watchdog_does_not_end_unknown_length_live_stream(self):
+        self._arm_watchdog_fixture()
+        self.player.idle_active=False
+        self.player._watchdog_seen_position=True
+        self.player._watchdog_last_position=119.85
+        self.player._watchdog_last_progress_at=time.monotonic()-6
+        self.player._watchdog_near_end_since=time.monotonic()-4
+        self.module.Player.__getitem__=lambda _self,key: {
+            'time-pos':119.85,'duration':None,'eof-reached':False,
+            'paused-for-cache':False,
+        }.get(key)
+        self.player._playback_watchdog_tick()
+        self.player.end_callback.assert_not_called()
 
     def test_watchdog_never_skips_a_manually_paused_song(self):
         self._arm_watchdog_fixture()
