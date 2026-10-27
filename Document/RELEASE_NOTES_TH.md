@@ -7,7 +7,7 @@
 - แก้ MPV END_FILE race ให้ active entry ID ที่เพิ่งยืนยันใหม่ไม่ถูกเทียบกับ snapshot เก่าแล้วทิ้ง terminal event.
 - เพิ่ม regression tests สำหรับ fast resolver, restricted fallback, adopted entry ID, natural handoff no-stop และ voice-before-play.
 - ยังไม่เปลี่ยน backend เป็น VLC และยังไม่เพิ่ม dependency ใหม่; generic yt-dlp URLs, radio fallback, SQLite queue, 18+ cookies, TeamTalk commands และ Web Manager API เดิมยังคงอยู่.
-- รอบนี้ยังไม่ได้ execute test suite/live TeamTalk เนื่องจากไม่มี runner ที่เข้าถึง checkout; ต้องผ่าน unit tests + validator และ Docker/TeamTalk live gate ก่อน publish.
+- Offline QA จาก complete package ผ่าน Unit tests 123/123 และ `tools/validate_project.py`; ยังต้องฟัง/ทดสอบ Docker + TeamTalk live หลัง publish.
 
 ---
 
