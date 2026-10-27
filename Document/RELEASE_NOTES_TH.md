@@ -1,3 +1,16 @@
+# SNTalkBot 5.1.37 — Realtime Audio Handoff / Fast First Track (source ยังไม่เผยแพร่)
+
+- Queue เปิด TeamTalk voice ก่อนเริ่ม MPV เพื่อไม่ตัดต้นเพลง และไม่สั่ง stop ซ้ำเมื่อเพลงก่อนจบตามธรรมชาติแล้ว.
+- MPV Linux/PulseAudio ใช้ output คงที่ 48 kHz/stereo/s16 + gapless/cache/reconnect ให้ตรงกับ virtual sink ของ SNTalkBot; continuous-silence จำกัดเฉพาะ Pulse backend.
+- ลดผลค้นหาชุดแรกจาก 12 เหลือ 4 แล้วเติมรายการเต็มเบื้องหลัง เพื่อให้เพลงแรกเริ่มเร็วขึ้นโดยยังมีตัวเลือกทันที.
+- เพิ่ม fast public-YouTube direct resolver แบบ bounded พร้อม connection prewarm/keepalive/cache; ถ้าไม่สำเร็จหรือเป็น login/age/content restricted จะกลับ yt-dlp + cookies เดิมทันที.
+- แก้ MPV END_FILE race ให้ active entry ID ที่เพิ่งยืนยันใหม่ไม่ถูกเทียบกับ snapshot เก่าแล้วทิ้ง terminal event.
+- เพิ่ม regression tests สำหรับ fast resolver, restricted fallback, adopted entry ID, natural handoff no-stop และ voice-before-play.
+- ยังไม่เปลี่ยน backend เป็น VLC และยังไม่เพิ่ม dependency ใหม่; generic yt-dlp URLs, radio fallback, SQLite queue, 18+ cookies, TeamTalk commands และ Web Manager API เดิมยังคงอยู่.
+- รอบนี้ยังไม่ได้ execute test suite/live TeamTalk เนื่องจากไม่มี runner ที่เข้าถึง checkout; ต้องผ่าน unit tests + validator และ Docker/TeamTalk live gate ก่อน publish.
+
+---
+
 # SNTalkBot 5.1.36 — แก้เพลงจบแล้วไม่ข้ามคิว (ยังไม่เผยแพร่)
 
 - แก้การยกเลิก retry ระหว่าง yt-dlp extraction แล้วไม่คืนสถานะ `loading_new_track` จน end callback ของเพลงใหม่ไม่ถูกประมวลผล
