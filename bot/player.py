@@ -182,10 +182,16 @@ class Player(mpv.MPV):
             "https://",
             requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=8, max_retries=0),
         )
+        self._stream_keepalive_stop = threading.Event()
         threading.Thread(
             target=self._prewarm_stream_connection,
             daemon=True,
             name="SNTalkBot_YTPrewarm",
+        ).start()
+        threading.Thread(
+            target=self._stream_keepalive_loop,
+            daemon=True,
+            name="SNTalkBot_YTKeepalive",
         ).start()
         self.fade_enabled = self.playback_config.get("fade_enabled", True)
         self.is_stereo_wide = self.playback_config.get("is_stereo_wide", False)
@@ -1391,10 +1397,14 @@ class Player(mpv.MPV):
             # still proves it is the new item, so advance instead of leaving
             # the queue frozen until an eventual watchdog timeout.
             self._active_mpv_entry_id = entry_id
+            # active_id was captured before adopting this proven-new entry.
+            # Refresh it here or the comparison below rejects the very EOF/ERROR
+            # we just accepted whenever the previous track had an entry ID.
+            active_id = entry_id
             self._awaiting_mpv_start = False
             self._watchdog_seen_start = True
             print(f"MPV END_FILE arrived without START_FILE (epoch={self.active_playback_epoch})")
-        if entry_id is not None and active_id is not None and int(entry_id) != active_id:
+        if entry_id is not None and active_id is not None and int(entry_id) != int(active_id):
             return
         reason = getattr(data, "reason", None)
         error = getattr(data, "error", 0)
@@ -1492,6 +1502,14 @@ class Player(mpv.MPV):
             mode = "cookies" if use_cookies else "no-cookies"
             raise RuntimeError(f"yt-dlp extraction failed ({mode}, {candidate}): {exc}") from exc
         raise RuntimeError("yt-dlp extraction returned no playable metadata")
+
+    def _stream_keepalive_loop(self):
+        while not self._stream_keepalive_stop.wait(50.0):
+            try:
+                response = self._stream_http.get("https://www.youtube.com/generate_204", timeout=3)
+                response.close()
+            except Exception:
+                pass
 
     def _prewarm_stream_connection(self):
         """Open YouTube TCP/TLS in the background so the first play is not a cold connection."""
@@ -2136,6 +2154,13 @@ class Player(mpv.MPV):
         if watchdog_thread is not None and watchdog_thread.is_alive() and watchdog_thread is not threading.current_thread():
             watchdog_thread.join(timeout=1.5)
         self.is_playing = False
+        keepalive_stop = getattr(self, "_stream_keepalive_stop", None)
+        if keepalive_stop is not None:
+            keepalive_stop.set()
+        try:
+            self._stream_http.close()
+        except Exception:
+            pass
         try:
             self.prefetcher.close()
         except Exception:
