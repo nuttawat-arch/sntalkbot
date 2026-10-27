@@ -771,15 +771,11 @@ class Player(mpv.MPV):
         except:
             pass
             
-        if self.audio_quality == 'Low':
-            self['audio-samplerate'] = 44100
-            self['audio-channels'] = 'stereo'
-        elif self.audio_quality == 'Medium':
-            self['audio-samplerate'] = 48000
-            self['audio-channels'] = 'stereo'
-        else:
-            self['audio-samplerate'] = 48000
-            self['audio-channels'] = 'auto'
+        # The Linux bridge and TeamTalk path are stereo 48 kHz. Keeping this
+        # invariant avoids an output-device reconfiguration at every handoff.
+        self['audio-samplerate'] = 48000
+        self['audio-channels'] = 'stereo'
+        self['audio-format'] = 's16'
 
     def get_real_vol(self):
         """Return the current mpv volume as a bounded integer."""
@@ -1497,6 +1493,138 @@ class Player(mpv.MPV):
             raise RuntimeError(f"yt-dlp extraction failed ({mode}, {candidate}): {exc}") from exc
         raise RuntimeError("yt-dlp extraction returned no playable metadata")
 
+    def _prewarm_stream_connection(self):
+        """Open YouTube TCP/TLS in the background so the first play is not a cold connection."""
+        try:
+            response = self._stream_http.get("https://www.youtube.com/generate_204", timeout=2)
+            response.close()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _youtube_video_id(link):
+        value = str(link or "").strip()
+        match = re.search(r"(?:[?&]v=|youtu\\.be/|shorts/|embed/|live/)([A-Za-z0-9_-]{11})", value)
+        if match:
+            return match.group(1)
+        if re.fullmatch(r"[A-Za-z0-9_-]{11}", value):
+            return value
+        return None
+
+    @staticmethod
+    def _stream_url_ttl(url):
+        try:
+            expiry = parse_qs(urlparse(str(url or "")).query).get("expire", [None])[0]
+            if expiry is not None:
+                return float(expiry) - time.time()
+        except (ValueError, TypeError):
+            pass
+        return None
+
+    def _fast_stream_get(self, video_id):
+        if not video_id:
+            return None
+        with self._fast_stream_cache_lock:
+            entry = self._fast_stream_cache.get(video_id)
+            if not entry:
+                return None
+            stored_at, ttl, info = entry
+            if time.monotonic() - stored_at >= ttl:
+                self._fast_stream_cache.pop(video_id, None)
+                return None
+            return dict(info)
+
+    def _fast_stream_put(self, video_id, info):
+        if not video_id or not info or not info.get("url"):
+            return
+        ttl = float(self._fast_stream_cache_ttl)
+        expiry_ttl = self._stream_url_ttl(info["url"])
+        if expiry_ttl is not None:
+            ttl = min(ttl, expiry_ttl - 300.0)
+        if ttl <= 0:
+            return
+        with self._fast_stream_cache_lock:
+            if len(self._fast_stream_cache) >= 256:
+                oldest = min(self._fast_stream_cache, key=lambda key: self._fast_stream_cache[key][0])
+                self._fast_stream_cache.pop(oldest, None)
+            self._fast_stream_cache[video_id] = (time.monotonic(), ttl, dict(info))
+
+    def _resolve_youtube_direct_audio(self, link):
+        """Fast public-YouTube path copied conceptually from the reference players.
+
+        It asks YouTube's structured player endpoint for a direct audio URL and
+        deliberately returns None for unavailable/restricted cases. The normal
+        cookie-aware yt-dlp resolver remains authoritative fallback.
+        """
+        video_id = self._youtube_video_id(link)
+        if not video_id:
+            return None
+        cached = self._fast_stream_get(video_id)
+        if cached:
+            return cached
+
+        clients = (
+            ("ANDROID", "21.26.364", "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip", 30),
+            ("ANDROID_VR", "1.60.19", "Mozilla/5.0 (Linux; Android 10; Quest 2) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36", None),
+        )
+        for client_name, client_version, user_agent, sdk_version in clients:
+            client = {
+                "clientName": client_name,
+                "clientVersion": client_version,
+                "hl": "en",
+                "gl": "US",
+            }
+            if sdk_version is not None:
+                client["androidSdkVersion"] = sdk_version
+            try:
+                response = self._stream_http.post(
+                    "https://www.youtube.com/youtubei/v1/player",
+                    json={"videoId": video_id, "context": {"client": client}},
+                    headers={
+                        "User-Agent": user_agent,
+                        "Origin": "https://www.youtube.com",
+                        "Referer": "https://www.youtube.com/",
+                    },
+                    timeout=(2.0, 3.0),
+                )
+                if response.status_code != 200:
+                    continue
+                data = response.json()
+                if (data.get("playabilityStatus") or {}).get("status") != "OK":
+                    continue
+                streaming = data.get("streamingData") or {}
+                formats = list(streaming.get("adaptiveFormats") or [])
+                audio = [
+                    item for item in formats
+                    if item.get("url") and "audio" in str(item.get("mimeType") or "").lower()
+                ]
+                selected = next((item for item in audio if item.get("itag") == 251), None)
+                if selected is None:
+                    selected = next((item for item in audio if item.get("itag") == 140), None)
+                if selected is None and audio:
+                    selected = max(audio, key=lambda item: int(item.get("bitrate") or 0))
+                if selected is None:
+                    progressive = [item for item in (streaming.get("formats") or []) if item.get("url")]
+                    selected = next((item for item in progressive if item.get("itag") == 18), None)
+                if selected is None:
+                    continue
+                info = {
+                    "url": selected["url"],
+                    "title": (data.get("videoDetails") or {}).get("title") or video_id,
+                    "http_headers": {
+                        "User-Agent": user_agent,
+                        "Referer": "https://www.youtube.com/",
+                        "Origin": "https://www.youtube.com",
+                        "Accept-Language": "en-US,en;q=0.9",
+                    },
+                    "_sntalk_fast_resolver": client_name,
+                }
+                self._fast_stream_put(video_id, info)
+                return info
+            except (requests.RequestException, ValueError, TypeError, KeyError):
+                continue
+        return None
+
     def _apply_stream_headers(self, info):
         # yt-dlp resolves the URL; mpv performs a separate HTTP request. Keep
         # relevant request headers consistent, and reset them for EVERY item.
@@ -1528,9 +1656,15 @@ class Player(mpv.MPV):
                     with self._ydl_lock:
                         pending = getattr(self, "_prefetch_inflight", {}).get(link)
                     if pending is not None:
-                        pending.wait(timeout=0.25)
+                        pending.wait(timeout=0.12)
                         info = self._pop_prefetched(link)
                         from_prefetch = bool(info)
+                    if not info:
+                        # Reference players avoid a full yt-dlp extraction on
+                        # ordinary public YouTube tracks. Try the same bounded
+                        # structured endpoint first, then preserve yt-dlp as the
+                        # complete compatibility/cookie fallback.
+                        info = self._resolve_youtube_direct_audio(link)
                     if not info:
                         info = self._extract_play_info_resilient(link)
                 except Exception:
@@ -1642,7 +1776,9 @@ class Player(mpv.MPV):
                 return
             self._prefetch_inflight[link] = pending
         try:
-            info = self._extract_play_info_resilient(link)
+            info = self._resolve_youtube_direct_audio(link)
+            if not info:
+                info = self._extract_play_info_resilient(link)
             with self._ydl_lock:
                 # The expensive network operation ran outside this lock.
                 # Keep only cache writes atomic with foreground playback.
