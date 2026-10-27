@@ -1978,14 +1978,14 @@ _play_url_start = _player_core_for_url.find("    def play_stream(self, link, *, 
 _play_url_end = _player_core_for_url.find("    def fade_out_and_stop", _play_url_start)
 _play_url_block = _player_core_for_url[_play_url_start:_play_url_end]
 if not (
-    "self._extract_play_info_resilient(link)" in _play_url_block
+    "self._resolve_play_info_fastest(link)" in _play_url_block
     and "self._play_resolved_radio(link)" in _play_url_block
-    and _play_url_block.find("self._extract_play_info_resilient(link)")
+    and _play_url_block.find("self._resolve_play_info_fastest(link)")
         < _play_url_block.find("self._play_resolved_radio(link)")
 ):
-    fail("URL resolver order changed: resilient yt-dlp extraction must run before radio webpage fallback")
+    fail("URL resolver order changed: the YouTube resolver race must run before radio webpage fallback")
 else:
-    ok("URL playback keeps resilient yt-dlp extraction first and bounded webpage resolution as fallback")
+    ok("URL playback races YouTube direct/yt-dlp resolution before bounded radio webpage fallback")
 
 _queue_module_core = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
 _queue_url_start = _queue_module_core.find("    def _enqueue_url_task(self, link, user_id):")
@@ -2009,7 +2009,7 @@ _play_end = _player_core.find("def fade_out_and_stop", _play_start)
 _play_block = _player_core[_play_start:_play_end]
 if (_play_block.count("self._pop_prefetched(link)") < 2
     or "pending.wait(timeout=0.12)" not in _play_block
-    or "info = self._extract_play_info_resilient(link)" not in _play_block):
+    or "info = self._resolve_play_info_fastest(link)" not in _play_block):
     fail("foreground playback does not bypass slow background prefetch")
 else:
     ok("foreground playback waits at most 120ms for same-link prefetch and races direct/yt-dlp resolvers instead of serially adding fast-path latency")
