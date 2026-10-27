@@ -24,12 +24,51 @@ class MediaAccessError(RuntimeError):
 class Player(mpv.MPV):
     def __init__(self, config_handler, cookiefile=None, state_store=None, *args, **kwargs):
         # Linux/Docker launchers set TTUTIL_MPV_AO=pulse so MPV sends audio to
-        # the virtual PulseAudio sink. Leave it unset on desktop systems to let
-        # mpv choose the native audio output automatically.
+        # the virtual PulseAudio sink. Keep one fixed audio format and keep the
+        # audio stream alive across track boundaries. The production null sink is
+        # 48 kHz / stereo, so this avoids closing/reopening or renegotiating the
+        # PulseAudio device every time two songs use different native formats.
         mpv_ao = os.getenv("TTUTIL_MPV_AO", "").strip()
-        if mpv_ao and "ao" not in kwargs:
-            kwargs["ao"] = mpv_ao
-        super().__init__(ytdl=False, vo='null', video=False, *args, **kwargs)
+        mpv_options = {
+            "ytdl": False,
+            "vo": "null",
+            "video": False,
+            "gapless_audio": "yes",
+            "audio_samplerate": 48000,
+            "audio_channels": "stereo",
+            "audio_format": "s16",
+            "audio_buffer": 0.5,
+            "audio_stream_silence": "yes",
+            "cache": "yes",
+            "cache_pause": "no",
+            "cache_pause_initial": "no",
+            "demuxer_thread": "yes",
+            "demuxer_max_bytes": 64 * 1024 * 1024,
+            "demuxer_max_back_bytes": 16 * 1024 * 1024,
+            "demuxer_readahead_secs": 30,
+            "demuxer_seekable_cache": "yes",
+            "stream_lavf_o": "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5",
+            "network_timeout": 30,
+        }
+        if mpv_ao:
+            mpv_options["ao"] = mpv_ao
+        mpv_options.update(kwargs)
+        try:
+            super().__init__(*args, **mpv_options)
+        except Exception:
+            # libmpv builds differ slightly across Linux distributions. Keep
+            # fixed-format/gapless audio, but retry without optional cache knobs
+            # rather than failing the whole bot because one option is unavailable.
+            for option in (
+                "audio_stream_silence",
+                "cache_pause_initial",
+                "demuxer_seekable_cache",
+                "demuxer_max_back_bytes",
+                "stream_lavf_o",
+                "network_timeout",
+            ):
+                mpv_options.pop(option, None)
+            super().__init__(*args, **mpv_options)
         self.config_handler = config_handler
         self.state_store = state_store
         self.playback_config = self.config_handler.get_playback_config()
@@ -127,6 +166,27 @@ class Player(mpv.MPV):
             "defaults", "cookies.txt"
         )
         self.ytdlp_config = self.config_handler.get_ytdlp_config()
+        # Fast public-YouTube resolver. It is deliberately only a first attempt:
+        # private/age-gated/special media still falls through to the existing
+        # cookie-aware yt-dlp path, and non-YouTube services never enter it.
+        self._fast_stream_cache = {}
+        self._fast_stream_cache_lock = threading.Lock()
+        self._fast_stream_cache_ttl = 7200.0
+        self._stream_http = requests.Session()
+        self._stream_http.headers.update({
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Content-Type": "application/json",
+        })
+        self._stream_http.mount(
+            "https://",
+            requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=8, max_retries=0),
+        )
+        threading.Thread(
+            target=self._prewarm_stream_connection,
+            daemon=True,
+            name="SNTalkBot_YTPrewarm",
+        ).start()
         self.fade_enabled = self.playback_config.get("fade_enabled", True)
         self.is_stereo_wide = self.playback_config.get("is_stereo_wide", False)
         self.is_stereo_echo = self.playback_config.get("is_stereo_echo", False)
