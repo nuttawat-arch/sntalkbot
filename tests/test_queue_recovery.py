@@ -357,14 +357,14 @@ class FastFirstSearchTests(unittest.TestCase):
         self.cog._send_playback_message=Mock();self.cog._announce_queue=Mock()
         self.cog._after_queue_enqueue=Mock();self.cog._log_action=Mock()
 
-    def test_first_song_exposes_four_alternatives_before_full_search_expands(self):
+    def test_first_song_starts_from_one_result_before_full_search_expands(self):
         full=[{'title':f'Song {i}','link':f'https://youtube.com/watch?v={i}'} for i in range(50)]
-        self.player.search_youtube.side_effect=lambda query,**kwargs: full[:4] if kwargs.get('limit')==4 else full
+        self.player.search_youtube.side_effect=lambda query,**kwargs: full[:1] if kwargs.get('limit')==1 else full
         self.cog._search_and_enqueue_task('Thai music',7)
-        self.player.search_youtube.assert_called_once_with('Thai music',limit=4)
+        self.player.search_youtube.assert_called_once_with('Thai music',limit=1)
         self.cog._after_queue_enqueue.assert_called_once_with(True)
         self.assertEqual(len(self.player.queue),1)
-        self.assertEqual(len(self.player.queue[0]['_search_results']),4)
+        self.assertEqual(len(self.player.queue[0]['_search_results']),1)
         self.assertEqual(len(self.pool.jobs),1)
         self.pool.run()
         self.assertEqual(len(self.player.queue[0]['_search_results']),50)
@@ -374,7 +374,7 @@ class FastFirstSearchTests(unittest.TestCase):
     def test_background_search_does_not_replace_user_selection_or_stale_queue(self):
         first={'title':'First','link':'https://youtube.com/watch?v=first'}
         second={'title':'Second','link':'https://youtube.com/watch?v=second'}
-        self.player.search_youtube.side_effect=lambda query,**kwargs:[first] if kwargs.get('limit')==4 else [second,first]
+        self.player.search_youtube.side_effect=lambda query,**kwargs:[first] if kwargs.get('limit')==1 else [second,first]
         self.cog._search_and_enqueue_task('song',7)
         original=self.player.queue[0]
         token=original['_queue_token']
@@ -413,11 +413,11 @@ class FastFirstSearchTests(unittest.TestCase):
         self.cog._set_playback_context=Mock()
         self.cog._announce_track=Mock();self.cog._prefetch_next_for_current=Mock()
         tracks=[{'title':f'Track {i}','link':f'https://music.youtube.com/watch?v={i}'} for i in range(20)]
-        self.player.search_ytmusic.side_effect=lambda query,**kwargs: tracks[:4] if kwargs.get('limit')==4 else tracks
+        self.player.search_ytmusic.side_effect=lambda query,**kwargs: tracks[:1] if kwargs.get('limit')==1 else tracks
         self.cog._search_and_play_task('songs',7,source='ytmusic')
-        self.player.search_ytmusic.assert_called_once_with('songs',limit=4)
+        self.player.search_ytmusic.assert_called_once_with('songs',limit=1)
         self.player.play_stream.assert_called_once_with(tracks[0]['link'])
-        self.assertEqual(len(self.player.search_results),4)
+        self.assertEqual(len(self.player.search_results),1)
         self.assertEqual(len(self.pool.jobs),1)
         self.pool.run()
         self.assertEqual(len(self.player.search_results),20)
@@ -435,7 +435,7 @@ class FastFirstSearchTests(unittest.TestCase):
     def test_first_page_search_failure_falls_back_without_double_background_search(self):
         results=[{'title':'Recovered','link':'https://youtube.com/watch?v=ok'},
                  {'title':'Alternate','link':'https://youtube.com/watch?v=alt'}]
-        self.player.search_youtube.side_effect=lambda query,**kwargs: [] if kwargs.get('limit')==4 else results
+        self.player.search_youtube.side_effect=lambda query,**kwargs: [] if kwargs.get('limit')==1 else results
         self.cog._search_and_enqueue_task('recovery',7)
         self.assertEqual(self.player.search_youtube.call_count,2)
         self.assertEqual(len(self.player.queue[0]['_search_results']),2)
@@ -574,6 +574,20 @@ class StreamMetadataTests(unittest.TestCase):
             self.player.play.assert_called_once()
         finally:
             release.set();worker.join(2);timer.join(2)
+
+    def test_eof_property_observer_dispatches_without_end_file(self):
+        self._arm_watchdog_fixture()
+        self.player._on_eof_reached('eof-reached', True)
+        self.player.end_callback.assert_called_once()
+        self.assertEqual(self.player.last_end_reason,'eof')
+
+    def test_idle_observer_remains_permanent_after_intentional_stop(self):
+        self._arm_watchdog_fixture()
+        self.player._intentional_stop=True
+        self.player.unobserve_property=Mock()
+        self.player._on_idle_active('idle-active', True)
+        self.player.unobserve_property.assert_not_called()
+        self.player.end_callback.assert_not_called()
 
     def test_native_eof_property_recovers_when_idle_never_flips(self):
         self._arm_watchdog_fixture()
