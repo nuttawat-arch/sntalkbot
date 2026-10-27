@@ -1585,7 +1585,13 @@ class Player(mpv.MPV):
             ("ANDROID", "21.26.364", "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip", 30),
             ("ANDROID_VR", "1.60.19", "Mozilla/5.0 (Linux; Android 10; Quest 2) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36", None),
         )
+        # This is an optimization, never a new blocking dependency. If the
+        # lightweight endpoint is not immediately useful, hand control back to
+        # yt-dlp rather than making the first song slower than the old path.
+        deadline = time.monotonic() + 1.4
         for client_name, client_version, user_agent, sdk_version in clients:
+            if time.monotonic() >= deadline:
+                break
             client = {
                 "clientName": client_name,
                 "clientVersion": client_version,
@@ -1603,12 +1609,15 @@ class Player(mpv.MPV):
                         "Origin": "https://www.youtube.com",
                         "Referer": "https://www.youtube.com/",
                     },
-                    timeout=(2.0, 3.0),
+                    timeout=(0.5, 0.7),
                 )
                 if response.status_code != 200:
                     continue
                 data = response.json()
-                if (data.get("playabilityStatus") or {}).get("status") != "OK":
+                playability = (data.get("playabilityStatus") or {}).get("status")
+                if playability != "OK":
+                    if playability in {"LOGIN_REQUIRED", "AGE_CHECK_REQUIRED", "CONTENT_CHECK_REQUIRED"}:
+                        break
                     continue
                 streaming = data.get("streamingData") or {}
                 formats = list(streaming.get("adaptiveFormats") or [])
