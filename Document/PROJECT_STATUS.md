@@ -1,4 +1,15 @@
-# sntalkbot 5.1.37
+# sntalkbot 5.1.38
+
+## รอบ 28 ต.ค. 2569: Redundant EOF / Resolver Race / Fast Discovery (5.1.38 source)
+
+- **DONE (runtime evidence):** 5.1.37 ถูก publish จริงแล้ว: Docker tag `5.1.37` และ `latest` เป็น digest เดียวกัน, ZIP/เว็บไซต์สำเร็จ, tag `v5.1.37` ถูก push และ ServerManager broadcast แจ้งรุ่นใหม่ จึงตัดสมมติฐานว่า instance เห็น source เก่าออกจาก root cause รอบนี้.
+- **DONE (reference audit):** เปิดซอร์ส TikTok Music Player ที่ผู้ใช้อัปโหลดจริง: VLC ผูก `MediaPlayerEndReached -> play_next` บน daemon thread, `MediaPlayerPlaying` เรียก prefetch เพลงถัดไป, และ queue เริ่ม prefetch ตั้งแต่ item ยัง Waiting. YouTubeService ใช้ flat yt-dlp search แบบเบา (socket timeout 12s, retries/extractor retries 2) และ cache metadata; TTMediaBot reference แยก search ออกจาก full stream extraction และใช้ timeout 5s.
+- **DONE (root cause - auto next):** 5.1.37 ลงทะเบียน MPV END_FILE ได้จึงไม่เปิด idle observer แบบถาวร; production สามารถลงทะเบียน callback สำเร็จแต่พลาด delivery ระหว่าง remote-stream handoff ได้ ทำให้ callback queue ไม่เกิด แม้ manual `n` จะใช้ queue state machine เดียวกันแล้วเล่นเพลงถัดไปได้.
+- **DONE (fix - terminal redundancy):** เปิด permanent `idle-active` และ `eof-reached` observers ตลอดเวลา ควบคู่ END_FILE + watchdog; ทุกสัญญาณรวมที่ `_dispatch_end_once()` จึง dedupe ได้และไม่มี terminal signal ตัวเดียวเป็น single point of failure. intentional stop ไม่ unobserve idle อีกต่อไป.
+- **DONE (root cause - first track):** fast resolver 5.1.37 ทำงานแบบ serial ก่อน yt-dlp; ถ้า YouTube คืน cipher-only/no direct URL จะเพิ่ม timeout เข้า cold start. Text search ยัง cookie-first และใช้ retry/timeout แบบ playback หนักกว่าตัวอ้างอิง.
+- **DONE (fix - first track):** direct resolver กับ cookie-aware yt-dlp แข่งพร้อมกันและใช้ผล playable ตัวแรก; cold search ขอผลแรกเพียง 1 รายการแล้วเติมรายการเต็ม background; metadata search ใช้ public/no-cookie ก่อน cookie fallback และ flat-search timeout/retry จำกัด 12s/2 ครั้ง โดย playback 18+ ยัง cookie-first ตามเดิม.
+- **DONE (offline QA):** complete-package test tree ผ่าน Unit tests 125/125 และ `python tools/validate_project.py` ผ่านครบ รวม regression ของ eof-reached without END_FILE, permanent idle observer, one-result cold start, resolver race และ prefetch-lock isolation.
+- **DOING (live QA):** ต้อง publish 5.1.38 แล้ววัด `p`/`pm` เพลงแรก, Queue 3+ เพลงจนจบเองหลายรอบ, manual `n`, 18+ cookie, และ log terminal signal บน Docker/TeamTalk จริง. ถ้ายังช้ากว่า reference มาก ให้พิจารณาแยก search backend แบบ `VideosSearch`/YTMusic API เป็นขั้นถัดไป ไม่ย้อนกลับไปเพิ่ม timeout/watchdog แบบสุ่ม.
 
 ## รอบ 28 ต.ค. 2569: Realtime Audio Handoff / Fast Resolver / Reference Player Audit (5.1.37 source)
 
