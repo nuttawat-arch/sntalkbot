@@ -1,4 +1,18 @@
-# sntalkbot 5.1.36
+# sntalkbot 5.1.37
+
+## รอบ 28 ต.ค. 2569: Realtime Audio Handoff / Fast Resolver / Reference Player Audit (5.1.37 source)
+
+- **DONE (reference audit):** ตรวจไฟล์ที่ผู้ใช้อัปโหลดรอบนี้จริง: TikTok Live Reader/Music Player ใช้ VLC `MediaPlayerEndReached` ส่ง `play_next()` ทันทีและ prefetch ตอน `MediaPlayerPlaying`; TT Utilities ใช้ MPV 48 kHz/stereo/s16, gapless audio, connection keepalive, direct YouTube resolver + cache แล้วค่อย fallback yt-dlp; TTMediaBot ใช้คิว/event-driven handoff และ search หน้าแรกจำนวนน้อย.
+- **DONE (queue start):** Queue เปิด TeamTalk voice transmission **ก่อน** `play_stream()` เพื่อไม่ให้ MPV ปล่อย sample แรกเข้า PulseAudio ก่อน TeamTalk เริ่มส่งเสียง.
+- **DONE (natural handoff):** จบเพลงตามธรรมชาติไม่สั่ง `stop_transport()` ซ้ำเมื่อ transport idle แล้ว; manual next/select ยังหยุดเพลงเดิมตามปกติ. ทำให้ MPV gapless/output path มีโอกาสคงอุปกรณ์เสียงไว้ระหว่างเพลง.
+- **DONE (audio format):** Linux/PulseAudio path ล็อก 48 kHz / stereo / s16 ให้ตรงกับ null sink ของโปรเจกต์, เปิด gapless และ cache/reconnect ที่เหมาะกับ network audio; `audio-stream-silence` จำกัดเฉพาะ PulseAudio server path เพราะ MPV ระบุว่ามี side effects กับ timing.
+- **DONE (first-track latency):** ลด initial search จาก 12 เหลือ 4 ผลตามแนว TTMediaBot แล้วเติม 50/20 ผลเดิมเบื้องหลัง; prefetch URL เดียวกันรอ foreground สูงสุด 120 ms.
+- **DONE (fast YouTube path):** เพิ่ม bounded direct YouTube audio resolver + connection prewarm/keepalive/cache; จำกัด fast attempt ราว 1.4 วินาทีและถ้า login/age/content check required จะกลับ cookie-aware yt-dlp ทันที. generic URLs และ 18+ path เดิมยังอยู่.
+- **DONE (MPV event race):** เมื่อ END_FILE พิสูจน์ entry ใหม่ได้ในช่วง START_FILE race จะ refresh active entry ID ก่อนตรวจ stale event ป้องกัน EOF/ERROR ที่เพิ่ง adopt ถูกทิ้งจาก local snapshot เก่า.
+- **DONE (regression source):** เพิ่ม tests สำหรับ direct resolver/cache/restricted fallback, adopted MPV entry ID, no redundant stop ที่ natural queue handoff และลำดับเปิด TeamTalk voice ก่อน MPV play; ปรับ tests ของ initial search เป็น 4 ผล.
+- **DOING (execution QA):** environment ของรอบนี้เข้าถึง GitHub ผ่าน connector ได้แต่ไม่มี runner/CI ใน repo และเครื่อง Remote Desktop offline จึงยังไม่ได้รัน unit tests/validator หรือฟัง TeamTalk live สำหรับ 5.1.37. ก่อน publish ต้องรัน `python -m unittest discover -s tests -q` และ `python tools/validate_project.py` บน source checkout จริง.
+- **TODO (live):** ทดสอบ Queue 3+ เพลง, manual Next หลายครั้งติดกัน, p/pm เพลงแรก, 18+ cookies, SoundCloud/Twitch/Vimeo/radio, speaking state และเก็บ `Playback preparation took` / `MPV start-file took` บน Docker/TeamTalk จริง.
+- **DESIGN (effects):** ไม่ย้าย backend ไป `vlc_libs` ในแพตช์ playback นี้. Portable `vlc_libs` ในตัวอย่างเป็นแนว Windows; Linux ควรใช้ system libVLC หากเลือก VLC. สำหรับ SNTalkBot ปัจจุบัน MPV + FFmpeg/lavfi รองรับ preset/effect chain ได้กว้างกว่าและไม่ต้องเพิ่ม player backend ใหม่; Web Manager preset จะทำเป็น allow-listed audio-only profile ต่อจาก playback validation.
 
 ## รอบ 27 ต.ค. 2569: MPV Native EOF / Retry Cancellation / Historical Player Audit (5.1.36 ยังไม่เผยแพร่)
 

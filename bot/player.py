@@ -24,12 +24,55 @@ class MediaAccessError(RuntimeError):
 class Player(mpv.MPV):
     def __init__(self, config_handler, cookiefile=None, state_store=None, *args, **kwargs):
         # Linux/Docker launchers set TTUTIL_MPV_AO=pulse so MPV sends audio to
-        # the virtual PulseAudio sink. Leave it unset on desktop systems to let
-        # mpv choose the native audio output automatically.
+        # the virtual PulseAudio sink. Keep one fixed audio format and keep the
+        # audio stream alive across track boundaries. The production null sink is
+        # 48 kHz / stereo, so this avoids closing/reopening or renegotiating the
+        # PulseAudio device every time two songs use different native formats.
         mpv_ao = os.getenv("TTUTIL_MPV_AO", "").strip()
-        if mpv_ao and "ao" not in kwargs:
-            kwargs["ao"] = mpv_ao
-        super().__init__(ytdl=False, vo='null', video=False, *args, **kwargs)
+        mpv_options = {
+            "ytdl": False,
+            "vo": "null",
+            "video": False,
+            "gapless_audio": "yes",
+            "audio_samplerate": 48000,
+            "audio_channels": "stereo",
+            "audio_format": "s16",
+            "audio_buffer": 0.5,
+            "cache": "yes",
+            "cache_pause": "no",
+            "cache_pause_initial": "no",
+            "demuxer_thread": "yes",
+            "demuxer_max_bytes": 64 * 1024 * 1024,
+            "demuxer_max_back_bytes": 16 * 1024 * 1024,
+            "demuxer_readahead_secs": 30,
+            "demuxer_seekable_cache": "yes",
+            "stream_lavf_o": "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5",
+            "network_timeout": 30,
+        }
+        if mpv_ao:
+            mpv_options["ao"] = mpv_ao
+            # The reference player keeps audio alive continuously. MPV warns
+            # this option changes subtle timing behavior, so restrict it to our
+            # controlled headless PulseAudio bridge instead of all backends.
+            if mpv_ao.casefold() == "pulse":
+                mpv_options["audio_stream_silence"] = "yes"
+        mpv_options.update(kwargs)
+        try:
+            super().__init__(*args, **mpv_options)
+        except Exception:
+            # libmpv builds differ slightly across Linux distributions. Keep
+            # fixed-format/gapless audio, but retry without optional cache knobs
+            # rather than failing the whole bot because one option is unavailable.
+            for option in (
+                "audio_stream_silence",
+                "cache_pause_initial",
+                "demuxer_seekable_cache",
+                "demuxer_max_back_bytes",
+                "stream_lavf_o",
+                "network_timeout",
+            ):
+                mpv_options.pop(option, None)
+            super().__init__(*args, **mpv_options)
         self.config_handler = config_handler
         self.state_store = state_store
         self.playback_config = self.config_handler.get_playback_config()
@@ -127,6 +170,33 @@ class Player(mpv.MPV):
             "defaults", "cookies.txt"
         )
         self.ytdlp_config = self.config_handler.get_ytdlp_config()
+        # Fast public-YouTube resolver. It is deliberately only a first attempt:
+        # private/age-gated/special media still falls through to the existing
+        # cookie-aware yt-dlp path, and non-YouTube services never enter it.
+        self._fast_stream_cache = {}
+        self._fast_stream_cache_lock = threading.Lock()
+        self._fast_stream_cache_ttl = 7200.0
+        self._stream_http = requests.Session()
+        self._stream_http.headers.update({
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Content-Type": "application/json",
+        })
+        self._stream_http.mount(
+            "https://",
+            requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=8, max_retries=0),
+        )
+        self._stream_keepalive_stop = threading.Event()
+        threading.Thread(
+            target=self._prewarm_stream_connection,
+            daemon=True,
+            name="SNTalkBot_YTPrewarm",
+        ).start()
+        threading.Thread(
+            target=self._stream_keepalive_loop,
+            daemon=True,
+            name="SNTalkBot_YTKeepalive",
+        ).start()
         self.fade_enabled = self.playback_config.get("fade_enabled", True)
         self.is_stereo_wide = self.playback_config.get("is_stereo_wide", False)
         self.is_stereo_echo = self.playback_config.get("is_stereo_echo", False)
@@ -711,15 +781,11 @@ class Player(mpv.MPV):
         except:
             pass
             
-        if self.audio_quality == 'Low':
-            self['audio-samplerate'] = 44100
-            self['audio-channels'] = 'stereo'
-        elif self.audio_quality == 'Medium':
-            self['audio-samplerate'] = 48000
-            self['audio-channels'] = 'stereo'
-        else:
-            self['audio-samplerate'] = 48000
-            self['audio-channels'] = 'auto'
+        # The Linux bridge and TeamTalk path are stereo 48 kHz. Keeping this
+        # invariant avoids an output-device reconfiguration at every handoff.
+        self['audio-samplerate'] = 48000
+        self['audio-channels'] = 'stereo'
+        self['audio-format'] = 's16'
 
     def get_real_vol(self):
         """Return the current mpv volume as a bounded integer."""
@@ -1335,10 +1401,14 @@ class Player(mpv.MPV):
             # still proves it is the new item, so advance instead of leaving
             # the queue frozen until an eventual watchdog timeout.
             self._active_mpv_entry_id = entry_id
+            # active_id was captured before adopting this proven-new entry.
+            # Refresh it here or the comparison below rejects the very EOF/ERROR
+            # we just accepted whenever the previous track had an entry ID.
+            active_id = entry_id
             self._awaiting_mpv_start = False
             self._watchdog_seen_start = True
             print(f"MPV END_FILE arrived without START_FILE (epoch={self.active_playback_epoch})")
-        if entry_id is not None and active_id is not None and int(entry_id) != active_id:
+        if entry_id is not None and active_id is not None and int(entry_id) != int(active_id):
             return
         reason = getattr(data, "reason", None)
         error = getattr(data, "error", 0)
@@ -1437,6 +1507,155 @@ class Player(mpv.MPV):
             raise RuntimeError(f"yt-dlp extraction failed ({mode}, {candidate}): {exc}") from exc
         raise RuntimeError("yt-dlp extraction returned no playable metadata")
 
+    def _stream_keepalive_loop(self):
+        while not self._stream_keepalive_stop.wait(50.0):
+            try:
+                response = self._stream_http.get("https://www.youtube.com/generate_204", timeout=3)
+                response.close()
+            except Exception:
+                pass
+
+    def _prewarm_stream_connection(self):
+        """Open YouTube TCP/TLS in the background so the first play is not a cold connection."""
+        try:
+            response = self._stream_http.get("https://www.youtube.com/generate_204", timeout=2)
+            response.close()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _youtube_video_id(link):
+        value = str(link or "").strip()
+        match = re.search(r"(?:[?&]v=|youtu\\.be/|shorts/|embed/|live/)([A-Za-z0-9_-]{11})", value)
+        if match:
+            return match.group(1)
+        if re.fullmatch(r"[A-Za-z0-9_-]{11}", value):
+            return value
+        return None
+
+    @staticmethod
+    def _stream_url_ttl(url):
+        try:
+            expiry = parse_qs(urlparse(str(url or "")).query).get("expire", [None])[0]
+            if expiry is not None:
+                return float(expiry) - time.time()
+        except (ValueError, TypeError):
+            pass
+        return None
+
+    def _fast_stream_get(self, video_id):
+        if not video_id:
+            return None
+        with self._fast_stream_cache_lock:
+            entry = self._fast_stream_cache.get(video_id)
+            if not entry:
+                return None
+            stored_at, ttl, info = entry
+            if time.monotonic() - stored_at >= ttl:
+                self._fast_stream_cache.pop(video_id, None)
+                return None
+            return dict(info)
+
+    def _fast_stream_put(self, video_id, info):
+        if not video_id or not info or not info.get("url"):
+            return
+        ttl = float(self._fast_stream_cache_ttl)
+        expiry_ttl = self._stream_url_ttl(info["url"])
+        if expiry_ttl is not None:
+            ttl = min(ttl, expiry_ttl - 300.0)
+        if ttl <= 0:
+            return
+        with self._fast_stream_cache_lock:
+            if len(self._fast_stream_cache) >= 256:
+                oldest = min(self._fast_stream_cache, key=lambda key: self._fast_stream_cache[key][0])
+                self._fast_stream_cache.pop(oldest, None)
+            self._fast_stream_cache[video_id] = (time.monotonic(), ttl, dict(info))
+
+    def _resolve_youtube_direct_audio(self, link):
+        """Fast public-YouTube path copied conceptually from the reference players.
+
+        It asks YouTube's structured player endpoint for a direct audio URL and
+        deliberately returns None for unavailable/restricted cases. The normal
+        cookie-aware yt-dlp resolver remains authoritative fallback.
+        """
+        video_id = self._youtube_video_id(link)
+        if not video_id:
+            return None
+        cached = self._fast_stream_get(video_id)
+        if cached:
+            return cached
+
+        clients = (
+            ("ANDROID", "21.26.364", "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip", 30),
+            ("ANDROID_VR", "1.60.19", "Mozilla/5.0 (Linux; Android 10; Quest 2) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36", None),
+        )
+        # This is an optimization, never a new blocking dependency. If the
+        # lightweight endpoint is not immediately useful, hand control back to
+        # yt-dlp rather than making the first song slower than the old path.
+        deadline = time.monotonic() + 1.4
+        for client_name, client_version, user_agent, sdk_version in clients:
+            if time.monotonic() >= deadline:
+                break
+            client = {
+                "clientName": client_name,
+                "clientVersion": client_version,
+                "hl": "en",
+                "gl": "US",
+            }
+            if sdk_version is not None:
+                client["androidSdkVersion"] = sdk_version
+            try:
+                response = self._stream_http.post(
+                    "https://www.youtube.com/youtubei/v1/player",
+                    json={"videoId": video_id, "context": {"client": client}},
+                    headers={
+                        "User-Agent": user_agent,
+                        "Origin": "https://www.youtube.com",
+                        "Referer": "https://www.youtube.com/",
+                    },
+                    timeout=(0.5, 0.7),
+                )
+                if response.status_code != 200:
+                    continue
+                data = response.json()
+                playability = (data.get("playabilityStatus") or {}).get("status")
+                if playability != "OK":
+                    if playability in {"LOGIN_REQUIRED", "AGE_CHECK_REQUIRED", "CONTENT_CHECK_REQUIRED"}:
+                        break
+                    continue
+                streaming = data.get("streamingData") or {}
+                formats = list(streaming.get("adaptiveFormats") or [])
+                audio = [
+                    item for item in formats
+                    if item.get("url") and "audio" in str(item.get("mimeType") or "").lower()
+                ]
+                selected = next((item for item in audio if item.get("itag") == 251), None)
+                if selected is None:
+                    selected = next((item for item in audio if item.get("itag") == 140), None)
+                if selected is None and audio:
+                    selected = max(audio, key=lambda item: int(item.get("bitrate") or 0))
+                if selected is None:
+                    progressive = [item for item in (streaming.get("formats") or []) if item.get("url")]
+                    selected = next((item for item in progressive if item.get("itag") == 18), None)
+                if selected is None:
+                    continue
+                info = {
+                    "url": selected["url"],
+                    "title": (data.get("videoDetails") or {}).get("title") or video_id,
+                    "http_headers": {
+                        "User-Agent": user_agent,
+                        "Referer": "https://www.youtube.com/",
+                        "Origin": "https://www.youtube.com",
+                        "Accept-Language": "en-US,en;q=0.9",
+                    },
+                    "_sntalk_fast_resolver": client_name,
+                }
+                self._fast_stream_put(video_id, info)
+                return info
+            except (requests.RequestException, ValueError, TypeError, KeyError):
+                continue
+        return None
+
     def _apply_stream_headers(self, info):
         # yt-dlp resolves the URL; mpv performs a separate HTTP request. Keep
         # relevant request headers consistent, and reset them for EVERY item.
@@ -1468,9 +1687,15 @@ class Player(mpv.MPV):
                     with self._ydl_lock:
                         pending = getattr(self, "_prefetch_inflight", {}).get(link)
                     if pending is not None:
-                        pending.wait(timeout=0.25)
+                        pending.wait(timeout=0.12)
                         info = self._pop_prefetched(link)
                         from_prefetch = bool(info)
+                    if not info:
+                        # Reference players avoid a full yt-dlp extraction on
+                        # ordinary public YouTube tracks. Try the same bounded
+                        # structured endpoint first, then preserve yt-dlp as the
+                        # complete compatibility/cookie fallback.
+                        info = self._resolve_youtube_direct_audio(link)
                     if not info:
                         info = self._extract_play_info_resilient(link)
                 except Exception:
@@ -1582,7 +1807,9 @@ class Player(mpv.MPV):
                 return
             self._prefetch_inflight[link] = pending
         try:
-            info = self._extract_play_info_resilient(link)
+            info = self._resolve_youtube_direct_audio(link)
+            if not info:
+                info = self._extract_play_info_resilient(link)
             with self._ydl_lock:
                 # The expensive network operation ran outside this lock.
                 # Keep only cache writes atomic with foreground playback.
@@ -1940,6 +2167,13 @@ class Player(mpv.MPV):
         if watchdog_thread is not None and watchdog_thread.is_alive() and watchdog_thread is not threading.current_thread():
             watchdog_thread.join(timeout=1.5)
         self.is_playing = False
+        keepalive_stop = getattr(self, "_stream_keepalive_stop", None)
+        if keepalive_stop is not None:
+            keepalive_stop.set()
+        try:
+            self._stream_http.close()
+        except Exception:
+            pass
         try:
             self.prefetcher.close()
         except Exception:

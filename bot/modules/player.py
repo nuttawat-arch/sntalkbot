@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 # yt-dlp flat-search usually returns a page of metadata at once. Keeping a
 # useful first page avoids trapping queue-selection users on a single hit.
-INITIAL_SEARCH_RESULTS = 12
+INITIAL_SEARCH_RESULTS = 4
 
 class PlayerCog:
     """
@@ -146,6 +146,21 @@ class PlayerCog:
         # Called from libmpv/watchdog threads; never do SQL or media extraction
         # on an MPV callback thread.
         self._submit_playback(self.on_playback_end)
+
+    def _stop_transport_for_replacement(self):
+        """Stop only when media is actually active.
+
+        A natural EOF is already idle. Calling stop again there closes/restarts
+        the audio path and defeats MPV's gapless handoff. Manual next/select
+        still stops the active item exactly as before.
+        """
+        try:
+            active = bool(self.player.transport_is_active())
+        except Exception:
+            active = bool(getattr(self.player, "is_playing", False) or getattr(self.player, "pause", False))
+        if active:
+            self.player.stop_transport()
+        return active
 
     # Do not use mpv's is_playing flag alone to decide whether a newly-added
     # item should start. mpv flips it to False before playback-end callbacks,
@@ -488,7 +503,7 @@ class PlayerCog:
         self.loading_new_track = True
         play_error = None
         try:
-            self.player.stop_transport()
+            self._stop_transport_for_replacement()
             self.player.current_link = item["link"]
             self._set_playback_context("radio", item["link"], self.player.radio_index)
             self.bot.enableVoiceTransmission(True)
@@ -1345,7 +1360,7 @@ class PlayerCog:
         """Search and play with visible failure reporting for async workers."""
         try:
             search_started = time.monotonic()
-            # One compact result page (12) is enough to navigate immediately,
+            # A compact four-result page is enough to navigate immediately,
             # while the historical 50/20 options can arrive in the background.
             if source == 'ytmusic':
                 results = self.player.search_ytmusic(query, limit=INITIAL_SEARCH_RESULTS)
@@ -1430,7 +1445,7 @@ class PlayerCog:
         """Search and enqueue with visible failure reporting for async workers."""
         try:
             search_started = time.monotonic()
-            # Fetch a useful first page of choices, not a single hit and not
+            # Fetch four useful first choices, matching the fast reference player, not
             # all 50 metadata entries before starting a cold queue.
             # A non-empty/busy queue retains the complete original search path.
             with self.player.queue_lock:
@@ -1551,11 +1566,13 @@ class PlayerCog:
             # playlist/channel/radio behind that could resume after cq/q off.
             self.player.clear_collection()
             self.player.clear_radio_history()
-            self.player.stop_transport()
+            self._stop_transport_for_replacement()
             self.player.current_link = video['link']
             self._set_playback_context("queue", video['link'], str(video.get("_queue_token") or self._queue_token(index)))
-            self.player.play_stream(video['link'])
+            # Open TeamTalk transmission before MPV emits the first samples.
+            # The old order could clip/delay the beginning of a queue track.
             self.bot.enableVoiceTransmission(True)
+            self.player.play_stream(video['link'])
             # As soon as current playback is live, prepare the next FIFO items.
             # This keeps queue-to-queue handoff fast even for short tracks.
             self._prefetch_next_for_current()
@@ -1907,7 +1924,7 @@ class PlayerCog:
         
         play_error = None
         try:
-            self.player.stop_transport()
+            self._stop_transport_for_replacement()
             self.player.current_link = next_video['link']
             self._set_playback_context("collection", next_video['link'], f"{self.player.collection_source}:{self._get_active_index()}")
             self.bot.enableVoiceTransmission(True)

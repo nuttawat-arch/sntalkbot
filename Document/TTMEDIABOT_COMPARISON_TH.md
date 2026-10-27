@@ -1,4 +1,13 @@
-# เปรียบเทียบ TTMediaBot กับ SNTalkBot เพื่อแก้เวลาเริ่มเพลง (27 ต.ค. 2569)
+# เปรียบเทียบ TTMediaBot กับ SNTalkBot เพื่อแก้เวลาเริ่มเพลง (27–28 ต.ค. 2569)
+
+## เพิ่มเติมใน 5.1.37: TikTok Music Player + TT Utilities fast-path
+
+- TikTok Music Player ที่อัปโหลดรอบ 28 ต.ค. ใช้ VLC event `MediaPlayerEndReached` แล้วเรียก next บน thread ทันที และเริ่ม prefetch next YouTube stream เมื่อ player เข้าสถานะ Playing; นำหลัก event-driven + prefetch มาเทียบ ไม่ย้าย VLC backend เข้ามา.
+- TT Utilities ที่อัปโหลดรอบเดียวกันล็อก MPV เป็น 48 kHz/stereo/s16, ใช้ gapless/audio cache, warm HTTP connection และ direct YouTube resolver/cache ก่อน yt-dlp fallback. SNTalkBot 5.1.37 นำแนวทางนี้มาใช้เฉพาะที่เข้ากับ Linux/PulseAudio architecture.
+- พบว่า Queue ของ SNTalkBot เปิด TeamTalk voice หลัง `play_stream()`; แก้เป็นเปิดก่อนเสียงเริ่ม. Natural EOF ยังเรียก `stop_transport()` ซ้ำ; แก้ให้ stop เฉพาะเมื่อ transport ยัง active เพื่อไม่ทำลาย handoff.
+- Initial search 12 ผลเพิ่ม latency โดยไม่จำเป็นกับ critical path จึงลดเป็น 4 ตาม TTMediaBot และเติมผลเต็มเบื้องหลัง.
+- Fast resolver เป็น optimization แบบ bounded เท่านั้น: login/age/content restricted และ failure ทุกชนิดกลับไป yt-dlp/cookies เดิม; ไม่ลดการรองรับ generic URLs.
+- ไม่คัดลอก `vlc_libs` portable bundle ไป Linux. ถ้าต้องใช้ VLC ในอนาคตให้ติดตั้ง system libVLC; สำหรับ effect presets ปัจจุบันเลือก MPV + FFmpeg/lavfi เพราะเป็น backend เดิมและยืดหยุ่นกว่า built-in VLC equalizer.
 
 ## เพิ่มเติมใน 5.1.36: เทียบ TT Utilities และ SNTalkBot baseline 5.1.27
 

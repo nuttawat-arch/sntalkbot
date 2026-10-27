@@ -119,6 +119,33 @@ class RecoveryTests(unittest.TestCase):
         self.pool.run()
         self.cog._play_from_queue.assert_called_once_with(0)
 
+    def test_natural_queue_handoff_does_not_stop_idle_transport_again(self):
+        self.player.transport_is_active=Mock(return_value=False)
+        self.player.stop_transport.reset_mock()
+        self.player.play_stream=Mock()
+        self.player.clear_collection=Mock();self.player.clear_radio_history=Mock()
+        self.player.media_title='Next';self.cog._announce_track=Mock()
+        self.cog._prefetch_next_for_current=Mock();self.cog._log_action=Mock()
+        self.cog._play_from_queue=type(self.cog)._play_from_queue.__get__(self.cog)
+        self.cog._play_from_queue(0)
+        self.player.stop_transport.assert_not_called()
+        self.player.play_stream.assert_called_once()
+        self.bot.enableVoiceTransmission.assert_called_with(True)
+
+    def test_queue_arms_teamtalk_voice_before_starting_mpv(self):
+        order=[]
+        self.player.transport_is_active=Mock(return_value=False)
+        self.player.stop_transport.reset_mock()
+        self.player.clear_collection=Mock();self.player.clear_radio_history=Mock()
+        self.player.media_title='Next';self.cog._announce_track=Mock()
+        self.cog._prefetch_next_for_current=Mock();self.cog._log_action=Mock()
+        self.bot.enableVoiceTransmission.side_effect=lambda enabled: order.append(('voice',enabled))
+        self.player.play_stream=Mock(side_effect=lambda link: order.append(('play',link)))
+        self.cog._play_from_queue=type(self.cog)._play_from_queue.__get__(self.cog)
+        self.cog._play_from_queue(0)
+        self.assertEqual(order[0],('voice',True))
+        self.assertEqual(order[1][0],'play')
+
     def test_queue_selection_is_enqueued_and_stale_restart_skipped(self):
         first={'title':'A','link':'https://youtube.com/watch?v=a'}
         second={'title':'B','link':'https://youtube.com/watch?v=b'}
@@ -330,14 +357,14 @@ class FastFirstSearchTests(unittest.TestCase):
         self.cog._send_playback_message=Mock();self.cog._announce_queue=Mock()
         self.cog._after_queue_enqueue=Mock();self.cog._log_action=Mock()
 
-    def test_first_song_exposes_twelve_alternatives_before_full_search_expands(self):
+    def test_first_song_exposes_four_alternatives_before_full_search_expands(self):
         full=[{'title':f'Song {i}','link':f'https://youtube.com/watch?v={i}'} for i in range(50)]
-        self.player.search_youtube.side_effect=lambda query,**kwargs: full[:12] if kwargs.get('limit')==12 else full
+        self.player.search_youtube.side_effect=lambda query,**kwargs: full[:4] if kwargs.get('limit')==4 else full
         self.cog._search_and_enqueue_task('Thai music',7)
-        self.player.search_youtube.assert_called_once_with('Thai music',limit=12)
+        self.player.search_youtube.assert_called_once_with('Thai music',limit=4)
         self.cog._after_queue_enqueue.assert_called_once_with(True)
         self.assertEqual(len(self.player.queue),1)
-        self.assertEqual(len(self.player.queue[0]['_search_results']),12)
+        self.assertEqual(len(self.player.queue[0]['_search_results']),4)
         self.assertEqual(len(self.pool.jobs),1)
         self.pool.run()
         self.assertEqual(len(self.player.queue[0]['_search_results']),50)
@@ -347,7 +374,7 @@ class FastFirstSearchTests(unittest.TestCase):
     def test_background_search_does_not_replace_user_selection_or_stale_queue(self):
         first={'title':'First','link':'https://youtube.com/watch?v=first'}
         second={'title':'Second','link':'https://youtube.com/watch?v=second'}
-        self.player.search_youtube.side_effect=lambda query,**kwargs:[first] if kwargs.get('limit')==12 else [second,first]
+        self.player.search_youtube.side_effect=lambda query,**kwargs:[first] if kwargs.get('limit')==4 else [second,first]
         self.cog._search_and_enqueue_task('song',7)
         original=self.player.queue[0]
         token=original['_queue_token']
@@ -386,11 +413,11 @@ class FastFirstSearchTests(unittest.TestCase):
         self.cog._set_playback_context=Mock()
         self.cog._announce_track=Mock();self.cog._prefetch_next_for_current=Mock()
         tracks=[{'title':f'Track {i}','link':f'https://music.youtube.com/watch?v={i}'} for i in range(20)]
-        self.player.search_ytmusic.side_effect=lambda query,**kwargs: tracks[:12] if kwargs.get('limit')==12 else tracks
+        self.player.search_ytmusic.side_effect=lambda query,**kwargs: tracks[:4] if kwargs.get('limit')==4 else tracks
         self.cog._search_and_play_task('songs',7,source='ytmusic')
-        self.player.search_ytmusic.assert_called_once_with('songs',limit=12)
+        self.player.search_ytmusic.assert_called_once_with('songs',limit=4)
         self.player.play_stream.assert_called_once_with(tracks[0]['link'])
-        self.assertEqual(len(self.player.search_results),12)
+        self.assertEqual(len(self.player.search_results),4)
         self.assertEqual(len(self.pool.jobs),1)
         self.pool.run()
         self.assertEqual(len(self.player.search_results),20)
@@ -408,7 +435,7 @@ class FastFirstSearchTests(unittest.TestCase):
     def test_first_page_search_failure_falls_back_without_double_background_search(self):
         results=[{'title':'Recovered','link':'https://youtube.com/watch?v=ok'},
                  {'title':'Alternate','link':'https://youtube.com/watch?v=alt'}]
-        self.player.search_youtube.side_effect=lambda query,**kwargs: [] if kwargs.get('limit')==12 else results
+        self.player.search_youtube.side_effect=lambda query,**kwargs: [] if kwargs.get('limit')==4 else results
         self.cog._search_and_enqueue_task('recovery',7)
         self.assertEqual(self.player.search_youtube.call_count,2)
         self.assertEqual(len(self.player.queue[0]['_search_results']),2)
@@ -421,6 +448,38 @@ class StreamMetadataTests(unittest.TestCase):
         self.module=load_player();self.player=self.module.Player.__new__(self.module.Player)
         self.player._prefetch_cache={};self.player._prefetch_times={}
         self.player._ydl_lock=threading.Lock();self.player._prefetch_inflight={}
+
+    def test_fast_youtube_resolver_prefers_opus_and_caches_result(self):
+        self.player._fast_stream_cache={};self.player._fast_stream_cache_lock=threading.Lock()
+        self.player._fast_stream_cache_ttl=7200;self.player._youtube_video_id=self.module.Player._youtube_video_id.__get__(self.player)
+        self.player._stream_url_ttl=self.module.Player._stream_url_ttl.__get__(self.player)
+        self.player._fast_stream_get=self.module.Player._fast_stream_get.__get__(self.player)
+        self.player._fast_stream_put=self.module.Player._fast_stream_put.__get__(self.player)
+        response=SimpleNamespace(status_code=200,json=lambda:{
+            'playabilityStatus':{'status':'OK'},'videoDetails':{'title':'Fast'},
+            'streamingData':{'adaptiveFormats':[
+                {'itag':140,'url':'https://cdn.example/a.m4a','mimeType':'audio/mp4','bitrate':128000},
+                {'itag':251,'url':'https://cdn.example/a.opus','mimeType':'audio/webm','bitrate':96000},
+            ]},
+        })
+        self.player._stream_http=SimpleNamespace(post=Mock(return_value=response))
+        resolve=self.module.Player._resolve_youtube_direct_audio.__get__(self.player)
+        link='https://www.youtube.com/watch?v=abcdefghijk'
+        first=resolve(link);second=resolve(link)
+        self.assertEqual(first['url'],'https://cdn.example/a.opus')
+        self.assertEqual(second['url'],first['url'])
+        self.player._stream_http.post.assert_called_once()
+
+    def test_fast_youtube_resolver_restricted_media_falls_back_cleanly(self):
+        self.player._fast_stream_cache={};self.player._fast_stream_cache_lock=threading.Lock()
+        self.player._fast_stream_cache_ttl=7200;self.player._youtube_video_id=self.module.Player._youtube_video_id.__get__(self.player)
+        self.player._fast_stream_get=self.module.Player._fast_stream_get.__get__(self.player)
+        self.player._fast_stream_put=self.module.Player._fast_stream_put.__get__(self.player)
+        response=SimpleNamespace(status_code=200,json=lambda:{'playabilityStatus':{'status':'LOGIN_REQUIRED'}})
+        self.player._stream_http=SimpleNamespace(post=Mock(return_value=response))
+        resolve=self.module.Player._resolve_youtube_direct_audio.__get__(self.player)
+        self.assertIsNone(resolve('https://www.youtube.com/watch?v=abcdefghijk'))
+        self.assertEqual(self.player._stream_http.post.call_count,1)
 
     def test_signed_url_expiry_overrides_fresh_prefetch_timestamp(self):
         self.player._prefetch_cache['song']={'url':f'https://cdn.example/audio?expire={int(time.time())+10}'}
@@ -557,6 +616,22 @@ class StreamMetadataTests(unittest.TestCase):
         self.player._on_start_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=10)))
         self.player._on_end_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=10,reason=4,error=-13)))
         self.player.end_callback.assert_called_once()
+
+    def test_native_end_without_start_uses_adopted_entry_id_for_terminal_check(self):
+        # A START_FILE race can leave an already-observed active ID while the
+        # current generation is still awaiting its matching start event. Once
+        # END_FILE proves a different, non-previous entry is current, the local
+        # active-id snapshot must be refreshed or the terminal event is dropped.
+        self._arm_watchdog_fixture()
+        self.player._previous_mpv_entry_id=40
+        self.player._active_mpv_entry_id=41
+        self.player._awaiting_mpv_start=True
+        self.player.idle_active=True
+        self.player._on_end_file_event(SimpleNamespace(
+            data=SimpleNamespace(playlist_entry_id=42,reason=0,error=0)))
+        self.player.end_callback.assert_called_once()
+        self.assertEqual(self.player._active_mpv_entry_id,42)
+        self.assertEqual(self.player.last_end_reason,'eof')
 
     def test_native_end_without_matching_start_advances_new_entry(self):
         # This is the intermittent silent-queue failure: MPV delivers the
