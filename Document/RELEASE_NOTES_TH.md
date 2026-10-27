@@ -1,3 +1,14 @@
+# SNTalkBot 5.1.38 — Redundant EOF / Resolver Race / Fast Discovery (source ยังไม่เผยแพร่)
+
+- แก้ Queue เพลงถัดไปไม่เริ่มเองด้วย terminal detection 4 ชั้น: MPV END_FILE + permanent `eof-reached` + permanent `idle-active` + watchdog โดยใช้ one-shot dedupe เดียวกัน.
+- intentional stop ไม่ถอด idle observer ออกอีก จึงไม่ทำให้ autoplay รอบถัดไปเงียบโดยไม่ตั้งใจ.
+- แก้ cold-start regression ของ 5.1.37: direct resolver กับ yt-dlp ทำงานแข่งกันแทนการรอ fast resolver ก่อนแล้วค่อย fallback.
+- ค้นหาเพลงแรกเพียง 1 ผลเพื่อเริ่มเสียงก่อน แล้วเติมผลเต็มใน background; flat search ใช้ public/no-cookie ก่อน, timeout สูงสุด 12 วินาทีและ retries 2 แบบเดียวกับแนว reference player ขณะที่ playback 18+ ยังคง cookie-first.
+- เทียบกับ TikTok Music Player/TTMediaBot ที่ผู้ใช้ส่งจริง: event-driven next, prefetch ตั้งแต่ Waiting/Playing และ metadata search แยกจาก full stream extraction.
+- Offline QA ผ่าน Unit tests 125/125 และ `tools/validate_project.py`; live Docker/TeamTalk ยังเป็น gate ก่อนยืนยัน latency จริง.
+
+---
+
 # SNTalkBot 5.1.37 — Realtime Audio Handoff / Fast First Track (source ยังไม่เผยแพร่)
 
 - Queue เปิด TeamTalk voice ก่อนเริ่ม MPV เพื่อไม่ตัดต้นเพลง และไม่สั่ง stop ซ้ำเมื่อเพลงก่อนจบตามธรรมชาติแล้ว.
