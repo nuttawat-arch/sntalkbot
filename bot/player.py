@@ -38,7 +38,6 @@ class Player(mpv.MPV):
             "audio_channels": "stereo",
             "audio_format": "s16",
             "audio_buffer": 0.5,
-            "audio_stream_silence": "yes",
             "cache": "yes",
             "cache_pause": "no",
             "cache_pause_initial": "no",
@@ -52,6 +51,11 @@ class Player(mpv.MPV):
         }
         if mpv_ao:
             mpv_options["ao"] = mpv_ao
+            # The reference player keeps audio alive continuously. MPV warns
+            # this option changes subtle timing behavior, so restrict it to our
+            # controlled headless PulseAudio bridge instead of all backends.
+            if mpv_ao.casefold() == "pulse":
+                mpv_options["audio_stream_silence"] = "yes"
         mpv_options.update(kwargs)
         try:
             super().__init__(*args, **mpv_options)
