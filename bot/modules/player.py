@@ -6,7 +6,12 @@ import threading
 import time
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
+
+# yt-dlp flat-search usually returns a page of metadata at once. Keeping a
+# useful first page avoids trapping queue-selection users on a single hit.
+INITIAL_SEARCH_RESULTS = 12
 
 class PlayerCog:
     """
@@ -34,7 +39,11 @@ class PlayerCog:
         self.pending_playlist_searches = {}
         self.pending_playlist_search_lock = threading.Lock()
         self.pending_channel_timeout = 60
-        self.player.end_callback = self.on_playback_end
+        # Playback handoffs must not wait behind downloads, searches or other
+        # long-running tasks in the general I/O executor. One ordered worker
+        # preserves FIFO and keeps native libmpv callbacks lightweight.
+        self._playback_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="TTBot_Playback")
+        self.player.end_callback = self._schedule_playback_end
         data_dir = os.getenv("TTUTIL_DATA_DIR", ".")
         os.makedirs(data_dir, exist_ok=True)
         self.favorites_file = os.path.join(data_dir, "favorites.json")
@@ -76,6 +85,9 @@ class PlayerCog:
 
     def shutdown(self):
         self._cancel_pending_retry()
+        playback_pool = getattr(self, "_playback_pool", None)
+        if playback_pool is not None:
+            playback_pool.shutdown(wait=False, cancel_futures=True)
         self._deletion_stop.set()
         self._deletion_wakeup.set()
         worker = getattr(self, "_deletion_worker", None)
@@ -126,6 +138,15 @@ class PlayerCog:
         return remote_ok and local_ok
 
     # ---------------- Queue state machine ----------------
+    def _submit_playback(self, callback, *args):
+        pool = getattr(self, "_playback_pool", None) or self.bot.io_pool
+        return pool.submit(callback, *args)
+
+    def _schedule_playback_end(self):
+        # Called from libmpv/watchdog threads; never do SQL or media extraction
+        # on an MPV callback thread.
+        self._submit_playback(self.on_playback_end)
+
     # Do not use mpv's is_playing flag alone to decide whether a newly-added
     # item should start. mpv flips it to False before playback-end callbacks,
     # which used to let a last-second enqueue jump ahead of older pending items.
@@ -179,7 +200,7 @@ class PlayerCog:
         self.loading_new_track = False
         if getattr(self, "_deferred_playback_end", False):
             self._deferred_playback_end = False
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
 
     def _ensure_failure_state(self):
         """Lazily initialize retry state for normal runtime and validator fixtures."""
@@ -362,7 +383,7 @@ class PlayerCog:
         items immediately so the end-of-track handoff does not wait on metadata.
         """
         if should_start:
-            self._play_from_queue(0)
+            self._submit_playback(self._play_from_queue, 0)
         else:
             self._prefetch_next_for_current()
 
@@ -392,7 +413,7 @@ class PlayerCog:
             else:
                 self.player.queue_transition = False
         if next_index is not None:
-            self.bot.io_pool.submit(self._play_from_queue, next_index)
+            self._submit_playback(self._play_from_queue, next_index)
             return True
         return False
 
@@ -1310,13 +1331,12 @@ class PlayerCog:
         """Search and play with visible failure reporting for async workers."""
         try:
             search_started = time.monotonic()
-            # The first playable result is sufficient to start mpv. Keeping
-            # the historical 50/20-result search on the critical path makes
-            # every cold start wait for alternatives the listener may not use.
+            # One compact result page (12) is enough to navigate immediately,
+            # while the historical 50/20 options can arrive in the background.
             if source == 'ytmusic':
-                results = self.player.search_ytmusic(query, limit=1)
+                results = self.player.search_ytmusic(query, limit=INITIAL_SEARCH_RESULTS)
             else:
-                results = self.player.search_youtube(query, limit=1)
+                results = self.player.search_youtube(query, limit=INITIAL_SEARCH_RESULTS)
             needs_expansion = bool(results)
             if not results:
                 # Keep the historical complete-search recovery when YouTube's
@@ -1396,9 +1416,8 @@ class PlayerCog:
         """Search and enqueue with visible failure reporting for async workers."""
         try:
             search_started = time.monotonic()
-            # Asking yt-dlp for all 50 search hits before resolving the first
-            # item can noticeably delay a cold queue. Fetch one result first,
-            # start it, then enrich the same queue entry in a separate worker.
+            # Fetch a useful first page of choices, not a single hit and not
+            # all 50 metadata entries before starting a cold queue.
             # A non-empty/busy queue retains the complete original search path.
             with self.player.queue_lock:
                 fast_start = (
@@ -1409,9 +1428,9 @@ class PlayerCog:
                     and not self.player.is_playing
                 )
             if source == 'ytmusic':
-                results = self.player.search_ytmusic(query, limit=1) if fast_start else self.player.search_ytmusic(query)
+                results = self.player.search_ytmusic(query, limit=INITIAL_SEARCH_RESULTS) if fast_start else self.player.search_ytmusic(query)
             else:
-                results = self.player.search_youtube(query, limit=1) if fast_start else self.player.search_youtube(query)
+                results = self.player.search_youtube(query, limit=INITIAL_SEARCH_RESULTS) if fast_start else self.player.search_youtube(query)
             if fast_start and not results:
                 results = (self.player.search_ytmusic(query) if source == 'ytmusic'
                            else self.player.search_youtube(query))
@@ -1496,12 +1515,17 @@ class PlayerCog:
                 self.player.queue[index] = updated
                 return
 
-    def _play_from_queue(self, index):
+    def _play_from_queue(self, index, expected_token=None, expected_link=None):
         with self.player.queue_lock:
             if index < 0 or index >= len(self.player.queue):
                 self.player.queue_index = -1
                 self.player.queue_transition = False
                 return
+            selected = self.player.queue[index]
+            if (expected_token is not None and selected.get("_queue_token") != expected_token) or (
+                expected_link is not None and selected.get("link") != expected_link
+            ):
+                return  # A newer . / , choice superseded this pending restart.
             self.player.queue_index = index
             self.player.queue_transition = True
             video = dict(self.player.queue[index])
@@ -1516,8 +1540,8 @@ class PlayerCog:
             self.player.stop_transport()
             self.player.current_link = video['link']
             self._set_playback_context("queue", video['link'], str(video.get("_queue_token") or self._queue_token(index)))
-            self.bot.enableVoiceTransmission(True)
             self.player.play_stream(video['link'])
+            self.bot.enableVoiceTransmission(True)
             # As soon as current playback is live, prepare the next FIFO items.
             # This keeps queue-to-queue handoff fast even for short tracks.
             self._prefetch_next_for_current()
@@ -1538,7 +1562,7 @@ class PlayerCog:
         if error is not None:
             # Send synchronous failures through the same retry/skip state machine
             # used by asynchronous END_FILE errors.
-            self.bot.io_pool.submit(self.on_playback_end)
+            self._submit_playback(self.on_playback_end)
 
     def handle_pause_resume_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
@@ -1939,6 +1963,17 @@ class PlayerCog:
                     item.get("link") for item in self.player.queue[start:start + 1]
                     if isinstance(item, dict) and item.get("link")
                 ]
+                # When the current queue item was chosen from search and there
+                # is no next queued song, warm the *next selectable result*.
+                # This makes . / , useful immediately after the first track.
+                if not links and 0 <= self.player.queue_index < len(self.player.queue):
+                    entry = self.player.queue[self.player.queue_index]
+                    results = entry.get("_search_results") or []
+                    if len(results) > 1:
+                        position = int(entry.get("_search_index", 0) or 0)
+                        candidate = results[(position + 1) % len(results)]
+                        if candidate.get("link") and candidate["link"] != entry.get("link"):
+                            links.append(candidate["link"])
             if links:
                 self.player.prefetcher.schedule(links)
             return
@@ -2363,7 +2398,8 @@ class PlayerCog:
             ),
         )
         if is_current:
-            self._play_from_queue(target_index)
+            # Never resolve yt-dlp synchronously on the TeamTalk command thread.
+            self._submit_playback(self._play_from_queue, target_index, video.get("_queue_token"), video.get("link"))
 
     def handle_next_search_result_selection(self, textmessage, *args):
         if self.player.queue_mode:

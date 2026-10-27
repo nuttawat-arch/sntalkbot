@@ -1,4 +1,17 @@
-# sntalkbot 5.1.34
+# sntalkbot 5.1.35
+
+## รอบ 27 ต.ค. 2569: Playback Handoff Priority / 12-Result Selection (5.1.35 ยังไม่เผยแพร่)
+
+- **DONE (published baseline):** Publisher log จากผู้ใช้ยืนยัน 5.1.34 เผยแพร่ GitHub tag, Docker image และ ZIP สำเร็จแล้ว แต่ log เป็น Build/Publish ไม่ใช่ log การเล่นจาก instance บน Linux จึงยังไม่มีหลักฐานว่าแต่ละ instance อัปเดต runtime แล้ว
+- **DONE (root cause candidates):** จบเพลงใช้ io_pool ที่ใช้ร่วมกับงานค้นหา/download, การกด `.`/`,` บนคิวปัจจุบันเรียก yt-dlp ใน TeamTalk event thread, และ prefetch ขัง network extraction ภายใต้ล็อกเดียวกับ foreground play; เสี่ยงต่อคิวไม่ขยับ/เพลงแรกเงียบ/เปลี่ยนเพลงช้า แม้ MPV EOF watchdog มีอยู่แล้ว
+- **DONE (handoff):** แยก ordered playback executor 1 worker สำหรับ end callback, queue handoff, queue first-start และ queued selection; callback ของ MPV ทำแค่ส่งงาน จึงไม่ค้างกับ DB/network; guard ด้วย token+link เพื่อทิ้งการเลือกผลค้นหาเก่าที่ยังไม่ได้เริ่ม
+- **DONE (search):** ค้นหาหน้าแรก 12 ผลพร้อมเลือกทั้ง p/pm และ Queue/Normal; คง full-result expansion 50/20 ใน background โดยผูก token/search session และไม่ทับการเลือกของผู้ใช้
+- **DONE (resolution):** ยกการดึง yt-dlp จาก prefetch ออกจาก shared cache lock; foreground รอ prefetch ของ URL เดียวกันไม่เกิน 250ms แล้ว resolve เอง; เตรียมผลค้นหาถัดไปเมื่อคิวไม่มีเพลงถัดไป
+- **DONE (MPV):** watchdog ตรวจ `eof-reached` เป็นทางเสริมเมื่อ MPV ไม่ flip idle แต่รู้ว่า EOF จริง; คง 1-second idle watchdog, stall protection, no-skip paused/buffering และ dedupe per generation
+- **DONE (compatibility):** ไม่มี dependency ใหม่; ไม่แก้ Cookie 18+, yt-dlp generic URL/แพลตฟอร์มอื่น, SQLite schema, Web Manager, TeamTalk commands หรือ persistent config
+- **DONE (offline QA):** Unit tests 111/111 ผ่าน รวม native MPV→Cog→Queue, stale selection, search 12 ทางเลือก, foreground ไม่รอ unrelated prefetch, short/end/paused and 18+; validator ผ่าน
+- **DOING (Linux QA):** ต้องลง 5.1.35 ใน Bot instance จริงและตรวจ `MPV watchdog recovered`, เสียงออกครั้งแรก, เว้นเพลง, speaking, ข้อความสถานะ และเปิด/ปิด Queue Mode
+- **TODO:** เก็บเวลา MPV audio output / live TeamTalk SDK event เพื่อแยกปัญหาบัฟเฟอร์เสียงที่ unit test จำลองไม่ได้
 
 ## รอบ 27 ต.ค. 2569: Auto-Advance / Clear Speaking State (5.1.34 ยังไม่เผยแพร่)
 

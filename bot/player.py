@@ -75,6 +75,7 @@ class Player(mpv.MPV):
         self._prefetch_cache = {}
         self._prefetch_times = {}
         self._ydl_lock = threading.Lock()
+        self._prefetch_inflight = {}
         self.recent_history = {}
         self.end_callback = None
         self._intentional_stop = False
@@ -99,6 +100,7 @@ class Player(mpv.MPV):
         self._watchdog_last_position = None
         self._watchdog_last_progress_at = 0.0
         self._watchdog_idle_since = None
+        self._watchdog_eof_since = None
         # python-mpv/libmpv reports asynchronous load/playback failures through
         # END_FILE. yt-dlp extraction can succeed even when mpv later rejects the
         # resolved media, so relying only on play() exceptions or idle-active can
@@ -1116,6 +1118,7 @@ class Player(mpv.MPV):
             self._watchdog_last_position = None
             self._watchdog_last_progress_at = self.active_playback_started
             self._watchdog_idle_since = None
+            self._watchdog_eof_since = None
             return self.active_playback_epoch
 
     def _cancel_end_detection(self):
@@ -1179,6 +1182,7 @@ class Player(mpv.MPV):
         except Exception:
             paused = bool(getattr(self, "pause", False))
         position = None
+        reached_eof = False
         if not idle and not paused:
             try:
                 value = self["time-pos"]
@@ -1186,6 +1190,10 @@ class Player(mpv.MPV):
                     position = float(value)
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
+            except Exception:
+                pass
+            try:
+                reached_eof = bool(self["eof-reached"])
             except Exception:
                 pass
 
@@ -1211,7 +1219,15 @@ class Player(mpv.MPV):
                 if paused:
                     # Manual pause/cache buffering must not consume stall time.
                     self._watchdog_last_progress_at = now
+                    self._watchdog_eof_since = None
                     return
+                if reached_eof and self._watchdog_seen_start and now - started >= 2.0:
+                    if self._watchdog_eof_since is None:
+                        self._watchdog_eof_since = now
+                    elif now - self._watchdog_eof_since >= 0.8:
+                        reason = "eof"
+                else:
+                    self._watchdog_eof_since = None
                 previous = self._watchdog_last_position
                 if position is not None:
                     if previous is None or abs(position - previous) > 0.2:
@@ -1399,16 +1415,16 @@ class Player(mpv.MPV):
             from_prefetch = bool(info)
             if not info:
                 try:
+                    # Only cache bookkeeping is serialized. An unrelated
+                    # background extraction must never block the live player.
                     with self._ydl_lock:
-                        # A prefetch worker may have been extracting this exact URL
-                        # while play_stream() waited for the shared yt-dlp lock.
-                        # Re-check after acquiring the lock so we consume that fresh
-                        # result instead of paying for a duplicate extraction.
+                        pending = getattr(self, "_prefetch_inflight", {}).get(link)
+                    if pending is not None:
+                        pending.wait(timeout=0.25)
                         info = self._pop_prefetched(link)
-                        if not info:
-                            info = self._extract_play_info_resilient(link)
-                        else:
-                            from_prefetch = True
+                        from_prefetch = bool(info)
+                    if not info:
+                        info = self._extract_play_info_resilient(link)
                 except Exception:
                     host = (urlparse(str(link)).hostname or "").lower()
                     if str(link).lower().startswith(("http://", "https://")) and not any(x in host for x in ("youtube.com", "youtu.be", "music.youtube.com")):
@@ -1486,9 +1502,10 @@ class Player(mpv.MPV):
             self.volume = original_volume
 
     def _pop_prefetched(self, link):
-        info = self._prefetch_cache.pop(link, None)
-        stamps = getattr(self, "_prefetch_times", {})
-        stamp = stamps.pop(link, None)
+        with self._ydl_lock:
+            info = self._prefetch_cache.pop(link, None)
+            stamps = getattr(self, "_prefetch_times", {})
+            stamp = stamps.pop(link, None)
         # Tracks can last well over five minutes. Keep the pre-resolved next
         # track until handoff, while rejecting actual signed-URL expiration
         # below. A 30-minute upper bound avoids retaining unknown CDN URLs
@@ -1510,20 +1527,18 @@ class Player(mpv.MPV):
             self._prefetch_times.pop(link, None)
 
     def prefetch_stream_info(self, link):
-        if link in self._prefetch_cache:
-            return
         started = time.monotonic()
+        pending = threading.Event()
+        with self._ydl_lock:
+            if link in self._prefetch_cache or link in self._prefetch_inflight:
+                return
+            self._prefetch_inflight[link] = pending
         try:
+            info = self._extract_play_info_resilient(link)
             with self._ydl_lock:
-                # Playback may have populated the cache while this worker waited.
-                if link in self._prefetch_cache:
-                    return
-                info = self._extract_play_info_resilient(link)
-                # Commit while still holding the same yt-dlp lock.  Otherwise
-                # playback can acquire the lock in the tiny window after
-                # extract_info() returns but before this worker stores the cache,
-                # causing the next queue item to be extracted a second time.
-                if info:
+                # The expensive network operation ran outside this lock.
+                # Keep only cache writes atomic with foreground playback.
+                if info and link not in self._prefetch_cache:
                     self._prefetch_cache[link] = info
                     self._prefetch_times[link] = time.monotonic()
             elapsed = time.monotonic() - started
@@ -1532,6 +1547,10 @@ class Player(mpv.MPV):
         except Exception as e:
             print(f"Error prefetching stream: {e}")
             return
+        finally:
+            with self._ydl_lock:
+                self._prefetch_inflight.pop(link, None)
+            pending.set()
 
     def get_channel_link(self, link):
         try:

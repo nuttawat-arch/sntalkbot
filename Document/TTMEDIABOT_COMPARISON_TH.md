@@ -1,5 +1,12 @@
 # เปรียบเทียบ TTMediaBot กับ SNTalkBot เพื่อแก้เวลาเริ่มเพลง (27 ต.ค. 2569)
 
+## เพิ่มเติมใน 5.1.35
+
+- TTMediaBot มีช่องทางส่งต่อคิวที่ชัดเจนผ่าน `_handle_track_finished()` และ `play_from_queue()`; นำหลักการแยกงานส่งต่อเพลงออกจากงานค้นหาทั่วไปมาใช้กับ SNTalkBot ด้วย ordered playback worker ไม่ได้ย้าย FFmpeg/PCM หรือ QueueManager ของ TTMediaBot มาแทน
+- เส้นทางการค้นหาของ TTMediaBot ใช้ VideosSearch จำกัด 4 ผล ส่วน SNTalkBot เคยใช้ yt-dlp ผลแรกเพียง 1 ผลแล้วเติม 50/20 ภายหลัง แต่ผู้ใช้เปลี่ยนผลไม่ทัน จึงปรับ SNTalkBot ให้โหลด 12 ผลก่อนเริ่ม และเติมรายการเต็มต่อใน background
+- Prefetch เดิมของเราใช้ล็อกเดียวกับ foreground yt-dlp ทำให้กดเปลี่ยนเพลงใหม่ต้องรอ URL ที่กำลัง prefetch; 5.1.35 แยกล็อก network ออกเหลือเพียง cache mutex และรอ URL เดียวกันสูงสุด 250ms
+- เพิ่มการตรวจ MPV `eof-reached` ประกอบ `END_FILE` และ `idle-active`; ยังต้องตรวจความเร็วและสถานะ TeamTalk บน Linux จริง
+
 ## เพิ่มเติมใน SNTalkBot 5.1.34: จบเพลงและปิดไมค์
 
 ใน TTMediaBot เส้นทาง `_handle_track_finished()` ส่งต่อเพลงในคิวทันที; เมื่อไม่มีเพลงถัดไป `stop()` จะล้าง state และ `TTPlayerConnector` รับสถานะ Stopped เพื่อปิด TeamTalk voice transmission. มี watchdog ตรวจเวลาที่ไม่มี PCM เพื่อกู้การเล่นที่ค้างด้วย ใน SNTalkBot เราคง MPV/SQLite เดิม แล้วเพิ่ม watchdog สังเกต `idle-active` และ `time-pos` พร้อม generation/dedup guard ก่อนเรียก callback เดิม; เมื่อจบคิวจริงจัดการ voice, status และ now-playing ให้ครบ. ไม่ย้าย FFmpeg/PCM หรือระบบคิวของ TTMediaBot มาแทน

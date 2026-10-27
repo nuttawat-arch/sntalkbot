@@ -92,6 +92,65 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.player.media_title,'')
         self.assertFalse(self.player.pause)
 
+    def test_native_eof_is_dispatched_off_the_callback_thread(self):
+        self.player.last_end_reason='eof'
+        self.cog._schedule_playback_end()
+        self.assertEqual(len(self.player.queue),1000)
+        self.assertEqual(len(self.pool.jobs),1)
+        self.pool.run()
+        self.assertEqual(len(self.player.queue),999)
+        self.assertEqual(len(self.pool.jobs),1)
+        self.assertEqual(self.pool.jobs[0][0],self.cog._play_from_queue)
+
+    def test_mpv_eof_to_player_cog_to_next_queue_uses_one_serial_path(self):
+        module=load_player()
+        self.player._end_dispatch_lock=threading.Lock()
+        self.player._end_event_handled=False
+        self.player._intentional_stop=False
+        self.player._mpv_end_event_registered=True
+        self.player.end_callback=self.cog._schedule_playback_end
+        dispatch=module.Player._dispatch_end_once.__get__(self.player)
+        self.assertTrue(dispatch('eof',0))
+        self.assertFalse(self.player.is_playing)
+        self.assertEqual(len(self.player.queue),1000)
+        self.pool.run()
+        self.assertEqual(len(self.player.queue),999)
+        self.assertEqual(len(self.pool.jobs),1)
+        self.pool.run()
+        self.cog._play_from_queue.assert_called_once_with(0)
+
+    def test_queue_selection_is_enqueued_and_stale_restart_skipped(self):
+        first={'title':'A','link':'https://youtube.com/watch?v=a'}
+        second={'title':'B','link':'https://youtube.com/watch?v=b'}
+        self.store.replace_queue([{
+            'title':'A','link':first['link'],'_queue_token':'choice',
+            '_search_results':[first,second],'_search_index':0,
+        }])
+        self.player.queue=self.store.queue();self.player.queue_index=0
+        self.cog._play_from_queue=Mock()
+        self.cog._change_queue_search_selection(SimpleNamespace(nFromUserID=7),1,('1',))
+        self.assertEqual(self.player.queue[0]['link'],second['link'])
+        self.cog._play_from_queue.assert_not_called()
+        self.pool.run()
+        self.cog._play_from_queue.assert_called_once_with(0,'choice',second['link'])
+
+        self.cog._play_from_queue=type(self.cog)._play_from_queue.__get__(self.cog)
+        self.player.stop_transport.reset_mock()
+        self.cog._play_from_queue(0,'choice',first['link'])
+        self.player.stop_transport.assert_not_called()
+
+    def test_queue_first_search_result_warms_next_selection(self):
+        choices=[{'title':name,'link':f'https://youtube.com/watch?v={name}'} for name in ('a','b','c')]
+        self.store.replace_queue([{
+            'title':'a','link':choices[0]['link'],'_queue_token':'first',
+            '_search_results':choices,'_search_index':0,
+        }])
+        self.player.queue=self.store.queue();self.player.queue_index=0
+        self.player.prefetcher=SimpleNamespace(schedule=Mock())
+        self.cog._prefetch_next_for_current=type(self.cog)._prefetch_next_for_current.__get__(self.cog)
+        self.cog._prefetch_next_for_current()
+        self.player.prefetcher.schedule.assert_called_once_with([choices[1]['link']])
+
     def test_autoplay_without_any_related_song_releases_voice(self):
         self.store.replace_queue([])
         self.player.queue=self.store.queue();self.player.queue_index=-1
@@ -246,14 +305,14 @@ class FastFirstSearchTests(unittest.TestCase):
         self.cog._send_playback_message=Mock();self.cog._announce_queue=Mock()
         self.cog._after_queue_enqueue=Mock();self.cog._log_action=Mock()
 
-    def test_first_song_uses_one_result_before_full_search_expands(self):
+    def test_first_song_exposes_twelve_alternatives_before_full_search_expands(self):
         full=[{'title':f'Song {i}','link':f'https://youtube.com/watch?v={i}'} for i in range(50)]
-        self.player.search_youtube.side_effect=lambda query,**kwargs: full[:1] if kwargs.get('limit')==1 else full
+        self.player.search_youtube.side_effect=lambda query,**kwargs: full[:12] if kwargs.get('limit')==12 else full
         self.cog._search_and_enqueue_task('Thai music',7)
-        self.player.search_youtube.assert_called_once_with('Thai music',limit=1)
+        self.player.search_youtube.assert_called_once_with('Thai music',limit=12)
         self.cog._after_queue_enqueue.assert_called_once_with(True)
         self.assertEqual(len(self.player.queue),1)
-        self.assertEqual(len(self.player.queue[0]['_search_results']),1)
+        self.assertEqual(len(self.player.queue[0]['_search_results']),12)
         self.assertEqual(len(self.pool.jobs),1)
         self.pool.run()
         self.assertEqual(len(self.player.queue[0]['_search_results']),50)
@@ -263,7 +322,7 @@ class FastFirstSearchTests(unittest.TestCase):
     def test_background_search_does_not_replace_user_selection_or_stale_queue(self):
         first={'title':'First','link':'https://youtube.com/watch?v=first'}
         second={'title':'Second','link':'https://youtube.com/watch?v=second'}
-        self.player.search_youtube.side_effect=lambda query,**kwargs:[first] if kwargs.get('limit')==1 else [second,first]
+        self.player.search_youtube.side_effect=lambda query,**kwargs:[first] if kwargs.get('limit')==12 else [second,first]
         self.cog._search_and_enqueue_task('song',7)
         original=self.player.queue[0]
         token=original['_queue_token']
@@ -302,11 +361,11 @@ class FastFirstSearchTests(unittest.TestCase):
         self.cog._set_playback_context=Mock()
         self.cog._announce_track=Mock();self.cog._prefetch_next_for_current=Mock()
         tracks=[{'title':f'Track {i}','link':f'https://music.youtube.com/watch?v={i}'} for i in range(20)]
-        self.player.search_ytmusic.side_effect=lambda query,**kwargs: tracks[:1] if kwargs.get('limit')==1 else tracks
+        self.player.search_ytmusic.side_effect=lambda query,**kwargs: tracks[:12] if kwargs.get('limit')==12 else tracks
         self.cog._search_and_play_task('songs',7,source='ytmusic')
-        self.player.search_ytmusic.assert_called_once_with('songs',limit=1)
+        self.player.search_ytmusic.assert_called_once_with('songs',limit=12)
         self.player.play_stream.assert_called_once_with(tracks[0]['link'])
-        self.assertEqual(len(self.player.search_results),1)
+        self.assertEqual(len(self.player.search_results),12)
         self.assertEqual(len(self.pool.jobs),1)
         self.pool.run()
         self.assertEqual(len(self.player.search_results),20)
@@ -321,10 +380,10 @@ class FastFirstSearchTests(unittest.TestCase):
         self.assertIs(self.player.search_results,newer)
         self.assertEqual(len(newer),1)
 
-    def test_one_hit_search_failure_falls_back_without_double_background_search(self):
+    def test_first_page_search_failure_falls_back_without_double_background_search(self):
         results=[{'title':'Recovered','link':'https://youtube.com/watch?v=ok'},
                  {'title':'Alternate','link':'https://youtube.com/watch?v=alt'}]
-        self.player.search_youtube.side_effect=lambda query,**kwargs: [] if kwargs.get('limit')==1 else results
+        self.player.search_youtube.side_effect=lambda query,**kwargs: [] if kwargs.get('limit')==12 else results
         self.cog._search_and_enqueue_task('recovery',7)
         self.assertEqual(self.player.search_youtube.call_count,2)
         self.assertEqual(len(self.player.queue[0]['_search_results']),2)
@@ -336,6 +395,7 @@ class StreamMetadataTests(unittest.TestCase):
     def setUp(self):
         self.module=load_player();self.player=self.module.Player.__new__(self.module.Player)
         self.player._prefetch_cache={};self.player._prefetch_times={}
+        self.player._ydl_lock=threading.Lock();self.player._prefetch_inflight={}
 
     def test_signed_url_expiry_overrides_fresh_prefetch_timestamp(self):
         self.player._prefetch_cache['song']={'url':f'https://cdn.example/audio?expire={int(time.time())+10}'}
@@ -388,6 +448,60 @@ class StreamMetadataTests(unittest.TestCase):
         self.assertIsNone(self.player.play_stream(link))
         self.player.play.assert_called_once_with(media)
         self.player._extract_play_info_resilient.assert_not_called()
+
+    def test_foreground_play_does_not_wait_for_unrelated_slow_prefetch(self):
+        entered=threading.Event();release=threading.Event()
+        def extract(link):
+            if link=='background':
+                entered.set();release.wait(2.0)
+            return {'title':'Ready','url':'https://cdn.example/audio'}
+        self.player._extract_play_info_resilient=extract
+        worker=threading.Thread(target=self.player.prefetch_stream_info,args=('background',),daemon=True)
+        worker.start();self.assertTrue(entered.wait(1))
+        self.player.pause=False;self.player._requires_temp_download=Mock(return_value=False)
+        self.player._apply_stream_headers=Mock();self.player._arm_end_detection=Mock()
+        self.player._cancel_end_detection=Mock();self.player.play=Mock()
+        self.player._mpv_end_event_registered=True;self.player.add_to_recent_history=Mock()
+        try:
+            start=time.monotonic()
+            self.player.play_stream('foreground')
+            self.assertLess(time.monotonic()-start,0.65)
+            self.player.play.assert_called_once_with('https://cdn.example/audio')
+        finally:
+            release.set();worker.join(2)
+
+    def test_pending_prefetch_is_reused_if_about_to_finish(self):
+        entered=threading.Event();release=threading.Event();calls=[]
+        def extract(link):
+            calls.append(link)
+            entered.set();release.wait(2)
+            return {'title':'Ready','url':'https://cdn.example/audio'}
+        self.player._extract_play_info_resilient=extract
+        worker=threading.Thread(target=self.player.prefetch_stream_info,args=('same',),daemon=True)
+        worker.start();self.assertTrue(entered.wait(1))
+        self.player.pause=False;self.player._requires_temp_download=Mock(return_value=False)
+        self.player._apply_stream_headers=Mock();self.player._arm_end_detection=Mock()
+        self.player._cancel_end_detection=Mock();self.player.play=Mock()
+        self.player._mpv_end_event_registered=True;self.player.add_to_recent_history=Mock()
+        timer=threading.Timer(0.05,release.set);timer.start()
+        try:
+            self.player.play_stream('same')
+            self.assertEqual(calls,['same'])
+            self.player.play.assert_called_once()
+        finally:
+            release.set();worker.join(2);timer.join(2)
+
+    def test_native_eof_property_recovers_when_idle_never_flips(self):
+        self._arm_watchdog_fixture()
+        self.player.idle_active=False
+        self.player._on_start_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=5)))
+        self.player.active_playback_started=time.monotonic()-8
+        self.module.Player.__getitem__=lambda _self,key: True if key=='eof-reached' else (7.5 if key=='time-pos' else False)
+        self.player._playback_watchdog_tick()
+        self.player._watchdog_eof_since=time.monotonic()-2
+        self.player._playback_watchdog_tick()
+        self.player.end_callback.assert_called_once()
+        self.assertEqual(self.player.last_end_reason,'eof')
 
     def test_transport_headers_are_forwarded_and_reset_for_next_item(self):
         self.player._apply_stream_headers({'http_headers':{'User-Agent':'FixtureBrowser','Referer':'https://youtube.com/','Cookie':'never forward','Origin':'bad\nInjected: value'}})

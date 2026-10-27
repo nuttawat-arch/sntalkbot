@@ -1264,9 +1264,9 @@ def validate_player_queue_and_radio_regressions():
         cog._after_queue_enqueue = lambda should_start: queue_starts.append(bool(should_start))
         cog.handle_play_search_or_pause_command(msg, "รักรักรัก")
         # ImmediatePool also runs the new background expansion synchronously.
-        # The first request must be limited to one hit; the second must restore
-        # the complete result set without delaying the logical first play.
-        assert youtube_queries == [("รักรักรัก", 1), ("รักรักรัก", None)] and music_queries == [], (youtube_queries, music_queries)
+        # The first request must expose a useful page of twelve choices; the
+        # second restores all results without changing the selected item.
+        assert youtube_queries == [("รักรักรัก", 12), ("รักรักรัก", None)] and music_queries == [], (youtube_queries, music_queries)
         assert len(player.queue) == 1 and player.queue[0]["link"].endswith("v=yt1"), player.queue
         assert player.queue[0].get("_search_source") == "youtube" and len(player.queue[0].get("_search_results") or []) == 2, player.queue[0]
         assert queue_starts == [True], queue_starts
@@ -1279,7 +1279,7 @@ def validate_player_queue_and_radio_regressions():
         player.is_playing = False
         queue_starts.clear()
         cog.handle_ytmusic_search_command(msg, "รักรักรัก")
-        assert youtube_queries == [("รักรักรัก", 1), ("รักรักรัก", None)] and music_queries == [("รักรักรัก", 1), ("รักรักรัก", None)], (youtube_queries, music_queries)
+        assert youtube_queries == [("รักรักรัก", 12), ("รักรักรัก", None)] and music_queries == [("รักรักรัก", 12), ("รักรักรัก", None)], (youtube_queries, music_queries)
         assert len(player.queue) == 1 and "music.youtube.com" in player.queue[0]["link"], player.queue
         assert player.queue[0].get("_search_source") == "ytmusic", player.queue[0]
 
@@ -1294,7 +1294,7 @@ def validate_player_queue_and_radio_regressions():
         player.play_stream = lambda link: (normal_plays.append(str(link)), setattr(player, "media_title", "YouTube hit"))[0]
         cog._after_queue_enqueue = original_after_queue_enqueue
         cog.handle_play_search_or_pause_command(msg, "รักรักรัก")
-        assert youtube_queries == [("รักรักรัก", 1), ("รักรักรัก", None)] * 2, youtube_queries
+        assert youtube_queries == [("รักรักรัก", 12), ("รักรักรัก", None)] * 2, youtube_queries
         assert normal_plays == ["https://www.youtube.com/watch?v=yt1"], normal_plays
 
         # Reset the playlist fixture before exercising a second, independent pp case.
@@ -2000,29 +2000,30 @@ if not (
 else:
     ok("queue-mode u <URL> shares the same dynamic webpage/stream resolver and caches the resolved handoff")
 
-# Prefetch/playback use one yt-dlp lock. If playback arrives while the worker is
-# still extracting the same next URL, play_stream must re-check cache *after*
-# acquiring that lock; otherwise it extracts the same song twice and creates a
-# visible gap between queue items.
+# Playback can only wait briefly on a prefetch for the *same* URL.
+# Never hold the shared cache lock across yt-dlp network extraction, since an
+# unrelated prefetch can otherwise delay user-selected media indefinitely.
 _player_core = (ROOT / "bot" / "player.py").read_text(encoding="utf-8")
 _play_start = _player_core.find("def play_stream")
 _play_end = _player_core.find("def fade_out_and_stop", _play_start)
 _play_block = _player_core[_play_start:_play_end]
-if _play_block.count("self._pop_prefetched(link)") < 2 or "with self._ydl_lock" not in _play_block:
-    fail("queue handoff prefetch race guard is missing from play_stream")
+if (_play_block.count("self._pop_prefetched(link)") < 2
+    or "pending.wait(timeout=0.25)" not in _play_block
+    or "info = self._extract_play_info_resilient(link)" not in _play_block):
+    fail("foreground playback does not bypass slow background prefetch")
 else:
-    ok("queue handoff reuses in-flight prefetch after yt-dlp lock instead of extracting the next track twice")
+    ok("foreground playback waits at most 250ms for the same-link prefetch, never for unrelated media")
 _prefetch_start = _player_core.find("    def prefetch_stream_info(self, link):")
 _prefetch_end = _player_core.find("    def get_channel_link", _prefetch_start)
 _prefetch_block = _player_core[_prefetch_start:_prefetch_end]
 if not (
     "with self._ydl_lock:" in _prefetch_block
-    and "if info:\n                    self._prefetch_cache[link] = info" in _prefetch_block
-    and _prefetch_block.find("self._prefetch_cache[link] = info") < _prefetch_block.find("        except Exception")
+    and _prefetch_block.find("info = self._extract_play_info_resilient(link)") < _prefetch_block.find("with self._ydl_lock:", _prefetch_block.find("try:"))
+    and "_prefetch_inflight.pop(link, None)" in _prefetch_block
 ):
-    fail("prefetch cache is not committed before releasing the yt-dlp lock")
+    fail("prefetch extraction is not isolated from the foreground cache lock")
 else:
-    ok("prefetch commits the next-track cache before releasing yt-dlp lock, closing the last duplicate-extraction race")
+    ok("prefetch extraction runs outside the foreground cache lock and signals pending lookups")
 
 # Linux/source line endings are release-critical.  Windows checkouts must not
 # re-introduce CRLF into Python/shell/config sources that are copied into Docker.

@@ -1,4 +1,15 @@
-# SNTalkBot 5.1.34 — เพลงจบแล้วเลื่อนคิวเองและไม่ค้าง Speaking (ยังไม่เผยแพร่)
+# SNTalkBot 5.1.35 — คิวเพลงต่อเนื่องและผลค้นหา 12 ทางเลือก (ยังไม่เผยแพร่)
+
+- แยก ordered playback worker สำหรับ callback จบเพลง / ส่งต่อคิว / เล่นเพลงแรก / เปลี่ยนผลคิว ไม่ให้รอการค้นหา/download บน io_pool
+- ปรับผลค้นหาเบื้องต้นจาก 1 เป็น 12 ทางเลือกที่เลือกได้เลย ทั้ง YouTube และ YouTube Music; ยังคงเติม 50/20 รายการเต็มใน background
+- foreground yt-dlp ไม่ถูกล็อกโดย prefetch ของเพลงอื่น และรอแค่ 250ms เมื่อ prefetch URL เดียวกันใกล้เสร็จ
+- เพิ่ม `eof-reached` fallback ให้ MPV watchdog ในกรณี END_FILE หายและ idle ไม่เปลี่ยน คงการตรวจซ้ำ/รุ่น playback ที่ถูกต้อง
+- ไม่เปลี่ยน TeamTalk API, cookie policy, 18+, generic URLs, SQLite schema หรือ Web Manager 1.1.29
+- Unit tests 111/111 และ `tools/validate_project.py` ผ่าน; ต้องยืนยันการเล่นจริงบน Linux/TeamTalk หลังอัปเดต
+
+---
+
+# SNTalkBot 5.1.34 — เพลงจบแล้วเลื่อนคิวเองและไม่ค้าง Speaking (เผยแพร่แล้ว)
 
 - เพิ่มตัวตรวจจับสำรองเมื่อ MPV ไม่ส่ง END_FILE: เช็ก idle ทุก 1 วินาที พร้อม guard กันสลับเพลงซ้ำและข้ามเพลงเก่า; เมื่อมี time-pos หยุดเดินผิดปกติจึงเข้า retry/skip ที่มีอยู่แล้ว
 - คิวเพลงสุดท้ายจบ: ปิดการส่งเสียง TeamTalk, เปลี่ยนสถานะกลับเป็น idle ตามที่ตั้งไว้ และล้าง now-playing; หาก Autoplay ไม่มีเพลงถัดไปให้หยุดอย่างเรียบร้อย
