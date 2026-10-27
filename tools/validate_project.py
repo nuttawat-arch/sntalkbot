@@ -1264,9 +1264,9 @@ def validate_player_queue_and_radio_regressions():
         cog._after_queue_enqueue = lambda should_start: queue_starts.append(bool(should_start))
         cog.handle_play_search_or_pause_command(msg, "รักรักรัก")
         # ImmediatePool also runs the new background expansion synchronously.
-        # The first request must expose a useful page of twelve choices; the
+        # The first request must expose a compact page of four choices; the
         # second restores all results without changing the selected item.
-        assert youtube_queries == [("รักรักรัก", 12), ("รักรักรัก", None)] and music_queries == [], (youtube_queries, music_queries)
+        assert youtube_queries == [("รักรักรัก", 4), ("รักรักรัก", None)] and music_queries == [], (youtube_queries, music_queries)
         assert len(player.queue) == 1 and player.queue[0]["link"].endswith("v=yt1"), player.queue
         assert player.queue[0].get("_search_source") == "youtube" and len(player.queue[0].get("_search_results") or []) == 2, player.queue[0]
         assert queue_starts == [True], queue_starts
@@ -1279,7 +1279,7 @@ def validate_player_queue_and_radio_regressions():
         player.is_playing = False
         queue_starts.clear()
         cog.handle_ytmusic_search_command(msg, "รักรักรัก")
-        assert youtube_queries == [("รักรักรัก", 12), ("รักรักรัก", None)] and music_queries == [("รักรักรัก", 12), ("รักรักรัก", None)], (youtube_queries, music_queries)
+        assert youtube_queries == [("รักรักรัก", 4), ("รักรักรัก", None)] and music_queries == [("รักรักรัก", 4), ("รักรักรัก", None)], (youtube_queries, music_queries)
         assert len(player.queue) == 1 and "music.youtube.com" in player.queue[0]["link"], player.queue
         assert player.queue[0].get("_search_source") == "ytmusic", player.queue[0]
 
@@ -1294,7 +1294,7 @@ def validate_player_queue_and_radio_regressions():
         player.play_stream = lambda link: (normal_plays.append(str(link)), setattr(player, "media_title", "YouTube hit"))[0]
         cog._after_queue_enqueue = original_after_queue_enqueue
         cog.handle_play_search_or_pause_command(msg, "รักรักรัก")
-        assert youtube_queries == [("รักรักรัก", 12), ("รักรักรัก", None)] * 2, youtube_queries
+        assert youtube_queries == [("รักรักรัก", 4), ("รักรักรัก", None)] * 2, youtube_queries
         assert normal_plays == ["https://www.youtube.com/watch?v=yt1"], normal_plays
 
         # Reset the playlist fixture before exercising a second, independent pp case.
@@ -2008,16 +2008,19 @@ _play_start = _player_core.find("def play_stream")
 _play_end = _player_core.find("def fade_out_and_stop", _play_start)
 _play_block = _player_core[_play_start:_play_end]
 if (_play_block.count("self._pop_prefetched(link)") < 2
-    or "pending.wait(timeout=0.25)" not in _play_block
+    or "pending.wait(timeout=0.12)" not in _play_block
     or "info = self._extract_play_info_resilient(link)" not in _play_block):
     fail("foreground playback does not bypass slow background prefetch")
 else:
-    ok("foreground playback waits at most 250ms for the same-link prefetch, never for unrelated media")
+    ok("foreground playback waits at most 120ms for the same-link prefetch, then uses the bounded fast resolver/yt-dlp path")
 _prefetch_start = _player_core.find("    def prefetch_stream_info(self, link):")
 _prefetch_end = _player_core.find("    def get_channel_link", _prefetch_start)
 _prefetch_block = _player_core[_prefetch_start:_prefetch_end]
 if not (
     "with self._ydl_lock:" in _prefetch_block
+    and "info = self._resolve_youtube_direct_audio(link)" in _prefetch_block
+    and "info = self._extract_play_info_resilient(link)" in _prefetch_block
+    and _prefetch_block.find("info = self._resolve_youtube_direct_audio(link)") < _prefetch_block.find("with self._ydl_lock:", _prefetch_block.find("try:"))
     and _prefetch_block.find("info = self._extract_play_info_resilient(link)") < _prefetch_block.find("with self._ydl_lock:", _prefetch_block.find("try:"))
     and "_prefetch_inflight.pop(link, None)" in _prefetch_block
 ):
