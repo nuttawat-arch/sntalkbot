@@ -452,7 +452,7 @@ class StreamMetadataTests(unittest.TestCase):
         self.player._stream_http=SimpleNamespace(post=Mock(return_value=response))
         resolve=self.module.Player._resolve_youtube_direct_audio.__get__(self.player)
         self.assertIsNone(resolve('https://www.youtube.com/watch?v=abcdefghijk'))
-        self.assertEqual(self.player._stream_http.post.call_count,2)
+        self.assertEqual(self.player._stream_http.post.call_count,1)
 
     def test_signed_url_expiry_overrides_fresh_prefetch_timestamp(self):
         self.player._prefetch_cache['song']={'url':f'https://cdn.example/audio?expire={int(time.time())+10}'}
