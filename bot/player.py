@@ -293,14 +293,26 @@ class Player(mpv.MPV):
         because stale account cookies can break otherwise-public media.
         """
         cfg = self.ytdlp_config
+        # Metadata-only discovery must stay lightweight. The fast reference
+        # player uses a 12s socket timeout and two retries for flat YouTube
+        # lookups; playback keeps the more tolerant configured values.
+        if extract_flat:
+            socket_timeout = min(float(cfg.get("timeout", 20) or 20), 12.0)
+            retries = min(int(cfg.get("retries", 5) or 5), 2)
+            fragment_retries = min(int(cfg.get("fragment_retries", 5) or 5), 2)
+        else:
+            socket_timeout = cfg.get("timeout", 20)
+            retries = cfg.get("retries", 5)
+            fragment_retries = cfg.get("fragment_retries", 5)
         opts = {
             "format": cfg.get("format", "bestaudio/best"),
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
-            "socket_timeout": cfg.get("timeout", 20),
-            "retries": cfg.get("retries", 5),
-            "fragment_retries": cfg.get("fragment_retries", 5),
+            "socket_timeout": socket_timeout,
+            "retries": retries,
+            "extractor_retries": 2 if extract_flat else retries,
+            "fragment_retries": fragment_retries,
             "concurrent_fragment_downloads": cfg.get("concurrent_fragment_downloads", 4),
             "extract_flat": extract_flat,
             "noplaylist": noplaylist,
@@ -585,30 +597,31 @@ class Player(mpv.MPV):
         return results
 
     def _search(self, target, limit=50):
-        """Search once with the effective cookie, then retry public media cleanly.
+        """Use the light public search path first; cookies remain a fallback.
 
-        This avoids one bad/stale cookie file turning every YouTube and YouTube
-        Music search into an empty result while still preferring the user's cookie
-        for account-gated content.
+        Text discovery normally does not need account cookies. Cookie-first
+        search adds browser-session/challenge work to every cold request and is
+        noticeably slower than the reference player. Playback itself remains
+        cookie-first, so age-restricted media keeps the existing access policy.
         """
         first_error = None
         try:
-            results = self._search_once(target, limit=limit, use_cookies=True)
+            results = self._search_once(target, limit=limit, use_cookies=False)
             if results:
                 return results
         except Exception as exc:
             first_error = exc
         if self._active_cookiefile():
             try:
-                results = self._search_once(target, limit=limit, use_cookies=False)
+                results = self._search_once(target, limit=limit, use_cookies=True)
                 if results:
-                    print("yt-dlp search recovered without cookies")
+                    print("yt-dlp search recovered with cookies")
                     return results
             except Exception as exc:
                 if first_error is None:
                     first_error = exc
                 else:
-                    print(f"yt-dlp no-cookie search retry failed: {exc}")
+                    print(f"yt-dlp cookie search fallback failed: {exc}")
         if first_error is not None:
             print(f"yt-dlp search failed: {first_error}")
         return []
