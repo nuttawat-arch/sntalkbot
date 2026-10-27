@@ -1,13 +1,38 @@
-# sntalkbot 5.1.28
+# sntalkbot 5.1.31
+
+## รอบ 27 ต.ค. 2569: Windows Publisher regression hotfix (5.1.31 ยังไม่เผยแพร่)
+
+- **DONE (Root cause):** Windows Publisher เมนู 1 ตรวจ Bot 5.1.30 ล้มที่ `non-interactive config migration regression: module 'os' has no attribute 'geteuid'`; Windows ไม่มี POSIX `os.geteuid()` ซึ่ง Bot `_file_lock` เรียกโดยไม่ตรวจแพลตฟอร์ม
+- **DONE (Code):** จำกัด `fchmod`/`geteuid` เพื่อซ่อม group-write lock เฉพาะ POSIX (`os.name == 'posix'`) และตรวจว่าฟังก์ชันมีจริงก่อนเรียก; ยังรักษา Linux lock mode `0660` และไม่แตะข้อมูลเดิม
+- **DONE (Regression):** เพิ่ม unit test จำลอง Windows ที่ `geteuid` เรียกไม่ได้ และจำกัด test mode `0660` เฉพาะ POSIX; Bot tests **85/85 ผ่าน** บน Linux, project validator ผ่าน
+- **DOING:** ยังต้องรัน Publisher บน Windows จริงอีกครั้งและตรวจ GitHub/Docker/Linux live หลังเผยแพร่; Log ที่แนบเป็น run ล้มก่อน publish
+- **TODO:** ยืนยัน native Windows Python 3.14 validation แทน simulation และ Linux container permissions หลัง deploy
+
+## รอบ 27 ต.ค. 2569: Lock File Permission Hotfix (5.1.30 ยังไม่เผยแพร่)
+
+- **DONE:** ปรับ `_file_lock` ของ `config.ini` ให้ยืนยัน mode `0660` เมื่อสร้าง/เปิดไฟล์ล็อกที่เป็นเจ้าของ แม้กระบวนการบอตตั้ง umask แบบเข้ม ทำให้กลุ่มข้อมูลของ Web Manager เปิดได้
+- **DONE:** คง stable `flock` ข้าม Bot และ Web Manager, atomic config writes, queue SQLite, TeamTalk action เดิม และ cookies เดิมทั้งหมด
+- **DONE (Offline QA):** Unit tests 84/84 ผ่าน รวม regression restrictive umask; ทำงานร่วม Web Manager 1.1.28 และ installer auto-repair ไฟล์ล็อกเก่า
+- **DOING:** ยังไม่ได้ทดสอบบน Docker/TeamTalk จริง; ต้องเผยแพร่ image 5.1.30 แล้วตรวจอัปเดต/บันทึกจาก Web Manager หลัง installer 1.1.28
+- **TODO:** คงรอบต่อไปสำหรับ WebSockets/event signaling และ queue placement หลัง live QA
+
+## รอบ 27 ต.ค. 2569: Player status สำหรับ Web Manager รุ่น 1.1.27
+
+- **DONE (Bot 5.1.29):** เพิ่ม `channel_messages`, `announce_tracks`, `announce_queue`, `announcement_tts_mode` ใน snapshot RAM ของ Player เพื่อแสดงสถานะสวิตช์และตัวเลือก TTS ตรงกับค่าจริงบนเว็บ
+- **DONE (ความเข้ากันได้):** คงคำสั่ง TeamTalk, API เดิม, คิว SQLite, ข้อมูลอื่น และ Cookie ทั้งหมดจาก 5.1.28; ไม่เปลี่ยนนโยบาย default cookies
+- **DOING:** รัน Unit tests/validator ของ Bot หลังแก้ snapshot และทดสอบร่วม Web Manager บน Linux/TeamTalk/NVDA จริง
+- **TODO:** เพิ่ม queue placement ใหม่ได้ต่อเมื่อผ่านการทดสอบไม่ให้กระทบความต่อเนื่องของเพลงและลำดับรายการคิว
+- **DONE (QA offline):** Unit tests 83/83 ผ่าน (เพิ่ม regression ตรวจสถานะสวิตช์ Player); `tools/validate_project.py` ผ่านและยืนยัน version 5.1.29 ตรงกัน
+
 
 ## รอบ 27 ต.ค. 2569: เตรียม Release 5.1.28 แก้ความขัดแย้งของ Git tag
 
 - **DONE (ซอร์ส):** เปลี่ยน `VERSION` และ `BotUtils.VERSION` เป็น `5.1.28` โดยคงฟีเจอร์ Playlist, Web Manager, TeamTalk และไฟล์ Cookie ทั้งหมดตามรุ่นที่พัฒนาก่อนหน้า
 - **DONE (เอกสาร):** อัปเดตชื่อรุ่นปัจจุบันในคู่มือหลัก โดยไม่เปลี่ยนบันทึกประวัติรุ่นเก่า
 - **DONE (QA offline):** SNTalkBot unit tests 82 ผ่าน; `tools/validate_project.py` ผ่าน (123 canonical commands); TTUHelper validator ผ่าน; Web Manager portable validator และ unit tests 25 ผ่าน; Python AST 37 ไฟล์ผ่าน; `git diff --check` ผ่าน
-- **DOING (Windows QA):** ต้องรัน PowerShell Publisher จริงบน Windows; ยังทดสอบ Docker push, website transport และ GitHub tag `v5.1.28` จากเครื่องนี้ไม่ได้
+- **DONE (Windows Publish 5.1.28):** จากล็อกผู้ใช้ เมนู 1 ส่ง GitHub tag `v5.1.28`, Docker `5.1.28`/`latest`, ZIP เว็บไซต์ และหน้า Download สำเร็จแล้ว; ขั้นตอน GitHub Actions และตรวจ Linux runtime ยังต้องยืนยันภายหลัง
 - **KNOWN WARNING:** Starlette เตือน `TemplateResponse(name, context)` เป็นรูปแบบเก่า แต่ Web Manager unit tests ยังผ่าน 25/25; พิจารณาปรับ API นี้ในรอบ Web Manager ใหม่โดยไม่แตะ Release 1.1.26 ที่ใช้งานอยู่
-- **TODO (Windows):** นำแพตช์เวอร์ชันใหม่ไปวางทับโค้ดล่าสุดบนเครื่อง Windows ที่ HEAD `c757b98` แล้วใช้ Publisher หมายเลข 1 เพื่อ Commit/Push และสร้าง tag `v5.1.28` ใหม่ โดยห้าม force-move tag `v5.1.27`
+- **DONE (Windows):** ผู้ใช้เผยแพร่ 5.1.28 สำเร็จแล้วตามล็อก; ไม่แก้หรือย้าย tag รุ่นเก่า
 - **TODO (Live):** ตรวจ GitHub Actions, Docker digest, ZIP/เว็บไซต์ และ Linux runtime/TeamTalk/YouTube หลัง Publish บนเครื่องจริง
 
 ## รอบ 26 ต.ค. 2569: บัญชี YouTube สำหรับบอต (Cookie Default)

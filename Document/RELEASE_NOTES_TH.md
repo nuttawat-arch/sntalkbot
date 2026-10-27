@@ -1,3 +1,27 @@
+# SNTalkBot 5.1.31 — Windows Publisher Compatibility Fix
+
+- Windows ไม่มี `os.geteuid()` จึงแก้ `config.ini.lock` permission handling ให้ใช้เฉพาะ Linux/POSIX
+- แก้ Validator fail จากรายงาน 5.1.30 โดยคง lock mode `0660` บน Linux และข้อมูลบอตทั้งหมด
+- unit tests 85 ผ่าน (มี mock Windows regression), project validator ผ่าน
+
+---
+
+# SNTalkBot 5.1.30 — Shared Config Lock Permission Hotfix
+
+- บอตแก้ group-write `0660` ของ stable `config.ini.lock` หลังเปิดไฟล์ แม้ umask เข้ม เพื่อป้องกัน Web Manager ติด PermissionError
+- คง queue SQLite, TeamTalk, config และ cookies ทั้งหมด; Web Manager 1.1.28 repair permission ไฟล์ล็อกเก่าเมื่ออัปเดต
+- Unit tests ออฟไลน์ 84 ผ่าน; ยังต้องตรวจ Linux/TeamTalk จริง
+
+---
+
+# SNTalkBot 5.1.29 — Live Player Settings for Web Manager
+
+- เพิ่มสถานะ Player ที่จำเป็นต่อ Checkbox/Radio Button ของ Web Manager 1.1.27 ผ่าน RAM snapshot โดยไม่เปลี่ยน Queue/TeamTalk/Cookie
+- เตรียมเวอร์ชันถัดจาก 5.1.28 ซึ่ง Windows Publisher log ระบุว่าเผยแพร่ Docker/ZIP/เว็บไซต์ และผลักแท็ก GitHub สำเร็จแล้ว
+- ทดสอบบน Linux/TeamTalk/NVDA จริงหลังเผยแพร่
+
+---
+
 # SNTalkBot 5.1.24 — Full Playlist Loading
 
 - แก้ Playlist ที่มีมากกว่า 100 เพลงถูกตัดเหลือ 100 ทั้ง Queue Mode และโหมดปกติ

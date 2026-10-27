@@ -651,6 +651,9 @@ class ConfigHandler:
         # Lock a stable sidecar inode: config.ini itself is atomically replaced.
         descriptor = os.open(str(self.config_file) + ".lock", os.O_CREAT | os.O_RDWR, 0o660)
         with os.fdopen(descriptor, "a", encoding="utf-8") as lock:
+            # Container umask otherwise creates 0640, blocking the Web Manager.
+            if os.name == "posix" and hasattr(os, "fchmod") and hasattr(os, "geteuid") and os.fstat(lock.fileno()).st_uid == os.geteuid():
+                os.fchmod(lock.fileno(), 0o660)
             try:
                 import fcntl
             except ImportError:

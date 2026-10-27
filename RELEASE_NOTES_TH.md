@@ -1,3 +1,28 @@
+# SNTalkBot 5.1.31 — Windows Publisher Compatibility Fix
+
+- แก้ความผิดพลาดของตัวตรวจ Config migration บน Windows ที่ไม่มี `os.geteuid()` ใน Bot 5.1.30
+- บอตยังจัดสิทธิ์ `config.ini.lock` เป็น `0660` เฉพาะ Linux/POSIX; Windows validation ไม่เรียกคำสั่งระบบที่ไม่มี
+- เพิ่ม unit test จำลอง Windows และรักษา Linux restrictive-umask regression; offline tests 85 ผ่าน
+- ไม่เปลี่ยน TeamTalk, SQLite, cookies, config หรือคำสั่งจากรุ่นเดิม; ใช้กับ Web Manager 1.1.29
+
+---
+
+# SNTalkBot 5.1.30 — Shared Config Lock Permission Hotfix
+
+- แก้ `config.ini.lock` ให้เป็น mode `0660` เมื่อไฟล์เป็นของ process บอต แม้ Linux ใช้ restrictive umask เพื่อให้ Web Manager 1.1.28 เขียนร่วมกับบอตได้
+- คง stable cross-process flock, ทุกค่าตั้งค่าเดิม, คำสั่ง TeamTalk, SQLite queue และ cookies ทุกตัว
+- Unit tests ออฟไลน์ 84 ผ่าน; ต้องตรวจ Docker/TeamTalk จริงหลังเผยแพร่
+
+---
+
+# SNTalkBot 5.1.29 — Live Player Settings for Web Manager
+
+- เพิ่มสถานะ `channel_messages`, `announce_tracks`, `announce_queue`, `announcement_tts_mode` ใน RAM snapshot ที่ API ส่งให้เว็บ เพื่อแสดง Checkbox/Radio Button ตรงกับค่า Player จริง
+- ไม่มีการเปลี่ยนการเล่นเพลง, คิว SQLite, TeamTalk commands หรือ Cookie; ใช้งานร่วม Web Manager 1.1.27
+- เตรียมออกเวอร์ชันใหม่หลัง 5.1.28 ซึ่งเผยแพร่ GitHub/Docker/ZIP/เว็บไซต์สำเร็จแล้วตาม Windows Publisher log; ตรวจ Linux runtime จริงหลังติดตั้ง
+
+---
+
 # SNTalkBot 5.1.24 — Full Playlist Loading
 
 - แก้ Playlist ที่มีมากกว่า 100 เพลงถูกตัดเหลือ 100 ทั้ง Queue Mode และโหมดปกติ

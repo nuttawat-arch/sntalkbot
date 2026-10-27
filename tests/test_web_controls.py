@@ -17,6 +17,7 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from bot.web_controls import WebControls,ControlError,WEB_ACTOR_ID,PLAYER_ACTIONS
 from bot.state_store import StateStore
 from bot.http_api import LocalStatusApi
+from bot.dashboard_state import RuntimeSnapshotBuilder
 
 class ControlsTests(unittest.TestCase):
     def setUp(self):
@@ -32,6 +33,25 @@ class ControlsTests(unittest.TestCase):
         self.addCleanup(self.controls.close)
 
     def drain(self):self.controls.pool.submit(lambda:None).result(timeout=2)
+
+    def test_runtime_snapshot_exposes_actual_player_switch_settings(self):
+        self.bot.playback_config.update({
+            'send_channel_messages':False, 'announce_tracks':True,
+            'announce_queue':False, 'announcement_tts_mode':'google',
+        })
+        self.bot.bot_config={'nickname':'Player'}
+        self.bot.server_config={'address':'example.test','tcp_port':10333,'udp_port':10333}
+        self.bot._state_flag=lambda name: 0
+        self.bot.activity=Mock();self.bot.activity.recent.return_value=[]
+        self.bot.player=SimpleNamespace(queue=[],queue_index=-1,queue_lock=threading.RLock(),
+            queue_mode=True,is_playing=False,volume=60,speed=1.0,play_mode=2,
+            current_link=None,media_title='',collection_results=[])
+        snapshot=RuntimeSnapshotBuilder(self.bot).build_snapshot()['player']
+        self.assertFalse(snapshot['channel_messages'])
+        self.assertTrue(snapshot['announce_tracks'])
+        self.assertFalse(snapshot['announce_queue'])
+        self.assertEqual(snapshot['announcement_tts_mode'],'google')
+        self.assertTrue(snapshot['queue_mode'])
 
     def test_player_cannot_broadcast_server_or_moderate(self):
         for action in ('announce_server','kick_user','ban_user','join_channel'):

@@ -1,7 +1,8 @@
 from pathlib import Path
+import os
 from tempfile import TemporaryDirectory
 from types import ModuleType
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import configparser
 import importlib.util
 import sys
@@ -58,5 +59,26 @@ class ConfigWriteTests(unittest.TestCase):
         actual=self.read()
         for i in range(10):self.assertEqual(actual.getint('playback',f'field_{i}'),i)
         self.assertEqual(actual.get('server','address'),'original.example')
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX permission bits only')
+    def test_bot_lock_keeps_group_write_with_restrictive_umask(self):
+        prior_umask=os.umask(0o077)
+        try:
+            with self.handler._file_lock():
+                self.assertTrue(Path(str(self.path)+'.lock').is_file())
+        finally:
+            os.umask(prior_umask)
+        self.assertEqual(Path(str(self.path)+'.lock').stat().st_mode & 0o777,0o660)
+
+    def test_bot_lock_does_not_call_missing_windows_geteuid(self):
+        simulated_windows_os=Mock(wraps=os)
+        simulated_windows_os.name='nt'
+        simulated_windows_os.O_CREAT=os.O_CREAT
+        simulated_windows_os.O_RDWR=os.O_RDWR
+        simulated_windows_os.geteuid.side_effect=AssertionError('geteuid does not exist on Windows')
+        with patch.object(self.module, 'os', simulated_windows_os):
+            with self.handler._file_lock():
+                pass
+        simulated_windows_os.geteuid.assert_not_called()
 
 if __name__=='__main__':unittest.main()

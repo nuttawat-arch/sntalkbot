@@ -1,4 +1,4 @@
-> **SNTalkBot 5.1.28:** All-in-One รุ่นปัจจุบัน — แยก Full/Player/Manager ชัดเจน, Queue/playlist/Related Radio, default YouTube cookies, dashboard `status`, recent `events` และ moderation ที่ตามทันการแก้ nickname/status/channel แบบ event-driven
+> **SNTalkBot 5.1.31:** แก้การตรวจสิทธิ์ไฟล์ล็อกให้ผ่านการตรวจบน Windows และคงระบบตั้งค่า Web Manager บน Linux โดยไม่เปลี่ยน Full/Player/Manager, Queue, Cookies หรือสถานะสด
 
 # SN TalkBot — Linux / Docker / TeamTalk Media Bot
 
