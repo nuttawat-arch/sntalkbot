@@ -1,3 +1,12 @@
+# SNTalkBot 5.1.42 — Normal Autoplay Ownership / Fast Stable Retry
+
+- แก้โหมดปกติเพลงถัดไปไม่เล่นเมื่อมี queue_index ค้างจาก Q: Queue จะถือ ownership เฉพาะ playback context ที่เป็น `queue` หรือเมื่อ Q เปิดและมี pending queue จริง.
+- ปิด Q จะไม่ปล่อย stale current index ไปแย่ง normal autoplay; เปิด Q ตอน idle พร้อม pending queue จะเริ่ม item แรกได้.
+- MPV `error=-13` retry ทันที ไม่รอ retry delay และลอง public-fast yt-dlp ก่อน full cookie-aware recovery.
+- Background prefetch/stable retry ใช้ public-fast -> full recovery เพื่อลดเวลารอของเพลง Queue แรก/stream ที่ direct URL ใช้ไม่ได้ โดยยังรักษา 18+/cookie fallback.
+
+---
+
 # SNTalkBot 5.1.41 — Fast First Track Validation / Deep Bass Recovery
 
 - เพลงแรกโหมดปกติไม่ส่ง direct YouTube URL ที่ยังไม่ตรวจให้ MPV อีกต่อไป; direct candidate ต้องผ่าน Range probe สั้น ๆ ก่อน และแข่งกับ public no-cookie yt-dlp fast path.
