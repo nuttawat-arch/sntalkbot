@@ -2033,6 +2033,12 @@ if not all(token in player_source_for_terminal for token in ("observe_property('
     fail("5.1.38 redundant terminal observers / resolver race are missing")
 ok("MPV END_FILE is backed by permanent eof-reached + idle observers, and cold YouTube resolution races direct/yt-dlp paths")
 
+if not all(token in player_source_for_terminal for token in ("PLAYTRACE ", "def trace_playback", "def _terminal_generation_ready", "terminal_dispatch", "queue_index", "queue_len")):
+    fail("5.1.39 playback trace / terminal readiness instrumentation is missing")
+if "unobserve_property('idle-active'" in player_source_for_terminal:
+    fail("idle-active observer must remain permanent in 5.1.39")
+ok("5.1.39 emits bounded secret-safe PLAYTRACE events and never removes the permanent idle observer")
+
 # Linux/source line endings are release-critical.  Windows checkouts must not
 # re-introduce CRLF into Python/shell/config sources that are copied into Docker.
 lf_suffixes = {".py", ".sh", ".ini", ".yml", ".yaml", ".md", ".txt"}
