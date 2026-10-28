@@ -1777,33 +1777,39 @@ class PlayerCog:
             self._deferred_playback_end = True
             self._trace("cog_playback_end_deferred")
             return
-        with self._ensure_failure_state():
-            if getattr(self, "_terminal_cancelled", False):
-                return
-            if self._retry_pending:
-                return  # Duplicate callback while the same item awaits retry.
         if hasattr(self.player, "last_end_reason") and self.player.last_end_reason is None:
             return  # A queued callback from an older load, not this live item.
 
-        # Queue always has priority. A completed queued item is removed exactly
-        # once; if the previous track was non-queue, pending queue starts at item 1.
+        # Inspect the terminal reason before generic retry/cancel guards. A clean
+        # Queue EOF is generation-deduped by Player._dispatch_end_once() and must
+        # never be suppressed by stale failure flags from an older load.
         end_reason = str(getattr(self.player, "last_end_reason", "") or "").lower()
         end_error = int(getattr(self.player, "last_end_error", 0) or 0)
-
-        # Clean Queue EOF is already generation-deduped by Player._dispatch_end_once().
-        # Do not route it through generic retry/cancel markers; that path can
-        # suppress a legitimate handoff and was the exact 5.1.39 stall seen live.
         if end_reason == "eof":
             with self.player.queue_lock:
                 queue_has_current = self.player.queue_index >= 0 and bool(self.player.queue)
                 queue_has_pending = bool(self.player.queue)
             if queue_has_current or (self.player.queue_mode and queue_has_pending):
                 self._trace("queue_clean_eof_fastpath", queue_has_current=queue_has_current, queue_has_pending=queue_has_pending)
-                self._reset_failure_budget()
+                with self._ensure_failure_state():
+                    pending = self._retry_pending
+                    if pending:
+                        pending["cancel"].set()
+                    self._retry_pending = None
+                    self._terminal_cancelled = False
+                    self._failure_count = 0
                 if self._advance_queue_after_current(remember=queue_has_current):
                     return
                 self._finish_natural_playback()
                 return
+
+        with self._ensure_failure_state():
+            if getattr(self, "_terminal_cancelled", False):
+                self._trace("terminal_ignored_cancelled", reason=end_reason)
+                return
+            if self._retry_pending:
+                self._trace("terminal_ignored_retry_pending", reason=end_reason)
+                return  # Duplicate callback while the same item awaits retry.
 
         with self._ensure_failure_state():
             if hasattr(self.player, "active_playback_epoch") or getattr(self, "_sync_error_serial", 0):
