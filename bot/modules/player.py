@@ -338,6 +338,11 @@ class PlayerCog:
         context = self._claim_one_retry()
         if not context:
             return False
+        # MPV -13 in the live logs means the CDN URL failed immediately after
+        # START_FILE. Waiting the generic retry delay only adds dead air, so
+        # retry this specific transport failure immediately with a fresh
+        # public-fast/stable yt-dlp stream.
+        context["immediate"] = int(getattr(self.player, "last_end_error", 0) or 0) == -13
         title = self.player.media_title or context.get("link") or self._("Unknown")
         self._send_playback_message(
             self._("Playback error for {title}. Retrying the same item with a fresh stream URL...").format(title=title)
@@ -352,6 +357,8 @@ class PlayerCog:
             return
         cancel = context["cancel"]
         delay = max(0.0, min(30.0, float(self.bot.playback_config.get("playback_retry_delay", 2.0))))
+        if context.get("immediate"):
+            delay = 0.0
         if cancel.wait(min(30.0, delay * context["attempt"])):
             return
         # The delay may run on the general IO pool, but the actual MPV
