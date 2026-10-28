@@ -311,13 +311,74 @@ class RecoveryTests(unittest.TestCase):
     def test_collection_prefetch_does_not_block_next_track_with_later_items(self):
         self.player.queue_mode=False
         self.player.prefetcher=SimpleNamespace(schedule=Mock())
-        self.cog._get_active_results=lambda:([
+        self.player.collection_results=[
             {'link':f'https://youtube.com/watch?v={i}'} for i in range(8)
-        ],'playlist')
-        self.cog._get_active_index=lambda:2
+        ]
+        self.player.current_collection_index=2
+        self.player.radio_candidates=[]
+        self.cog.autoplay_enabled=True
         module=load_cog()
         module.PlayerCog._prefetch_next_for_current(self.cog)
         self.player.prefetcher.schedule.assert_called_once_with(['https://youtube.com/watch?v=3'])
+
+    def test_normal_autoplay_prefetches_actual_radio_candidate_before_search_alternative(self):
+        self.player.queue_mode=False
+        self.player.collection_results=[]
+        self.player.search_results=[
+            {'link':'https://youtube.com/watch?v=search-current'},
+            {'link':'https://youtube.com/watch?v=search-next'},
+        ]
+        self.player.current_search_index=0
+        self.player.radio_candidates=[{'link':'https://youtube.com/watch?v=radio-next','title':'Radio next'}]
+        self.player.prefetcher=SimpleNamespace(schedule=Mock())
+        self.cog.autoplay_enabled=True
+        self.player.play_mode=2
+        module=load_cog()
+        module.PlayerCog._prefetch_next_for_current(self.cog)
+        self.player.prefetcher.schedule.assert_called_once_with(['https://youtube.com/watch?v=radio-next'])
+
+    def test_related_radio_warm_populates_candidates_and_prefetches_first(self):
+        self.player.queue_mode=False
+        self.player.play_mode=2
+        self.player.radio_history=[{'title':'Seed','link':'https://youtube.com/watch?v=seed','source':'youtube'}]
+        self.player.radio_index=0
+        self.player.radio_source='youtube'
+        self.player.radio_candidates=[]
+        self.player.prefetcher=SimpleNamespace(schedule=Mock())
+        self.player.related_radio=Mock(return_value=[
+            {'title':'R1','link':'https://youtube.com/watch?v=r1'},
+            {'title':'R2','link':'https://youtube.com/watch?v=r2'},
+        ])
+        self.cog.autoplay_enabled=True
+        self.cog._radio_warm_lock=threading.RLock()
+        self.cog._radio_warm_seed=None
+        self.cog._radio_warm_event=threading.Event();self.cog._radio_warm_event.set()
+        self.assertTrue(self.cog._schedule_related_radio_warm())
+        self.assertEqual(len(self.pool.jobs),1)
+        self.pool.run()
+        self.assertEqual([x['title'] for x in self.player.radio_candidates],['R1','R2'])
+        self.player.prefetcher.schedule.assert_called_once_with(['https://youtube.com/watch?v=r1'])
+
+    def test_track_tts_waits_for_audio_ready_and_rejects_stale_generation(self):
+        self.player.current_link='https://youtube.com/watch?v=current'
+        self.player.active_playback_epoch=7
+        self.player.is_playing=True
+        self.player.wait_for_audio_ready=Mock(return_value=True)
+        tts=SimpleNamespace(announce_player=Mock())
+        self.bot.tts_cog=tts
+        self.bot.quick_task_pool=self.pool
+        self.bot.playback_config['announce_tracks']=True
+        self.cog._announce_track('Current')
+        self.assertEqual(len(self.pool.jobs),1)
+        self.pool.run()
+        self.player.wait_for_audio_ready.assert_called_once_with(expected_epoch=7,timeout=6.0)
+        tts.announce_player.assert_called_once()
+
+        tts.announce_player.reset_mock()
+        self.player.wait_for_audio_ready=Mock(side_effect=lambda **kw:(setattr(self.player,'active_playback_epoch',8) or True))
+        self.cog._announce_track('Stale')
+        self.pool.run()
+        tts.announce_player.assert_not_called()
 
     def test_legacy_queue_token_is_persisted_not_lost_in_dict_copy(self):
         item=self.player.queue[0];item.pop('_queue_token');self.player.queue[0]=item
