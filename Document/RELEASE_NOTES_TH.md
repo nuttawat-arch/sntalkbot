@@ -1,3 +1,13 @@
+# SNTalkBot 5.1.39 — Queue Trace / Terminal Readiness (source ยังไม่เผยแพร่)
+
+- เพิ่ม `PLAYTRACE` แบบ JSON ที่ log ของแต่ละ Docker instance เพื่อเห็น search/resolver/prefetch/MPV terminal/queue transition แบบลำดับเหตุการณ์เดียวกัน โดยไม่เผย cookie/token/full URL.
+- กัน stale `idle-active=True` และ `eof-reached=True` ของเพลงเก่าจบ generation ใหม่ก่อน MPV เริ่มเพลง.
+- Watchdog ยอมกู้ EOF จาก generation ที่เห็น active/time-pos แม้ START_FILE event หาย.
+- Terminal property observers อยู่ถาวรและไม่ถูก stop/radio path ถอดหรือลงทะเบียนซ้ำ.
+- Queue trace ครอบคลุม enqueue, first start, next prefetch, end callback, queue pop/schedule, play request/load และ manual `n` เพื่อเทียบ auto-next กับ manual-next จาก runtime จริง.
+
+---
+
 # SNTalkBot 5.1.38 — Redundant EOF / Resolver Race / Fast Discovery (source ยังไม่เผยแพร่)
 
 - แก้ Queue เพลงถัดไปไม่เริ่มเองด้วย terminal detection 4 ชั้น: MPV END_FILE + permanent `eof-reached` + permanent `idle-active` + watchdog โดยใช้ one-shot dedupe เดียวกัน.
