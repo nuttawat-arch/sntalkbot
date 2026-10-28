@@ -1,3 +1,16 @@
+# SNTalkBot 5.1.43 — Full Player Audit / Related Radio Prewarm / Audio-Ready TTS
+
+- แก้ latency เพลงลำดับหลังใน normal M2/Autoplay: prewarm YouTube/YouTube Music Related Radio ระหว่างเพลงปัจจุบันและ prefetch stream ของ `radio_candidates[0]` ซึ่งเป็นเพลงที่ autoplay จะเล่นจริง แทนการอุ่น search alternative ที่ไม่ได้ถูก consume.
+- ทุก Related Radio item ที่เริ่มเล่นจะเตรียม candidate ถัดไปทันที ทำให้การเล่นต่อเนื่องไม่กลับไป cold-resolve ตอนเพลง 4/5/6.
+- Player TTS “Now playing” รอหลักฐาน audio-ready จาก MPV `PLAYBACK_RESTART` หรือ time-pos ก่อนประกาศ; ไม่ใช้เพียง `play_stream()` return/START_FILE และป้องกัน stale generation.
+- ลด project audio-buffer baseline จาก 0.5s เป็น 0.2s พร้อม one-time migration ของ instance เดิม และหยุดบังคับ `audio-stream-silence=yes` บน virtual PulseAudio sink; เปิดกลับได้ด้วย env เฉพาะกรณีจำเป็น.
+- แก้ readiness lock ให้ re-entrant และ reject late PLAYBACK_RESTART ของ generation ก่อนหน้า.
+- รักษา Queue EOF/ownership, stable prefetch, immediate MPV -13 retry, direct/public-fast resolver และ Bass 55 Hz + headroom/limiter จากรุ่นก่อนครบ.
+- Offline QA ผ่าน Unit tests 143/143 และ `tools/validate_project.py`.
+- VLC/LibVLC ยังไม่ถูกเพิ่มเป็น default backend; Linux รองรับได้ แต่ audit รอบนี้ชี้ต้นเหตุเป็น prefetch/TTS/latency policy เหนือ engine จึงแก้ MPV pipeline ก่อนและเก็บ VLC ไว้เป็น optional A/B backend หาก live trace ยังพิสูจน์ว่า transport เป็นคอขวด.
+
+---
+
 # SNTalkBot 5.1.42 — Normal Autoplay Ownership / Fast Stable Retry
 
 - แก้โหมดปกติเพลงถัดไปไม่เล่นเมื่อมี queue_index ค้างจาก Q: Queue จะถือ ownership เฉพาะ playback context ที่เป็น `queue` หรือเมื่อ Q เปิดและมี pending queue จริง.
