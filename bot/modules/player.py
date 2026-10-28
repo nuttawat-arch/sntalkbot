@@ -162,6 +162,10 @@ class PlayerCog:
             return tracer(event, **fields)
         return None
 
+    def _queue_owns_current_playback(self):
+        context = getattr(self, "_playback_context", None) or {}
+        return str(context.get("kind") or "") == "queue"
+
     def _schedule_playback_end(self):
         # Called from libmpv/watchdog threads; never do SQL or media extraction
         # on an MPV callback thread.
@@ -1790,8 +1794,16 @@ class PlayerCog:
             with self.player.queue_lock:
                 queue_has_current = self.player.queue_index >= 0 and bool(self.player.queue)
                 queue_has_pending = bool(self.player.queue)
-            if queue_has_current or (self.player.queue_mode and queue_has_pending):
-                self._trace("queue_clean_eof_fastpath", queue_has_current=queue_has_current, queue_has_pending=queue_has_pending)
+            queue_owns_current = queue_has_current and self._queue_owns_current_playback()
+            queue_takeover = bool(self.player.queue_mode and queue_has_pending)
+            if queue_owns_current or queue_takeover:
+                self._trace(
+                    "queue_clean_eof_fastpath",
+                    queue_has_current=queue_has_current,
+                    queue_has_pending=queue_has_pending,
+                    queue_owns_current=queue_owns_current,
+                    queue_takeover=queue_takeover,
+                )
                 with self._ensure_failure_state():
                     pending = self._retry_pending
                     if pending:
@@ -1799,10 +1811,15 @@ class PlayerCog:
                     self._retry_pending = None
                     self._terminal_cancelled = False
                     self._failure_count = 0
-                if self._advance_queue_after_current(remember=queue_has_current):
+                if self._advance_queue_after_current(remember=queue_owns_current):
                     return
-                self._finish_natural_playback()
-                return
+                # If Queue mode was turned off while its current item was
+                # playing, consume that item but continue through normal
+                # autoplay/radio logic. Only an enabled/exhausted Queue owns the
+                # natural-stop behavior.
+                if self.player.queue_mode:
+                    self._finish_natural_playback()
+                    return
 
         with self._ensure_failure_state():
             if getattr(self, "_terminal_cancelled", False):
@@ -1830,14 +1847,21 @@ class PlayerCog:
         with self.player.queue_lock:
             queue_has_current = self.player.queue_index >= 0 and bool(self.player.queue)
             queue_has_pending = bool(self.player.queue)
+            queue_owns_current = queue_has_current and self._queue_owns_current_playback()
             failed_title = None
-            if queue_has_current and end_reason == "error":
+            if queue_owns_current and end_reason == "error":
                 try:
                     failed_title = str(self.player.queue[self.player.queue_index].get("title") or self._("Unknown"))
                 except Exception:
                     failed_title = self._("Unknown")
-        self._trace("cog_playback_end_state", queue_has_current=queue_has_current, queue_has_pending=queue_has_pending, end_reason=end_reason)
-        if queue_has_current or (self.player.queue_mode and queue_has_pending):
+        self._trace(
+            "cog_playback_end_state",
+            queue_has_current=queue_has_current,
+            queue_has_pending=queue_has_pending,
+            queue_owns_current=queue_owns_current,
+            end_reason=end_reason,
+        )
+        if queue_owns_current or (self.player.queue_mode and queue_has_pending):
             if failed_title is not None:
                 self._send_playback_message(
                     self._("Playback failed for {title} (player error {error}). Skipping to the next queue item...").format(
@@ -1846,9 +1870,9 @@ class PlayerCog:
                 )
             if failed_title is not None and getattr(self.bot, "state_store", None) is not None:
                 self._send_playback_message("เก็บรายการที่เล่นไม่สำเร็จไว้ในหน้าเว็บแล้ว สามารถส่งกลับท้ายคิวได้โดยไม่ต้องหาเพลงใหม่")
-            if self._advance_queue_after_current(remember=queue_has_current and end_reason != "error"):
+            if self._advance_queue_after_current(remember=queue_owns_current and end_reason != "error"):
                 return
-            if queue_has_current:
+            if queue_owns_current and self.player.queue_mode:
                 self._finish_natural_playback()
                 return
 
@@ -2193,10 +2217,32 @@ class PlayerCog:
         else:
             self.player.queue_mode = not self.player.queue_mode
         
+        start_pending = False
+        with self.player.queue_lock:
+            if not self.player.queue_mode:
+                # Preserve pending items, but stale queue_index must not claim a
+                # later normal-mode song. Keep ownership only while an actual
+                # queue-context item is still playing.
+                if not self._queue_owns_current_playback() or not self.player.is_playing:
+                    self.player.queue_index = -1
+                    self.player.queue_transition = False
+            elif (
+                self.player.queue
+                and self.player.queue_index < 0
+                and not self.player.is_playing
+                and not self.player.queue_transition
+                and not self.player.playback_end_transition
+            ):
+                self.player.queue_index = 0
+                self.player.queue_transition = True
+                start_pending = True
+
         self.bot.playback_config["queue_mode"] = self.player.queue_mode
         self.bot.config_handler.update_playback_settings({"queue_mode": self.player.queue_mode})
         state = self._("enabled") if self.player.queue_mode else self._("disabled")
         self.bot.privateMessage(textmessage.nFromUserID, self._("Queue system is {state}.").format(state=state))
+        if start_pending:
+            self._submit_playback(self._play_from_queue, 0)
 
     def handle_queue_list_command(self, textmessage, *args):
         total = len(self.player.queue)
