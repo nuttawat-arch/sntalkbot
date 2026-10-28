@@ -1,4 +1,16 @@
-# sntalkbot 5.1.42
+# sntalkbot 5.1.43
+
+## รอบ 29 ต.ค. 2569: Full Player Audit / Related-Radio Prewarm / Audio-Ready Announcements
+
+- **DONE (full Player audit):** ตรวจ Player subsystem ครบเส้นทาง search/discovery -> resolver -> stream cache/prefetch -> MPV/PulseAudio -> TeamTalk voice -> terminal events -> Queue/Related Radio -> Player TTS รวมทุก `play_stream()` call site, Docker audio dependencies, config migration และ regression gates.
+- **DONE (เพลงลำดับหลังช้า):** พบว่า normal M2/Autoplay เล่นจริงจาก `radio_candidates` แต่ 5.1.42 prefetch ปกติยังอุ่น `search_results`/active list เป็นหลัก. เมื่อเข้าสู่ Related Radio ต่อเนื่อง รายการที่ autoplay จะใช้จริงจึงอาจยังไม่ถูก resolve และเพลงลำดับ 4+ ต้องทำ network work ตอน handoff. 5.1.43 prewarms Related Radio ระหว่างเพลงปัจจุบันและ prefetch candidate ตัวแรกที่ autoplay จะ consume จริง; ทุก radio item จะอุ่น successor ต่อทันที.
+- **DONE (TTS ก่อนเพลงดัง):** `play_stream()` return/START_FILE ไม่ได้พิสูจน์ว่า audio sample เริ่มไหล. เพิ่ม `PLAYBACK_RESTART` + time-pos fallback เป็น audio-ready generation signal และ Player TTS `Now playing` จะเข้าคิวเมื่อ generation ปัจจุบัน ready แล้วเท่านั้น; stale generation/timeout จะไม่ประกาศหลอก.
+- **DONE (MPV latency policy):** คืน `audio-buffer` baseline จาก project override 0.5s เป็น 0.2s และมี one-time migration สำหรับ config เดิม; ไม่บังคับ `audio-stream-silence=yes` บน virtual PulseAudio sink อีกต่อไป โดยคง env `SNTALKBOT_MPV_KEEP_AUDIO_OPEN` เป็น explicit escape hatch. 48 kHz/stereo/s16, gapless, cache และ resolver policy เดิมยังอยู่.
+- **DONE (readiness race/deadlock):** เปลี่ยน end/readiness lock เป็น `RLock` เพราะ watchdog สามารถ mark audio-ready ขณะถือ lock เดียวกัน; reject late `PLAYBACK_RESTART` ที่มาก่อน START_FILE ของ generation ปัจจุบัน และสร้าง readiness event แบบ defensive สำหรับ restored/test instances.
+- **DONE (Queue/normal preservation):** คง 5.1.42 queue ownership, clean EOF fast path, immediate MPV -13 retry และ public-fast -> cookie-aware stable fallback โดยไม่ย้อน regression ที่ทำให้ Queue/normal เดินต่อเร็ว.
+- **VLC evaluation:** Linux/Debian สามารถใช้ LibVLC/PulseAudio แบบ headless ได้ แต่ latency ที่พบรอบนี้มาจาก orchestration เหนือ engine. ไม่เพิ่ม VLC เป็น default backend ใน 5.1.43 เพราะจะเพิ่ม dependency/backend surface และยังต้องแก้ resolver/prefetch/TTS เดิม; เก็บเป็น optional A/B transport ในอนาคตหาก live trace หลัง 5.1.43 ยังชี้ว่า MPV transport เองเป็นคอขวด.
+- **DONE (offline QA):** full package tree ผ่าน Unit tests 143/143 และ `python tools/validate_project.py` ครบ รวม Related Radio prewarm priority, audio-ready TTS, stale PLAYBACK_RESTART, reentrant readiness lock, legacy buffer migration และทุก release contract เดิม.
+- **DOING (live QA):** ทดสอบ normal M2/Autoplay อย่างน้อย 6-10 เพลงต่อเนื่องและ Queue 5+ เพลง. PLAYTRACE ควรมี `radio_warm_schedule/radio_warm_done/radio_prefetch_schedule` ก่อน handoff และ `audio_ready` ก่อน `track_announce_queued`. หากเพลงใดยังมีเสียงมาช้า ให้ส่งช่วง PLAYTRACE ของ generation นั้นเพื่อแยก resolver/prefetch กับ MPV transport โดยตรง.
 
 ## รอบ 29 ต.ค. 2569: Normal Autoplay Ownership / Fast Stable Retry
 
