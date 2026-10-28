@@ -204,6 +204,7 @@ class ConfigHandler:
         self._migrate_google_standard_tts()
         self._migrate_telegram_settings()
         self._migrate_legacy_broadcast_settings()
+        self._migrate_playback_latency_defaults()
         self._migrate_missing_optional_settings()
 
         missing_items = self._validate_config()
@@ -361,6 +362,32 @@ class ConfigHandler:
         if changed:
             self._save()
             print("Migrated legacy broadcast settings to [global_broadcast]; Central Broadcast remains disabled until explicitly enabled.")
+
+    def _migrate_playback_latency_defaults(self):
+        """Migrate the historical 0.5s MPV buffer once.
+
+        0.5 was the project default, not an upstream mpv default.  5.1.43 moves
+        the project baseline to 0.2s for lower handoff latency.  A marker makes
+        this a one-time migration; later administrator edits are preserved.
+        """
+        if not self.config.has_section("playback"):
+            return
+        if not self.config.has_section("migration"):
+            self.config.add_section("migration")
+        migration = self.config["migration"]
+        if migration.getboolean("audio_buffer_5143_done", False):
+            return
+        playback = self.config["playback"]
+        raw = str(playback.get("audio_buffer", "") or "").strip()
+        changed = False
+        if raw in {"", "0.5", "0.50", "0.500"}:
+            playback["audio_buffer"] = "0.2"
+            changed = True
+        migration["audio_buffer_5143_done"] = "True"
+        changed = True
+        if changed:
+            self._save()
+            print("Migrated legacy playback audio buffer baseline to 0.2s for lower latency.")
 
     @staticmethod
     def _serialize_default(item):
@@ -767,7 +794,7 @@ class ConfigHandler:
             "cache_cleanup_timezone": sec.get("cache_cleanup_timezone", "Asia/Bangkok"),
             "cache_cleanup_sound": sec.get("cache_cleanup_sound", "sounds/cache-cleanup.mp3"),
             "audio_quality": sec.get("audio_quality", "High"),
-            "audio_buffer": sec.get("audio_buffer", "0.5"),
+            "audio_buffer": sec.get("audio_buffer", "0.2"),
             "is_stereo_wide": sec.getboolean("is_stereo_wide", False),
             "is_stereo_echo": sec.getboolean("is_stereo_echo", False),
             "is_bass_boosted": sec.getboolean("is_bass_boosted", False),
