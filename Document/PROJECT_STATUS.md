@@ -7,7 +7,7 @@
 - **DONE (q toggle state):** ปิด Q จะปล่อย stale queue index เมื่อเพลงปัจจุบันไม่ใช่ queue-context และเปิด Q ขณะ idle + มี pending queue จะ reserve/start item แรกอัตโนมัติ. Pending items ไม่ถูกลบทิ้งเพียงเพราะปิด Q.
 - **DONE (first-queue latency):** MPV `-13` จาก direct URL retry ทันทีไม่รอ generic retry delay และ `stable_only`/background prefetch ใช้ public-fast no-cookie yt-dlp ก่อน full cookie-aware recovery. Restricted/18+ media ยัง fallback ไป full cookie-aware extractor.
 - **DONE (regression):** เพิ่ม tests สำหรับ normal EOF ที่มี stale queue index, ปิด Q กลาง queue-context, immediate `-13` retry และ stable-fast public->full fallback.
-- **DOING (QA):** รัน Unit tests + validator จาก Complete Package 5.1.42; live gate คือ normal M2/Autoplay ต้องต่อเพลง 2 เองหลัง q off และ Queue เพลงแรกต้องไม่มี dead-air retry 2 วินาที.
+- **DONE (offline QA):** Complete Package 5.1.42 ผ่าน Unit tests 138/138 และ `python tools/validate_project.py` ครบ รวม normal autoplay with stale queue index, queue ownership after q off, immediate MPV -13 retry และ stable-fast public->full fallback. **DOING (live QA):** normal M2/Autoplay ต้องต่อเพลง 2 เองหลัง q off และ Queue เพลงแรกต้องไม่มี dead-air retry 2 วินาที.
 
 ## รอบ 29 ต.ค. 2569: Fast First Track Validation / Deep Bass Recovery
 
