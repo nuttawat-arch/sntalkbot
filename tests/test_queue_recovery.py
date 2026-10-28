@@ -77,6 +77,22 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len(self.player.queue),999);self.assertEqual(self.player.queue[0]['title'],'1')
         self.assertEqual(len(self.player.queue_history),1)
 
+    def test_clean_queue_eof_advances_even_if_generic_terminal_cancel_flag_is_stale(self):
+        self.player.last_end_reason='eof';self.player.last_end_error=0;self.player.is_playing=False
+        self.cog._terminal_cancelled=True
+        self.cog.on_playback_end()
+        self.assertEqual(len(self.player.queue),999)
+        self.assertEqual(self.player.queue[0]['title'],'1')
+        self.assertEqual(len(self.player.queue_history),1)
+
+    def test_retry_forces_stable_stream_resolution(self):
+        self.player.last_end_reason='error';self.player.last_end_error=-13;self.player.is_playing=False
+        calls=[]
+        self.player.play_stream=Mock(side_effect=lambda link,**kw:calls.append((link,kw)))
+        self.cog.on_playback_end();self.pool.run();self.pool.run()
+        self.assertEqual(calls[0][0],self.player.current_link)
+        self.assertTrue(calls[0][1].get('stable_only'))
+
     def test_last_queue_song_releases_voice_and_clears_now_playing(self):
         self.store.replace_queue([{'title':'last','link':'https://youtube.com/watch?v=last','_queue_token':'last'}])
         self.player.queue=self.store.queue();self.player.queue_index=0
