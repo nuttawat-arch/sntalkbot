@@ -497,6 +497,44 @@ class StreamMetadataTests(unittest.TestCase):
         self.assertIsNone(resolve('https://www.youtube.com/watch?v=abcdefghijk'))
         self.assertEqual(self.player._stream_http.post.call_count,1)
 
+    def test_direct_stream_probe_rejects_http_error_before_mpv(self):
+        response=SimpleNamespace(status_code=403,headers={'content-type':'text/html'},close=Mock())
+        self.player._stream_http=SimpleNamespace(get=Mock(return_value=response))
+        probe=self.module.Player._probe_direct_stream_info.__get__(self.player)
+        info={'url':'https://cdn.example/audio','http_headers':{'User-Agent':'test'}}
+        self.assertFalse(probe(info))
+        response.close.assert_called_once()
+
+    def test_direct_stream_probe_accepts_audio_range_response(self):
+        response=SimpleNamespace(status_code=206,headers={'content-type':'audio/webm'},close=Mock())
+        self.player._stream_http=SimpleNamespace(get=Mock(return_value=response))
+        probe=self.module.Player._probe_direct_stream_info.__get__(self.player)
+        self.assertTrue(probe({'url':'https://cdn.example/audio','http_headers':{}}))
+        self.assertEqual(self.player._stream_http.get.call_args.kwargs['headers']['Range'],'bytes=0-1')
+
+    def test_invalid_direct_candidate_falls_through_to_public_ytdlp_fast_path(self):
+        self.player._youtube_video_id=self.module.Player._youtube_video_id
+        self.player._resolve_youtube_direct_audio=Mock(return_value={'url':'https://bad.example/audio','title':'Direct'})
+        self.player._extract_play_info_public_fast=Mock(return_value={'url':'https://good.example/audio','title':'Public'})
+        self.player._extract_play_info_resilient=Mock(return_value={'url':'https://stable.example/audio','title':'Stable'})
+        self.player._probe_direct_stream_info=Mock(return_value=False)
+        self.player.invalidate_fast_stream_info=Mock()
+        resolve=self.module.Player._resolve_play_info_fastest.__get__(self.player)
+        info=resolve('https://www.youtube.com/watch?v=abcdefghijk')
+        self.assertEqual(info['url'],'https://good.example/audio')
+        self.player.invalidate_fast_stream_info.assert_called_once()
+        self.player._extract_play_info_resilient.assert_not_called()
+
+    def test_fast_resolver_uses_stable_fallback_only_when_both_fast_paths_fail(self):
+        self.player._youtube_video_id=self.module.Player._youtube_video_id
+        self.player._resolve_youtube_direct_audio=Mock(return_value=None)
+        self.player._extract_play_info_public_fast=Mock(return_value=None)
+        self.player._extract_play_info_resilient=Mock(return_value={'url':'https://stable.example/audio','title':'Stable'})
+        resolve=self.module.Player._resolve_play_info_fastest.__get__(self.player)
+        info=resolve('https://www.youtube.com/watch?v=abcdefghijk')
+        self.assertEqual(info['url'],'https://stable.example/audio')
+        self.player._extract_play_info_resilient.assert_called_once()
+
     def test_signed_url_expiry_overrides_fresh_prefetch_timestamp(self):
         self.player._prefetch_cache['song']={'url':f'https://cdn.example/audio?expire={int(time.time())+10}'}
         self.player._prefetch_times['song']=time.monotonic()
