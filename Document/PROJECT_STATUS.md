@@ -6,7 +6,7 @@
 - **DONE (stream stability):** เพลง Queue ถัดไปที่ prefetch จาก lightweight direct YouTube endpoint สามารถ `START_FILE` แล้ว MPV จบด้วย error `-13`; เปลี่ยน background prefetch ให้ใช้ cookie-aware yt-dlp stream metadata/headers เป็น authoritative source และใช้ direct endpoint เป็น fallback เท่านั้น.
 - **DONE (retry):** retry หลัง asynchronous MPV error บังคับ `stable_only=True` เพื่อ re-resolve ด้วย yt-dlp ไม่ให้ direct resolver ที่เพิ่ง fail ชนะซ้ำ.
 - **DONE (observability):** playback executor future มี done-callback รายงาน `playback_worker_error` เพื่อไม่ให้ exception ใน worker หายเงียบ; PLAYTRACE queue_index แสดง 0 ถูกต้องแล้ว.
-- **DOING (QA):** ทดสอบ Queue 3+ เพลง: เพลงแรก EOF ต้อง auto-advance โดยไม่กด `n`; เพลง prefetched ต้องเล่นจาก yt-dlp stream และ MPV -13 ต้อง retry stable โดยอัตโนมัติ; normal mode ยังใช้ fast direct resolver เป็น cold-start optimization.
+- **DONE (offline QA):** Complete Package 5.1.40 ผ่าน Unit tests 129/129 และ `python tools/validate_project.py` ครบ รวม live-trace regression ของ stale terminal cancel, clean Queue EOF fast path, stable retry, stable prefetch และ playback-worker diagnostics. **DOING (live QA):** Queue 3+ เพลงต้อง auto-advance โดยไม่กด `n`; MPV -13 ต้อง retry stable อัตโนมัติ; normal mode ยังใช้ fast direct resolver เป็น cold-start optimization.
 
 ## รอบ 28 ต.ค. 2569: Queue Trace / Terminal Readiness / Player Runtime Diagnostics (5.1.39 source)
 
