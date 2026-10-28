@@ -85,6 +85,15 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.player.queue[0]['title'],'1')
         self.assertEqual(len(self.player.queue_history),1)
 
+    def test_mpv_minus13_retry_skips_configured_delay(self):
+        self.bot.playback_config['playback_retry_delay']=30
+        self.player.last_end_reason='error';self.player.last_end_error=-13;self.player.is_playing=False
+        self.cog.on_playback_end()
+        self.assertEqual(len(self.pool.jobs),1)
+        fn,args=self.pool.jobs[0]
+        context=args[0]
+        self.assertTrue(context.get('immediate'))
+
     def test_retry_forces_stable_stream_resolution(self):
         self.player.last_end_reason='error';self.player.last_end_error=-13;self.player.is_playing=False
         calls=[]
@@ -193,6 +202,33 @@ class RecoveryTests(unittest.TestCase):
         self.cog._prefetch_next_for_current=type(self.cog)._prefetch_next_for_current.__get__(self.cog)
         self.cog._prefetch_next_for_current()
         self.player.prefetcher.schedule.assert_called_once_with([choices[1]['link']])
+
+    def test_normal_autoplay_ignores_stale_queue_index_after_queue_mode_off(self):
+        self.player.queue_mode=False
+        self.player.queue_index=0
+        self.player.last_end_reason='eof';self.player.last_end_error=0;self.player.is_playing=False
+        self.player.current_link='https://youtube.com/watch?v=normal'
+        self.cog._set_playback_context('search',self.player.current_link,'ytmusic:0')
+        self.cog.autoplay_enabled=False
+        self.player.play_mode=2
+        original_len=len(self.player.queue)
+        self.cog._autoplay_related_or_finish=Mock()
+        self.cog.on_playback_end()
+        self.assertEqual(len(self.player.queue),original_len)
+        self.assertEqual(self.player.queue_index,0)
+        self.assertEqual(len(self.pool.jobs),1)
+        fn,args=self.pool.jobs[0]
+        self.assertEqual(fn,self.cog._autoplay_related_or_finish)
+
+    def test_queue_eof_still_owns_current_item_even_if_queue_mode_was_turned_off_mid_track(self):
+        self.player.queue_mode=False
+        self.player.last_end_reason='eof';self.player.last_end_error=0;self.player.is_playing=False
+        self.cog._set_playback_context('queue',self.player.current_link,'0')
+        self.cog.autoplay_enabled=False
+        self.player.play_mode=1
+        self.cog.on_playback_end()
+        self.assertEqual(len(self.player.queue),999)
+        self.assertEqual(len(self.player.queue_history),1)
 
     def test_autoplay_without_any_related_song_releases_voice(self):
         self.store.replace_queue([])
@@ -531,6 +567,22 @@ class StreamMetadataTests(unittest.TestCase):
         self.player._extract_play_info_public_fast=Mock(return_value=None)
         self.player._extract_play_info_resilient=Mock(return_value={'url':'https://stable.example/audio','title':'Stable'})
         resolve=self.module.Player._resolve_play_info_fastest.__get__(self.player)
+        info=resolve('https://www.youtube.com/watch?v=abcdefghijk')
+        self.assertEqual(info['url'],'https://stable.example/audio')
+        self.player._extract_play_info_resilient.assert_called_once()
+
+    def test_stable_fast_prefers_public_ytdlp_before_full_recovery(self):
+        self.player._extract_play_info_public_fast=Mock(return_value={'url':'https://public.example/audio'})
+        self.player._extract_play_info_resilient=Mock(return_value={'url':'https://stable.example/audio'})
+        resolve=self.module.Player._extract_play_info_stable_fast.__get__(self.player)
+        info=resolve('https://www.youtube.com/watch?v=abcdefghijk')
+        self.assertEqual(info['url'],'https://public.example/audio')
+        self.player._extract_play_info_resilient.assert_not_called()
+
+    def test_stable_fast_falls_back_to_full_recovery_for_restricted_media(self):
+        self.player._extract_play_info_public_fast=Mock(side_effect=RuntimeError('public failed'))
+        self.player._extract_play_info_resilient=Mock(return_value={'url':'https://stable.example/audio'})
+        resolve=self.module.Player._extract_play_info_stable_fast.__get__(self.player)
         info=resolve('https://www.youtube.com/watch?v=abcdefghijk')
         self.assertEqual(info['url'],'https://stable.example/audio')
         self.player._extract_play_info_resilient.assert_called_once()
