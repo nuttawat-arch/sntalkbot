@@ -1013,6 +1013,7 @@ def validate_player_queue_and_radio_regressions():
         bot = FakeBot()
         cog = module.PlayerCog.__new__(module.PlayerCog)
         cog.bot = bot; cog.player = player; cog._ = bot._; cog.loading_new_track = False; cog.autoplay_enabled = True
+        cog._playback_context = {"kind":"queue","link":"a","token":"fixture","key":("queue","fixture","a")}
         plays = []
         def fake_play_queue(index):
             with player.queue_lock:
@@ -1988,12 +1989,12 @@ else:
     ok("URL playback races YouTube direct/yt-dlp resolution before bounded radio webpage fallback")
 
 if not (
-    "info = self._extract_play_info_resilient(link)" in _player_core_for_url
+    "info = self._extract_play_info_stable_fast(link)" in _player_core_for_url
     and "if not info:\n                info = self._resolve_youtube_direct_audio(link)" in _player_core_for_url
 ):
-    fail("5.1.40 prefetch must prefer stable yt-dlp stream info before direct fallback")
+    fail("5.1.42 prefetch must prefer stable-fast yt-dlp stream info before direct fallback")
 else:
-    ok("Queue/background prefetch prefers stable yt-dlp stream metadata before direct fallback")
+    ok("Queue/background prefetch prefers public-fast/stable yt-dlp metadata before direct fallback")
 
 _queue_5140 = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
 _clean_eof_pos = _queue_5140.find('if end_reason == "eof":')
@@ -2019,7 +2020,7 @@ else:
 
 if "def _extract_play_info_stable_fast" not in _player_core_for_url:
     fail("5.1.42 stable-fast resolver helper is missing")
-elif "info = self._extract_play_info_stable_fast(link)" not in _play_block:
+elif "info = self._extract_play_info_stable_fast(link)" not in _play_url_block:
     fail("5.1.42 stable_only playback does not prefer public-fast yt-dlp")
 else:
     ok("5.1.42 retry/prefetch prefers public-fast yt-dlp before full cookie-aware recovery")
