@@ -806,10 +806,16 @@ class Player(mpv.MPV):
             # is Extra Stereo (channel-difference expansion), not an echo.
             graph.append("extrastereo=m=1.8:c=1")
         if self.is_bass_boosted:
-            # Use FFmpeg's current bass/lowshelf filter through lavfi.  A
-            # conservative +6 dB around 90 Hz gives useful bass lift while
-            # reducing clipping risk compared with the legacy +15 dB preset.
-            graph.append("bass=g=6:f=90:w=0.7")
+            # Restore the original deep-bass character (the first releases were
+            # centred around 50 Hz) without restoring their +15 dB clipping.
+            # A small preamp cut creates headroom, the shelf stays in true bass
+            # rather than boomy 90 Hz mid-bass, and a look-ahead limiter catches
+            # peaks before they reach the PulseAudio/TeamTalk bridge.
+            graph.extend([
+                "volume=-4dB",
+                "bass=g=10:f=55:w=0.5",
+                "alimiter=limit=0.97:attack=5:release=80:level=0",
+            ])
 
         self.af = f"lavfi=[{','.join(graph)}]" if graph else ""
 
@@ -1574,6 +1580,42 @@ class Player(mpv.MPV):
             pass
         return candidates
 
+    def _extract_play_info_public_fast(self, link):
+        """Fast, stable yt-dlp path for ordinary public YouTube media.
+
+        This deliberately avoids account cookies and uses a short retry budget.
+        It is slower than the lightweight InnerTube URL when that URL is good,
+        but much faster than falling into the full cookie/EJS recovery path after
+        libmpv has already spent seconds failing an unusable CDN URL.
+        """
+        candidates = self._canonical_youtube_playback_candidates(link)
+        if not candidates:
+            candidates = [str(link or "")]
+        # Prefer canonical www.youtube.com for music.youtube.com playback; it
+        # tends to avoid extra YouTube Music page work for the same video ID.
+        candidates = list(reversed(candidates)) if len(candidates) > 1 else candidates
+        errors = []
+        for candidate in candidates:
+            try:
+                with self._fresh_ydl(
+                    extra_opts={
+                        "socket_timeout": 6,
+                        "retries": 1,
+                        "extractor_retries": 1,
+                        "fragment_retries": 1,
+                    },
+                    noplaylist=True,
+                    use_cookies=False,
+                ) as ydl:
+                    info = ydl.extract_info(candidate, download=False)
+                if info and info.get("url"):
+                    return info
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            raise errors[-1]
+        return None
+
     def _extract_play_info_resilient(self, link):
         """Extract playable metadata with bounded URL/cookie fallbacks.
 
@@ -1779,13 +1821,55 @@ class Player(mpv.MPV):
             # Retain compatibility with bindings that cannot change this option.
             print("MPV request headers could not be updated with this binding")
 
-    def _resolve_play_info_fastest(self, link):
-        """Race the lightweight YouTube resolver against the complete yt-dlp path.
+    def invalidate_fast_stream_info(self, link):
+        video_id = self._youtube_video_id(link)
+        if not video_id:
+            return
+        with self._fast_stream_cache_lock:
+            self._fast_stream_cache.pop(video_id, None)
 
-        5.1.37 tried the lightweight resolver first and could therefore add its
-        timeout to every cold start when YouTube returned cipher-only formats.
-        Racing both paths preserves full cookie/yt-dlp compatibility without
-        putting the optional fast path on the critical path.
+    def _probe_direct_stream_info(self, info):
+        """Verify a lightweight direct URL before libmpv sees it.
+
+        A START_FILE event only means mpv accepted the URL; the live logs showed
+        some direct URLs failing several seconds later with MPV error -13.  A
+        tiny streamed Range GET catches the common 403/expired/bad-CDN cases in
+        well under a second and prevents that dead-air penalty.
+        """
+        if not info or not info.get("url"):
+            return False
+        url = str(info.get("url") or "")
+        headers = {}
+        for key, value in (info.get("http_headers") or {}).items():
+            if isinstance(value, str) and "\r" not in value and "\n" not in value:
+                headers[str(key)] = value
+        headers.setdefault("Range", "bytes=0-1")
+        try:
+            response = self._stream_http.get(
+                url,
+                headers=headers,
+                stream=True,
+                allow_redirects=True,
+                timeout=(0.45, 0.85),
+            )
+            try:
+                ok = response.status_code in (200, 206)
+                ctype = str(response.headers.get("content-type") or "").lower()
+                if ok and ctype and not any(token in ctype for token in ("audio", "video", "octet-stream")):
+                    ok = False
+                return ok
+            finally:
+                response.close()
+        except requests.RequestException:
+            return False
+
+    def _resolve_play_info_fastest(self, link):
+        """Resolve public YouTube quickly without gambling on an unverified CDN URL.
+
+        Race the lightweight direct endpoint against a short no-cookie yt-dlp
+        extraction.  The direct candidate must pass a tiny HTTP probe before it
+        can win.  Only if both fast paths fail do we enter the full cookie-aware
+        recovery extractor used for restricted media.
         """
         if not self._youtube_video_id(link):
             return self._extract_play_info_resilient(link)
@@ -1794,32 +1878,45 @@ class Player(mpv.MPV):
         executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="SNTalkResolve")
         futures = {
             executor.submit(self._resolve_youtube_direct_audio, link): "direct",
-            executor.submit(self._extract_play_info_resilient, link): "ytdlp",
+            executor.submit(self._extract_play_info_public_fast, link): "public_ytdlp",
         }
-        errors = []
         pending = set(futures)
+        errors = []
         try:
             while pending:
                 done, pending = wait(pending, return_when=FIRST_COMPLETED)
                 for future in done:
+                    resolver = futures.get(future, "unknown")
                     try:
                         info = future.result()
                     except Exception as exc:
                         errors.append(exc)
                         continue
-                    if info and info.get("url"):
-                        _emit_playback_trace(self, "resolve_race_win", resolver=futures.get(future, "unknown"), link=link)
-                        for other in pending:
-                            other.cancel()
-                        executor.shutdown(wait=False, cancel_futures=True)
-                        return info
-            if errors:
-                raise errors[-1]
-            return None
+                    if not info or not info.get("url"):
+                        continue
+                    if resolver == "direct":
+                        probe_started = time.monotonic()
+                        valid = self._probe_direct_stream_info(info)
+                        _emit_playback_trace(
+                            self,
+                            "direct_probe",
+                            link=link,
+                            valid=bool(valid),
+                            ms=round((time.monotonic() - probe_started) * 1000),
+                        )
+                        if not valid:
+                            self.invalidate_fast_stream_info(link)
+                            continue
+                    _emit_playback_trace(self, "resolve_race_win", resolver=resolver, link=link)
+                    for other in pending:
+                        other.cancel()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    return info
         finally:
-            # If no path won, make sure worker resources are reclaimed.
-            if pending or not any(f.done() and not f.cancelled() for f in futures):
-                executor.shutdown(wait=False, cancel_futures=True)
+            executor.shutdown(wait=False, cancel_futures=True)
+
+        _emit_playback_trace(self, "resolve_stable_fallback", link=link)
+        return self._extract_play_info_resilient(link)
 
     def play_stream(self, link, *, cancel_event=None, stable_only=False):
         """Play a URL.
@@ -1950,6 +2047,7 @@ class Player(mpv.MPV):
         with self._ydl_lock:
             self._prefetch_cache.pop(link, None)
             self._prefetch_times.pop(link, None)
+        self.invalidate_fast_stream_info(link)
 
     def prefetch_stream_info(self, link):
         started = time.monotonic()
