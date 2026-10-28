@@ -50,7 +50,7 @@ class Player(mpv.MPV):
             "audio_samplerate": 48000,
             "audio_channels": "stereo",
             "audio_format": "s16",
-            "audio_buffer": 0.5,
+            "audio_buffer": 0.2,
             "cache": "yes",
             "cache_pause": "no",
             "cache_pause_initial": "no",
@@ -64,10 +64,12 @@ class Player(mpv.MPV):
         }
         if mpv_ao:
             mpv_options["ao"] = mpv_ao
-            # The reference player keeps audio alive continuously. MPV warns
-            # this option changes subtle timing behavior, so restrict it to our
-            # controlled headless PulseAudio bridge instead of all backends.
-            if mpv_ao.casefold() == "pulse":
+            # Do not force audio-stream-silence on a virtual PulseAudio sink.
+            # mpv documents subtle timing/underrun side effects and the option is
+            # intended mainly for hardware that drops samples while waking up.
+            # Keep an explicit escape hatch for deployments that truly need it.
+            keep_audio_open = os.getenv("SNTALKBOT_MPV_KEEP_AUDIO_OPEN", "").strip().lower()
+            if keep_audio_open in {"1", "true", "yes", "on"}:
                 mpv_options["audio_stream_silence"] = "yes"
         mpv_options.update(kwargs)
         try:
@@ -148,6 +150,9 @@ class Player(mpv.MPV):
         self._mpv_end_event_registered = False
         self._active_mpv_entry_id = None
         self._mpv_start_event_registered = False
+        self._mpv_playback_restart_registered = False
+        self._playback_ready_event = threading.Event()
+        self._playback_ready_epoch = 0
         self.last_end_reason = None
         self.last_end_error = 0
         # A new external item can start before libmpv delivers the terminal event
@@ -183,6 +188,11 @@ class Player(mpv.MPV):
             self.observe_property('eof-reached', self._on_eof_reached)
         except Exception as exc:
             print(f"MPV terminal property observer unavailable; watchdog remains active: {exc}")
+        try:
+            self.event_callback('PLAYBACK_RESTART')(self._on_playback_restart_event)
+            self._mpv_playback_restart_registered = True
+        except Exception as exc:
+            print(f"MPV PLAYBACK_RESTART callback unavailable; audio-ready polling remains active: {exc}")
         self._temp_cache = {}
         self.cookiefile = (
             cookiefile
@@ -228,7 +238,7 @@ class Player(mpv.MPV):
         self.is_stereo_echo = self.playback_config.get("is_stereo_echo", False)
         self.is_bass_boosted = self.playback_config.get("is_bass_boosted", False)
         self.audio_quality = self.playback_config.get("audio_quality", "High")
-        self.audio_buffer = self.playback_config.get("audio_buffer", "0.5")
+        self.audio_buffer = self.playback_config.get("audio_buffer", "0.2")
         self.speed = self.playback_config.get("speed", 1.0)
         self.set_output_device()
         self.update_filters()
@@ -1295,6 +1305,8 @@ class Player(mpv.MPV):
             self._watchdog_idle_since = None
             self._watchdog_eof_since = None
             self._watchdog_near_end_since = None
+            self._playback_ready_epoch = 0
+            self._playback_ready_event.clear()
             epoch = self.active_playback_epoch
         _emit_playback_trace(self, "arm", epoch=epoch, previous_entry=getattr(self, "_previous_mpv_entry_id", None))
         return epoch
@@ -1421,6 +1433,7 @@ class Player(mpv.MPV):
                         self._watchdog_last_position = position
                         self._watchdog_last_progress_at = now
                         self._watchdog_seen_position = True
+                        self._mark_playback_ready("watchdog_position")
                     elif self._watchdog_seen_position and now - self._watchdog_last_progress_at >= 40.0:
                         reason = "error"
                 # Some remote streams never deliver END_FILE and leave MPV
@@ -1490,6 +1503,66 @@ class Player(mpv.MPV):
                 print(f"MPV start-file took {startup:.2f}s (epoch={self.active_playback_epoch})")
         except Exception:
             pass
+
+    def _mark_playback_ready(self, source="unknown"):
+        epoch = int(getattr(self, "active_playback_epoch", 0) or 0)
+        if epoch <= 0 or getattr(self, "_intentional_stop", False):
+            return False
+        with self._end_dispatch_lock:
+            if self._end_event_handled or epoch != self.active_playback_epoch:
+                return False
+            if self._playback_ready_epoch == epoch and self._playback_ready_event.is_set():
+                return True
+            self._playback_ready_epoch = epoch
+            self._playback_ready_event.set()
+        _emit_playback_trace(
+            self, "audio_ready", source=source,
+            ms=round(max(0.0, time.monotonic() - self.active_playback_started) * 1000),
+        )
+        return True
+
+    def _on_playback_restart_event(self, event):
+        # PLAYBACK_RESTART is emitted after loading/buffering when playback is
+        # actually able to run. START_FILE alone only proves that mpv accepted
+        # the URL and can precede audible samples by seconds.
+        self._mark_playback_ready("playback_restart")
+
+    def wait_for_audio_ready(self, expected_epoch=None, timeout=6.0):
+        """Wait until the current generation is genuinely running audio.
+
+        Used only for human-visible/TTS announcements; playback itself never
+        waits on this helper. If PLAYBACK_RESTART is unavailable, time-pos/idle
+        polling provides a portable fallback.
+        """
+        epoch = int(expected_epoch or getattr(self, "active_playback_epoch", 0) or 0)
+        deadline = time.monotonic() + max(0.05, float(timeout))
+        while time.monotonic() < deadline:
+            if int(getattr(self, "active_playback_epoch", 0) or 0) != epoch:
+                return False
+            if self._playback_ready_epoch == epoch and self._playback_ready_event.is_set():
+                return True
+            with self._end_dispatch_lock:
+                if self._end_event_handled or self._intentional_stop:
+                    return False
+            try:
+                idle = bool(self.idle_active)
+            except Exception:
+                idle = False
+            if not idle:
+                try:
+                    pos = self["time-pos"]
+                except Exception:
+                    pos = None
+                if pos is not None:
+                    try:
+                        float(pos)
+                        self._mark_playback_ready("time_pos")
+                        return True
+                    except (TypeError, ValueError):
+                        pass
+            self._playback_ready_event.wait(0.05)
+        _emit_playback_trace(self, "audio_ready_timeout", expected_epoch=epoch)
+        return False
 
     def _on_end_file_event(self, event):
         """Handle libmpv END_FILE; ERROR means the current item is unplayable.
