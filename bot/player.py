@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from bot.prefetch import LinkPrefetcher
 from bot.cookie_policy import newest_cookie
 from contextlib import contextmanager
+from collections import deque
 
 class MediaAccessError(RuntimeError):
     category = "age_auth"
@@ -77,6 +78,14 @@ class Player(mpv.MPV):
         self.config_handler = config_handler
         self.state_store = state_store
         self.playback_config = self.config_handler.get_playback_config()
+        # Always-on bounded playback trace. It records only transport metadata,
+        # timings and queue state -- never cookies, auth headers or full URLs.
+        # The ring buffer supports future UI/API exposure while stdout makes the
+        # exact failing instance observable today through `ttuhelper logs <name>`.
+        self._playback_trace_lock = threading.RLock()
+        self._playback_trace = deque(maxlen=500)
+        self._playback_trace_seq = 0
+        self._playback_trace_started = time.monotonic()
         self.is_playing=False
         self.volume=self.playback_config['default_volume']
         self.current_link=None
@@ -1183,6 +1192,69 @@ class Player(mpv.MPV):
                         break
         return None
 
+    @staticmethod
+    def _trace_media_ref(link):
+        value = str(link or "").strip()
+        if not value:
+            return ""
+        try:
+            parsed = urlparse(value)
+            host = (parsed.hostname or "").lower()
+            if "youtu" in host:
+                video_id = parse_qs(parsed.query).get("v", [""])[0]
+                if not video_id and host == "youtu.be":
+                    video_id = (parsed.path or "").strip("/").split("/")[0]
+                return f"{host}:{video_id or 'video'}"
+            return host or "media"
+        except Exception:
+            return "media"
+
+    def trace_playback(self, event, **fields):
+        """Emit one compact, secret-safe playback diagnostic event."""
+        try:
+            now = time.monotonic()
+            with self._playback_trace_lock:
+                self._playback_trace_seq += 1
+                row = {
+                    "seq": self._playback_trace_seq,
+                    "t": round(now - self._playback_trace_started, 3),
+                    "event": str(event),
+                    "epoch": int(getattr(self, "active_playback_epoch", 0) or 0),
+                    "playing": bool(getattr(self, "is_playing", False)),
+                    "queue_mode": bool(getattr(self, "queue_mode", False)),
+                    "queue_index": int(getattr(self, "queue_index", -1) or -1),
+                    "queue_len": len(getattr(self, "queue", []) or []),
+                }
+                for key, value in fields.items():
+                    if value is None:
+                        continue
+                    if key in {"link", "url"}:
+                        row["media"] = self._trace_media_ref(value)
+                    elif isinstance(value, (str, int, float, bool)):
+                        row[str(key)] = value
+                    else:
+                        row[str(key)] = str(value)
+                self._playback_trace.append(dict(row))
+            print("PLAYTRACE " + json.dumps(row, ensure_ascii=False, separators=(",", ":")))
+            return row
+        except Exception:
+            return None
+
+    def playback_trace_snapshot(self, limit=80):
+        try:
+            limit = max(1, min(500, int(limit)))
+        except Exception:
+            limit = 80
+        with self._playback_trace_lock:
+            return list(self._playback_trace)[-limit:]
+
+    def _terminal_generation_ready(self):
+        return bool(
+            getattr(self, "_watchdog_seen_start", False)
+            or getattr(self, "_watchdog_seen_active", False)
+            or getattr(self, "_watchdog_seen_position", False)
+        )
+
     def _arm_end_detection(self):
         """Arm exactly one terminal callback for a new external playback generation."""
         with self._end_dispatch_lock:
@@ -1206,7 +1278,9 @@ class Player(mpv.MPV):
             self._watchdog_idle_since = None
             self._watchdog_eof_since = None
             self._watchdog_near_end_since = None
-            return self.active_playback_epoch
+            epoch = self.active_playback_epoch
+        self.trace_playback("arm", epoch=epoch, previous_entry=getattr(self, "_previous_mpv_entry_id", None))
+        return epoch
 
     def _cancel_end_detection(self):
         """Disarm terminal handling after a synchronous load failure."""
@@ -1222,8 +1296,11 @@ class Player(mpv.MPV):
         """
         with self._end_dispatch_lock:
             if expected_epoch is not None and expected_epoch != self.active_playback_epoch:
+                self.trace_playback("terminal_drop", source=reason, drop="epoch", expected_epoch=expected_epoch)
                 return False
             if self._intentional_stop or self._end_event_handled:
+                self.trace_playback("terminal_drop", source=reason,
+                                    drop="intentional" if self._intentional_stop else "already_handled")
                 return False
             self._end_event_handled = True
             self.last_end_reason = str(reason or "eof")
@@ -1231,6 +1308,7 @@ class Player(mpv.MPV):
                 self.last_end_error = int(error or 0)
             except (TypeError, ValueError):
                 self.last_end_error = 0
+        self.trace_playback("terminal_dispatch", reason=self.last_end_reason, error=self.last_end_error)
         # Hold the transition flag across the callback so a concurrent Queue
         # append cannot mistake this tiny end boundary for an idle fresh Queue.
         self.playback_end_transition = True
@@ -1313,7 +1391,7 @@ class Player(mpv.MPV):
                     self._watchdog_eof_since = None
                     self._watchdog_near_end_since = None
                     return
-                if reached_eof and self._watchdog_seen_start and now - started >= 2.0:
+                if reached_eof and self._terminal_generation_ready() and now - started >= 0.5:
                     if self._watchdog_eof_since is None:
                         self._watchdog_eof_since = now
                     elif now - self._watchdog_eof_since >= 0.8:
@@ -1343,6 +1421,8 @@ class Player(mpv.MPV):
                 else:
                     self._watchdog_near_end_since = None
         if reason is not None:
+            self.trace_playback("watchdog_terminal", reason=reason, position=position, duration=duration,
+                                eof=reached_eof, idle=idle)
             if self._dispatch_end_once(reason, -1 if reason == "error" else 0, expected_epoch=epoch):
                 print(f"MPV watchdog recovered missing playback end (reason={reason}, epoch={epoch})")
 
@@ -1386,6 +1466,7 @@ class Player(mpv.MPV):
             self._active_mpv_entry_id = int(entry_id)
         self._awaiting_mpv_start = False
         self._watchdog_seen_start = True
+        self.trace_playback("start_file", entry_id=getattr(self, "_active_mpv_entry_id", None))
         try:
             startup = time.monotonic() - self.active_playback_started
             if startup >= 2.0:
@@ -1402,6 +1483,8 @@ class Player(mpv.MPV):
         """
         data = getattr(event, "data", None)
         entry_id = getattr(data, "playlist_entry_id", None)
+        self.trace_playback("end_file_signal", entry_id=entry_id,
+                            reason=getattr(data, "reason", None), error=getattr(data, "error", 0))
         active_id = getattr(self, "_active_mpv_entry_id", None)
         if entry_id is not None and getattr(self, "_awaiting_mpv_start", False):
             try:
@@ -1698,6 +1781,7 @@ class Player(mpv.MPV):
         if not self._youtube_video_id(link):
             return self._extract_play_info_resilient(link)
 
+        self.trace_playback("resolve_race_start", link=link)
         executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="SNTalkResolve")
         futures = {
             executor.submit(self._resolve_youtube_direct_audio, link): "direct",
@@ -1715,6 +1799,7 @@ class Player(mpv.MPV):
                         errors.append(exc)
                         continue
                     if info and info.get("url"):
+                        self.trace_playback("resolve_race_win", resolver=futures.get(future, "unknown"), link=link)
                         for other in pending:
                             other.cancel()
                         executor.shutdown(wait=False, cancel_futures=True)
@@ -1730,6 +1815,7 @@ class Player(mpv.MPV):
     def play_stream(self, link, *, cancel_event=None):
         """Play a URL using yt-dlp, with a direct HTTP stream fallback for radio/stream URLs."""
         prepare_started = time.monotonic()
+        self.trace_playback("play_stream_begin", link=link)
         try:
             self.pause = False
             info = self._pop_prefetched(link)
@@ -1789,6 +1875,7 @@ class Player(mpv.MPV):
                     raise
             self.current_link = link
             total_seconds = time.monotonic() - prepare_started
+            self.trace_playback("play_stream_loaded", link=link, resolve_ms=round(resolve_seconds * 1000), total_ms=round(total_seconds * 1000), prefetched=from_prefetch)
             if total_seconds >= 2.0:
                 print(f"Playback preparation took {total_seconds:.2f}s "
                       f"(resolve={resolve_seconds:.2f}s; prefetched={from_prefetch})")
@@ -1847,6 +1934,7 @@ class Player(mpv.MPV):
 
     def prefetch_stream_info(self, link):
         started = time.monotonic()
+        self.trace_playback("prefetch_begin", link=link)
         pending = threading.Event()
         with self._ydl_lock:
             if link in self._prefetch_cache or link in self._prefetch_inflight:
@@ -1863,6 +1951,7 @@ class Player(mpv.MPV):
                     self._prefetch_cache[link] = info
                     self._prefetch_times[link] = time.monotonic()
             elapsed = time.monotonic() - started
+            self.trace_playback("prefetch_done", link=link, success=bool(info), ms=round(elapsed * 1000))
             if elapsed >= 2.0:
                 print(f"Next-track prefetch took {elapsed:.2f}s (success={bool(info)})")
         except Exception as e:
@@ -2015,11 +2104,7 @@ class Player(mpv.MPV):
         with self._end_dispatch_lock:
             self._intentional_stop = True
             self._end_event_handled = True
-        if not self._mpv_end_event_registered:
-            try:
-                self.unobserve_property('idle-active', self._on_idle_active)
-            except Exception:
-                pass
+        self.trace_playback("intentional_stop")
         self.is_playing = False
         try:
             super().stop()
@@ -2044,23 +2129,27 @@ class Player(mpv.MPV):
             raise(ValueError)
 
     def _on_idle_active(self, name, value):
-        """Permanent terminal observer; END_FILE delivery is not trusted alone."""
+        """Permanent idle observer guarded against stale handoff state."""
         if value is not True:
             return
+        ready = self._terminal_generation_ready()
+        self.trace_playback("idle_signal", ready=ready, intentional=bool(self._intentional_stop))
         if self._intentional_stop:
             self.is_playing = False
             return
-        if self._terminal_event_looks_stale():
+        # A newly armed generation is briefly idle before mpv has accepted the
+        # new file. Never let that old idle=True terminate the new Queue item.
+        if not ready:
             return
         self._dispatch_end_once("idle", 0)
 
     def _on_eof_reached(self, name, value):
-        """Advance immediately when libmpv exposes eof-reached=True.
-
-        This property is independent from END_FILE and remains observable even
-        when audio-stream-silence keeps the PulseAudio output open.
-        """
-        if value is not True or self._intentional_stop:
+        """Permanent eof-reached observer guarded against the previous file."""
+        if value is not True:
+            return
+        ready = self._terminal_generation_ready()
+        self.trace_playback("eof_property_signal", ready=ready, intentional=bool(self._intentional_stop))
+        if self._intentional_stop or not ready:
             return
         self._dispatch_end_once("eof", 0)
 
