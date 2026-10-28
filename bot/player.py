@@ -1306,7 +1306,11 @@ class Player(mpv.MPV):
             self._watchdog_eof_since = None
             self._watchdog_near_end_since = None
             self._playback_ready_epoch = 0
-            self._playback_ready_event.clear()
+            ready_event = getattr(self, "_playback_ready_event", None)
+            if ready_event is None:
+                ready_event = threading.Event()
+                self._playback_ready_event = ready_event
+            ready_event.clear()
             epoch = self.active_playback_epoch
         _emit_playback_trace(self, "arm", epoch=epoch, previous_entry=getattr(self, "_previous_mpv_entry_id", None))
         return epoch
@@ -1508,13 +1512,17 @@ class Player(mpv.MPV):
         epoch = int(getattr(self, "active_playback_epoch", 0) or 0)
         if epoch <= 0 or getattr(self, "_intentional_stop", False):
             return False
+        ready_event = getattr(self, "_playback_ready_event", None)
+        if ready_event is None:
+            ready_event = threading.Event()
+            self._playback_ready_event = ready_event
         with self._end_dispatch_lock:
             if self._end_event_handled or epoch != self.active_playback_epoch:
                 return False
-            if self._playback_ready_epoch == epoch and self._playback_ready_event.is_set():
+            if self._playback_ready_epoch == epoch and ready_event.is_set():
                 return True
             self._playback_ready_epoch = epoch
-            self._playback_ready_event.set()
+            ready_event.set()
         _emit_playback_trace(
             self, "audio_ready", source=source,
             ms=round(max(0.0, time.monotonic() - self.active_playback_started) * 1000),
@@ -1541,11 +1549,15 @@ class Player(mpv.MPV):
         polling provides a portable fallback.
         """
         epoch = int(expected_epoch or getattr(self, "active_playback_epoch", 0) or 0)
+        ready_event = getattr(self, "_playback_ready_event", None)
+        if ready_event is None:
+            ready_event = threading.Event()
+            self._playback_ready_event = ready_event
         deadline = time.monotonic() + max(0.05, float(timeout))
         while time.monotonic() < deadline:
             if int(getattr(self, "active_playback_epoch", 0) or 0) != epoch:
                 return False
-            if self._playback_ready_epoch == epoch and self._playback_ready_event.is_set():
+            if self._playback_ready_epoch == epoch and ready_event.is_set():
                 return True
             with self._end_dispatch_lock:
                 if self._end_event_handled or self._intentional_stop:
@@ -1566,7 +1578,7 @@ class Player(mpv.MPV):
                         return True
                     except (TypeError, ValueError):
                         pass
-            self._playback_ready_event.wait(0.05)
+            ready_event.wait(0.05)
         _emit_playback_trace(self, "audio_ready_timeout", expected_epoch=epoch)
         return False
 
