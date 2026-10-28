@@ -1974,7 +1974,7 @@ if validate_radio_webpage_resolver():
 # webpage crawler is a fallback only, so normal YouTube/media behavior is not
 # replaced by custom HTML parsing.
 _player_core_for_url = (ROOT / "bot" / "player.py").read_text(encoding="utf-8")
-_play_url_start = _player_core_for_url.find("    def play_stream(self, link, *, cancel_event=None):")
+_play_url_start = _player_core_for_url.find("    def play_stream(self, link, *, cancel_event=None, stable_only=False):")
 _play_url_end = _player_core_for_url.find("    def fade_out_and_stop", _play_url_start)
 _play_url_block = _player_core_for_url[_play_url_start:_play_url_end]
 if not (
@@ -1986,6 +1986,24 @@ if not (
     fail("URL resolver order changed: the YouTube resolver race must run before radio webpage fallback")
 else:
     ok("URL playback races YouTube direct/yt-dlp resolution before bounded radio webpage fallback")
+
+if not (
+    "info = self._extract_play_info_resilient(link)" in _player_core_for_url
+    and "if not info:\n                info = self._resolve_youtube_direct_audio(link)" in _player_core_for_url
+):
+    fail("5.1.40 prefetch must prefer stable yt-dlp stream info before direct fallback")
+else:
+    ok("Queue/background prefetch prefers stable yt-dlp stream metadata before direct fallback")
+
+_queue_5140 = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
+_clean_eof_pos = _queue_5140.find('if end_reason == "eof":')
+_cancel_guard_pos = _queue_5140.find('if getattr(self, "_terminal_cancelled", False):', _queue_5140.find("def on_playback_end"))
+if _clean_eof_pos < 0 or _cancel_guard_pos < 0 or _clean_eof_pos > _cancel_guard_pos:
+    fail("5.1.40 clean Queue EOF must run before generic terminal-cancel/retry guards")
+elif "stable_only=True" not in _queue_5140:
+    fail("5.1.40 retry path does not force stable yt-dlp stream resolution")
+else:
+    ok("5.1.40 clean Queue EOF bypasses stale failure guards and retries use stable streams")
 
 _queue_module_core = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
 _queue_url_start = _queue_module_core.find("    def _enqueue_url_task(self, link, user_id):")
