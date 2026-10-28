@@ -1,3 +1,14 @@
+# SNTalkBot 5.1.41 — Fast First Track Validation / Deep Bass Recovery
+
+- เพลงแรกโหมดปกติไม่ส่ง direct YouTube URL ที่ยังไม่ตรวจให้ MPV อีกต่อไป; direct candidate ต้องผ่าน Range probe สั้น ๆ ก่อน และแข่งกับ public no-cookie yt-dlp fast path.
+- ถ้า fast paths ใช้ไม่ได้จึงค่อยเข้า cookie-aware stable resolver ทำให้ไม่เสียเวลา MPV error -13 หลายวินาทีก่อน fallback.
+- direct stream cache ถูก invalidate เมื่อ probe/retry fail เพื่อไม่วนใช้ CDN URL เดิม.
+- Queue fast handoff/stable prefetch จาก 5.1.40 คงไว้ ไม่ย้อนกลับไปใช้ direct prefetch ที่เปราะ.
+- Bass คืนโทนลึกแบบรุ่นแรกแถว 55 Hz แต่เพิ่ม -4 dB headroom และ look-ahead limiter ป้องกัน peak clipping/เสียงแตก.
+- Offline QA: Unit tests 133/133, validator ผ่าน และ FFmpeg ยอมรับ Bass filter chain จริง.
+
+---
+
 # SNTalkBot 5.1.40 — Queue EOF Fast Path / Stable Prefetch
 
 - แก้ Queue จบเพลงแล้วไม่เดินต่อ โดย clean EOF ของ Queue advance โดยตรง ไม่ผ่าน generic cancel/retry guard ที่เคยกลืน handoff.
