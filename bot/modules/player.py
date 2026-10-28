@@ -149,7 +149,8 @@ class PlayerCog:
             if exc is not None:
                 self._trace("playback_worker_error", callback=getattr(callback, "__name__", "callback"), error=repr(exc))
                 print(f"Playback worker error in {getattr(callback, '__name__', 'callback')}: {exc!r}")
-        future.add_done_callback(_report)
+        if future is not None and hasattr(future, "add_done_callback"):
+            future.add_done_callback(_report)
         return future
 
     def _trace(self, event, **fields):
