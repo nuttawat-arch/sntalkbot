@@ -2003,7 +2003,7 @@ if _clean_eof_pos < 0 or _cancel_guard_pos < 0 or _clean_eof_pos > _cancel_guard
 elif "stable_only=True" not in _queue_5140:
     fail("5.1.40 retry path does not force stable yt-dlp stream resolution")
 else:
-    ok("5.1.40 clean Queue EOF bypasses stale failure guards and retries use stable streams")
+    ok("5.1.41 keeps clean Queue EOF before stale failure guards and retries on stable streams")
 
 if not all(token in _player_core_for_url for token in (
     "def _extract_play_info_public_fast",
