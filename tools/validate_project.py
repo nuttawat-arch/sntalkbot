@@ -2036,6 +2036,54 @@ if "if queue_has_current or (self.player.queue_mode and queue_has_pending):" in 
     fail("normal autoplay can still be hijacked by a stale queue_index")
 ok("5.1.42 normal autoplay ignores stale Queue ownership and MPV -13 retries immediately")
 
+# 5.1.43 full-player audit: actual autoplay state, human-visible readiness and
+# virtual-PulseAudio latency policy must remain aligned.
+_config_default_5143 = (ROOT / "config_default.ini").read_text(encoding="utf-8")
+_config_handler_5143 = (ROOT / "bot" / "config_handler.py").read_text(encoding="utf-8")
+if "audio_buffer = 0.2" not in _config_default_5143:
+    fail("5.1.43 config_default audio_buffer must be 0.2s")
+elif "def _migrate_playback_latency_defaults" not in _config_handler_5143 or 'playback["audio_buffer"] = "0.2"' not in _config_handler_5143:
+    fail("5.1.43 legacy 0.5s audio-buffer migration is missing")
+elif '"audio_buffer": sec.get("audio_buffer", "0.2")' not in _config_handler_5143:
+    fail("5.1.43 playback config fallback is not 0.2s")
+else:
+    ok("5.1.43 migrates the historical 0.5s MPV audio buffer baseline to 0.2s once")
+
+if '"audio_buffer": 0.2' not in player_source_for_terminal:
+    fail("5.1.43 MPV constructor does not use a 0.2s audio buffer")
+elif "SNTALKBOT_MPV_KEEP_AUDIO_OPEN" not in player_source_for_terminal:
+    fail("5.1.43 audio-stream-silence escape hatch is missing")
+elif 'if mpv_ao.casefold() == "pulse":\n                mpv_options["audio_stream_silence"] = "yes"' in player_source_for_terminal:
+    fail("5.1.43 still forces audio-stream-silence on every PulseAudio instance")
+else:
+    ok("5.1.43 no longer forces mpv continuous-silence timing on the virtual PulseAudio sink")
+
+if not all(token in player_source_for_terminal for token in (
+    "PLAYBACK_RESTART", "def _mark_playback_ready", "def wait_for_audio_ready",
+    "audio_ready_timeout", "_playback_ready_event",
+)):
+    fail("5.1.43 actual-audio readiness tracking is incomplete")
+elif not all(token in _queue_5140 for token in (
+    "wait_for_audio_ready", "track_announce_queued", "track_announce_skipped",
+)):
+    fail("5.1.43 Player TTS is not gated by actual audio readiness")
+else:
+    ok("5.1.43 track announcements wait for PLAYBACK_RESTART/time-pos instead of play_stream return")
+
+if not all(token in _queue_5140 for token in (
+    "def _schedule_related_radio_warm", "def _warm_related_radio_task",
+    "def _wait_for_radio_warm", "radio_prefetch_schedule",
+    "if self.player.radio_candidates:",
+)):
+    fail("5.1.43 Related Radio warm/prefetch state machine is incomplete")
+_radio_prefetch_pos = _queue_5140.find("if self.player.radio_candidates:", _queue_5140.find("def _prefetch_next_for_current"))
+_search_prefetch_pos = _queue_5140.find("if self.player.search_results:", _queue_5140.find("def _prefetch_next_for_current"))
+if _radio_prefetch_pos < 0 or _search_prefetch_pos < 0 or _radio_prefetch_pos > _search_prefetch_pos:
+    fail("5.1.43 normal autoplay still prefetches search alternatives before radio_candidates")
+else:
+    ok("5.1.43 normal M2/Autoplay prewarms the actual radio_candidates stream path")
+
+
 
 
 
