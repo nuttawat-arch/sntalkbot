@@ -145,7 +145,7 @@ class Player(mpv.MPV):
         self.recent_history = {}
         self.end_callback = None
         self._intentional_stop = False
-        self._end_dispatch_lock = threading.Lock()
+        self._end_dispatch_lock = threading.RLock()
         self._end_event_handled = True
         self._mpv_end_event_registered = False
         self._active_mpv_entry_id = None
@@ -1524,7 +1524,13 @@ class Player(mpv.MPV):
     def _on_playback_restart_event(self, event):
         # PLAYBACK_RESTART is emitted after loading/buffering when playback is
         # actually able to run. START_FILE alone only proves that mpv accepted
-        # the URL and can precede audible samples by seconds.
+        # the URL and can precede audible samples by seconds. If START_FILE is
+        # still pending, this callback can only be a late event from the previous
+        # generation; time-pos/watchdog will still provide a fallback if the
+        # current START_FILE event itself is missed.
+        if getattr(self, "_mpv_start_event_registered", False) and getattr(self, "_awaiting_mpv_start", False):
+            _emit_playback_trace(self, "audio_ready_drop", source="playback_restart", drop="awaiting_start")
+            return
         self._mark_playback_ready("playback_restart")
 
     def wait_for_audio_ready(self, expected_epoch=None, timeout=6.0):
