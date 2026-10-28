@@ -1,4 +1,12 @@
-# sntalkbot 5.1.39
+# sntalkbot 5.1.40
+
+## รอบ 29 ต.ค. 2569: Queue EOF Fast Path / Stable Prefetch / MPV -13 Recovery
+
+- **DONE (live trace root cause):** Queue เพลงแรกจบด้วย MPV EOF จริงและ `cog_playback_end_enter` ถูกเรียก แต่ 5.1.39 ไม่ถึง `cog_playback_end_state/queue_advance_schedule`; manual `n` จึงทำให้คิวเดินทันที. แก้โดยให้ clean Queue EOF ข้าม generic retry/cancel markers และ consume current -> schedule next โดยตรงหลัง Player generation dedupe แล้ว.
+- **DONE (stream stability):** เพลง Queue ถัดไปที่ prefetch จาก lightweight direct YouTube endpoint สามารถ `START_FILE` แล้ว MPV จบด้วย error `-13`; เปลี่ยน background prefetch ให้ใช้ cookie-aware yt-dlp stream metadata/headers เป็น authoritative source และใช้ direct endpoint เป็น fallback เท่านั้น.
+- **DONE (retry):** retry หลัง asynchronous MPV error บังคับ `stable_only=True` เพื่อ re-resolve ด้วย yt-dlp ไม่ให้ direct resolver ที่เพิ่ง fail ชนะซ้ำ.
+- **DONE (observability):** playback executor future มี done-callback รายงาน `playback_worker_error` เพื่อไม่ให้ exception ใน worker หายเงียบ; PLAYTRACE queue_index แสดง 0 ถูกต้องแล้ว.
+- **DOING (QA):** ทดสอบ Queue 3+ เพลง: เพลงแรก EOF ต้อง auto-advance โดยไม่กด `n`; เพลง prefetched ต้องเล่นจาก yt-dlp stream และ MPV -13 ต้อง retry stable โดยอัตโนมัติ; normal mode ยังใช้ fast direct resolver เป็น cold-start optimization.
 
 ## รอบ 28 ต.ค. 2569: Queue Trace / Terminal Readiness / Player Runtime Diagnostics (5.1.39 source)
 
