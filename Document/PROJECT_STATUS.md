@@ -8,7 +8,7 @@
 - **DONE (observer lifetime):** ลบ code path ที่ `stop_transport()` หรือ radio playback อาจถอด/ลงทะเบียน `idle-active` ซ้ำ. Terminal property observers เป็น single permanent observers ตลอดอายุ Player.
 - **DONE (observability):** เพิ่ม bounded `PLAYTRACE` ring 500 เหตุการณ์ + stdout JSON ต่อ instance โดยไม่บันทึก cookies/auth headers/full URLs. Trace ครอบคลุม arm, resolver race winner, prefetch begin/end, MPV START/END, idle/eof property, watchdog, terminal dispatch/drop, queue enqueue/play/prefetch/advance, Cog playback-end และ manual next.
 - **DONE (debug workflow):** instance ใดกำลังทดสอบให้ใช้ `sudo ttuhelper logs <name>` แล้วส่งช่วง `PLAYTRACE` ตั้งแต่ก่อนเริ่มเพลง 1 จนหลังเพลงจบ/ค้าง. เพราะ TTUHelper logs อ่าน Docker container ของ instance ชื่อนั้นโดยตรง จึงไม่ปนบอตอื่น.
-- **DOING (QA):** รัน Unit tests + validator จาก Complete Package 5.1.39 หลังประกอบแพ็กเกจ; live gate คือ Queue 3+ เพลง โดยปล่อยจบเองอย่างน้อย 2 handoff และเปรียบเทียบกับ manual `n` จาก PLAYTRACE เดียวกัน.
+- **DONE (offline QA):** Complete Package 5.1.39 ผ่าน Unit tests 127/127 และ `python tools/validate_project.py` ครบ รวม stale terminal property, missed START_FILE recovery, permanent observer และ PLAYTRACE validator. **DOING (live QA):** Queue 3+ เพลง โดยปล่อยจบเองอย่างน้อย 2 handoff และเปรียบเทียบกับ manual `n` จาก PLAYTRACE เดียวกัน.
 
 ## รอบ 28 ต.ค. 2569: Redundant EOF / Resolver Race / Fast Discovery (5.1.38 source)
 
