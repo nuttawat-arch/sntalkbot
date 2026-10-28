@@ -871,17 +871,33 @@ class StreamMetadataTests(unittest.TestCase):
         self.assertEqual(self.player._active_mpv_entry_id,62)
 
     def _arm_watchdog_fixture(self):
-        self.player._end_dispatch_lock=threading.Lock()
+        self.player._end_dispatch_lock=threading.RLock()
         self.player.playback_epoch=0
         self.player._mpv_start_event_registered=True
         self.player._mpv_end_event_registered=True
         self.player._intentional_stop=False
         self.player._end_event_handled=True
         self.player._active_mpv_entry_id=None
+        self.player._playback_ready_event=threading.Event()
+        self.player._playback_ready_epoch=0
         self.player.is_playing=True
         self.player.pause=False
         self.player.end_callback=Mock()
         self.player._arm_end_detection()
+
+    def test_playback_restart_before_current_start_is_rejected(self):
+        self._arm_watchdog_fixture()
+        self.player._awaiting_mpv_start=True
+        self.player._on_playback_restart_event(SimpleNamespace())
+        self.assertFalse(self.player._playback_ready_event.is_set())
+        self.assertEqual(self.player._playback_ready_epoch,0)
+
+    def test_playback_restart_after_start_marks_current_generation_ready(self):
+        self._arm_watchdog_fixture()
+        self.player._on_start_file_event(SimpleNamespace(data=SimpleNamespace(playlist_entry_id=77)))
+        self.player._on_playback_restart_event(SimpleNamespace())
+        self.assertTrue(self.player._playback_ready_event.is_set())
+        self.assertEqual(self.player._playback_ready_epoch,self.player.active_playback_epoch)
 
     def test_watchdog_recovers_eof_when_native_end_event_is_missing(self):
         self._arm_watchdog_fixture()
