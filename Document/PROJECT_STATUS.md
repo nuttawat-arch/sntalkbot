@@ -1,4 +1,13 @@
-# sntalkbot 5.1.41
+# sntalkbot 5.1.42
+
+## รอบ 29 ต.ค. 2569: Normal Autoplay Ownership / Fast Stable Retry
+
+- **DONE (live trace root cause):** ในโหมดปกติหลัง `q` ถูกปิด ยังมี `queue_index=0`/queue item ค้างได้. เมื่อเพลงปกติจบ 5.1.41 ตรวจเพียงว่ามี queue current จึงเข้า Queue EOF fast path, consume queue ค้าง และ return ก่อน normal Related Radio/Autoplay. ผู้ใช้จึงเห็นสถานะว่างจนกด `n` เอง.
+- **DONE (ownership fix):** Queue EOF/error path ใช้ playback context (`kind=queue`) เป็น ownership ของเพลงปัจจุบัน ไม่ใช้ `queue_index>=0` เพียงอย่างเดียว. Queue takeover จากเพลงปกติเกิดได้เฉพาะเมื่อ `queue_mode=True` และมี pending item จริง. stale queue state จึงไม่แย่ง normal autoplay อีก.
+- **DONE (q toggle state):** ปิด Q จะปล่อย stale queue index เมื่อเพลงปัจจุบันไม่ใช่ queue-context และเปิด Q ขณะ idle + มี pending queue จะ reserve/start item แรกอัตโนมัติ. Pending items ไม่ถูกลบทิ้งเพียงเพราะปิด Q.
+- **DONE (first-queue latency):** MPV `-13` จาก direct URL retry ทันทีไม่รอ generic retry delay และ `stable_only`/background prefetch ใช้ public-fast no-cookie yt-dlp ก่อน full cookie-aware recovery. Restricted/18+ media ยัง fallback ไป full cookie-aware extractor.
+- **DONE (regression):** เพิ่ม tests สำหรับ normal EOF ที่มี stale queue index, ปิด Q กลาง queue-context, immediate `-13` retry และ stable-fast public->full fallback.
+- **DOING (QA):** รัน Unit tests + validator จาก Complete Package 5.1.42; live gate คือ normal M2/Autoplay ต้องต่อเพลง 2 เองหลัง q off และ Queue เพลงแรกต้องไม่มี dead-air retry 2 วินาที.
 
 ## รอบ 29 ต.ค. 2569: Fast First Track Validation / Deep Bass Recovery
 
