@@ -1,3 +1,12 @@
+# SNTalkBot 5.1.40 — Queue EOF Fast Path / Stable Prefetch
+
+- แก้ Queue จบเพลงแล้วไม่เดินต่อ โดย clean EOF ของ Queue advance โดยตรง ไม่ผ่าน generic cancel/retry guard ที่เคยกลืน handoff.
+- Background prefetch ของเพลงถัดไปใช้ yt-dlp stream info + headers เป็นหลัก; direct YouTube endpoint ใช้เป็น fallback ไม่ใช่ cache หลักของ Queue.
+- MPV error `-13` retry ด้วย stable yt-dlp resolver เท่านั้น ไม่กลับไปเลือก direct URL เดิมซ้ำ.
+- เพิ่ม log `playback_worker_error` ป้องกัน exception ใน playback executor หายเงียบ และแก้ PLAYTRACE queue_index=0 ให้แสดงถูกต้อง.
+
+---
+
 # SNTalkBot 5.1.39 — Queue Trace / Terminal Readiness (source ยังไม่เผยแพร่)
 
 - เพิ่ม `PLAYTRACE` แบบ JSON ที่ log ของแต่ละ Docker instance เพื่อเห็น search/resolver/prefetch/MPV terminal/queue transition แบบลำดับเหตุการณ์เดียวกัน โดยไม่เผย cookie/token/full URL.
