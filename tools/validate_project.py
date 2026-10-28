@@ -2017,6 +2017,25 @@ if not all(token in _player_core_for_url for token in (
 else:
     ok("5.1.41 probes direct CDN URLs, races a short public yt-dlp path, and keeps stable cookie fallback")
 
+if "def _extract_play_info_stable_fast" not in _player_core_for_url:
+    fail("5.1.42 stable-fast resolver helper is missing")
+elif "info = self._extract_play_info_stable_fast(link)" not in _play_block:
+    fail("5.1.42 stable_only playback does not prefer public-fast yt-dlp")
+else:
+    ok("5.1.42 retry/prefetch prefers public-fast yt-dlp before full cookie-aware recovery")
+
+if not all(token in _queue_5140 for token in (
+    "def _queue_owns_current_playback",
+    "queue_owns_current = queue_has_current and self._queue_owns_current_playback()",
+    "queue_takeover = bool(self.player.queue_mode and queue_has_pending)",
+    'context["immediate"] = int(getattr(self.player, "last_end_error", 0) or 0) == -13',
+)):
+    fail("5.1.42 queue ownership isolation / immediate -13 retry is incomplete")
+if "if queue_has_current or (self.player.queue_mode and queue_has_pending):" in _queue_5140:
+    fail("normal autoplay can still be hijacked by a stale queue_index")
+ok("5.1.42 normal autoplay ignores stale Queue ownership and MPV -13 retries immediately")
+
+
 
 
 _queue_module_core = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
@@ -2050,10 +2069,10 @@ _prefetch_end = _player_core.find("    def get_channel_link", _prefetch_start)
 _prefetch_block = _player_core[_prefetch_start:_prefetch_end]
 if not (
     "with self._ydl_lock:" in _prefetch_block
-    and "info = self._extract_play_info_resilient(link)" in _prefetch_block
+    and "info = self._extract_play_info_stable_fast(link)" in _prefetch_block
     and "info = self._resolve_youtube_direct_audio(link)" in _prefetch_block
-    and _prefetch_block.find("info = self._extract_play_info_resilient(link)") < _prefetch_block.find("info = self._resolve_youtube_direct_audio(link)")
-    and _prefetch_block.find("info = self._extract_play_info_resilient(link)") < _prefetch_block.find("with self._ydl_lock:", _prefetch_block.find("try:"))
+    and _prefetch_block.find("info = self._extract_play_info_stable_fast(link)") < _prefetch_block.find("info = self._resolve_youtube_direct_audio(link)")
+    and _prefetch_block.find("info = self._extract_play_info_stable_fast(link)") < _prefetch_block.find("with self._ydl_lock:", _prefetch_block.find("try:"))
     and "_prefetch_inflight.pop(link, None)" in _prefetch_block
 ):
     fail("prefetch extraction is not isolated from the foreground cache lock")
