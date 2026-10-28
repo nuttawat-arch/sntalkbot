@@ -142,6 +142,15 @@ class PlayerCog:
         pool = getattr(self, "_playback_pool", None) or self.bot.io_pool
         return pool.submit(callback, *args)
 
+    def _trace(self, event, **fields):
+        tracer = getattr(self.player, "trace_playback", None)
+        if callable(tracer):
+            fields.setdefault("loading", bool(getattr(self, "loading_new_track", False)))
+            fields.setdefault("queue_transition", bool(getattr(self.player, "queue_transition", False)))
+            fields.setdefault("playback_end_transition", bool(getattr(self.player, "playback_end_transition", False)))
+            return tracer(event, **fields)
+        return None
+
     def _schedule_playback_end(self):
         # Called from libmpv/watchdog threads; never do SQL or media extraction
         # on an MPV callback thread.
@@ -208,6 +217,7 @@ class PlayerCog:
                 # the first-item ordering bug where "Now playing" was spoken first.
                 self.player.queue_index = 0
                 self.player.queue_transition = True
+        self._trace("queue_enqueue", added=len(items), start=start_position, end=end_position, should_start=should_start)
         return start_position, end_position, should_start
 
     def _finish_loading_transition(self):
@@ -411,6 +421,7 @@ class PlayerCog:
         If playback is already active, schedule/preload the oldest pending queue
         items immediately so the end-of-track handoff does not wait on metadata.
         """
+        self._trace("queue_after_enqueue", should_start=bool(should_start))
         if should_start:
             self._submit_playback(self._play_from_queue, 0)
         else:
@@ -418,6 +429,7 @@ class PlayerCog:
 
     def _advance_queue_after_current(self, *, remember=True):
         """Consume only the current queue item and continue with the oldest pending item."""
+        self._trace("queue_advance_begin", remember=bool(remember), end_reason=getattr(self.player, "last_end_reason", None))
         next_index = None
         with self.player.queue_lock:
             if self.player.queue_index >= 0 and self.player.queue:
@@ -442,11 +454,14 @@ class PlayerCog:
             else:
                 self.player.queue_transition = False
         if next_index is not None:
+            self._trace("queue_advance_schedule", next_index=next_index)
             self._submit_playback(self._play_from_queue, next_index)
             return True
+        self._trace("queue_advance_empty")
         return False
 
     def _play_next_queue_manual(self, user_id=None):
+        self._trace("queue_manual_next")
         with self.player.queue_lock:
             has_current = self.player.queue_index >= 0 and bool(self.player.queue)
             has_pending = bool(self.player.queue)
@@ -1545,6 +1560,7 @@ class PlayerCog:
                 return
 
     def _play_from_queue(self, index, expected_token=None, expected_link=None):
+        self._trace("queue_play_request", requested_index=index, has_expected_token=bool(expected_token), has_expected_link=bool(expected_link))
         with self.player.queue_lock:
             if index < 0 or index >= len(self.player.queue):
                 self.player.queue_index = -1
@@ -1559,6 +1575,7 @@ class PlayerCog:
             self.player.queue_transition = True
             video = dict(self.player.queue[index])
 
+        self._trace("queue_play_selected", requested_index=index, link=video.get("link"), token=str(video.get("_queue_token") or "")[-16:])
         self.loading_new_track = True
         error = None
         try:
@@ -1572,7 +1589,9 @@ class PlayerCog:
             # Open TeamTalk transmission before MPV emits the first samples.
             # The old order could clip/delay the beginning of a queue track.
             self.bot.enableVoiceTransmission(True)
+            self._trace("queue_voice_enabled", requested_index=index)
             self.player.play_stream(video['link'])
+            self._trace("queue_play_loaded", requested_index=index, title=self.player.media_title)
             # As soon as current playback is live, prepare the next FIFO items.
             # This keeps queue-to-queue handoff fast even for short tracks.
             self._prefetch_next_for_current()
@@ -1589,6 +1608,7 @@ class PlayerCog:
                 self._deferred_playback_end = False
             with self.player.queue_lock:
                 self.player.queue_transition = False
+            self._trace("queue_play_finish", requested_index=index, error=type(error).__name__ if error else "")
             self._finish_loading_transition()
         if error is not None:
             # Send synchronous failures through the same retry/skip state machine
@@ -1742,8 +1762,10 @@ class PlayerCog:
 
     def on_playback_end(self):
         """Advance without losing queue order at the mpv end-of-track boundary."""
+        self._trace("cog_playback_end_enter", end_reason=getattr(self.player, "last_end_reason", None), end_error=getattr(self.player, "last_end_error", 0))
         if self.loading_new_track:
             self._deferred_playback_end = True
+            self._trace("cog_playback_end_deferred")
             return
         with self._ensure_failure_state():
             if getattr(self, "_terminal_cancelled", False):
@@ -1782,6 +1804,7 @@ class PlayerCog:
                     failed_title = str(self.player.queue[self.player.queue_index].get("title") or self._("Unknown"))
                 except Exception:
                     failed_title = self._("Unknown")
+        self._trace("cog_playback_end_state", queue_has_current=queue_has_current, queue_has_pending=queue_has_pending, end_reason=end_reason)
         if queue_has_current or (self.player.queue_mode and queue_has_pending):
             if failed_title is not None:
                 self._send_playback_message(
@@ -2006,7 +2029,10 @@ class PlayerCog:
                         if candidate.get("link") and candidate["link"] != entry.get("link"):
                             links.append(candidate["link"])
             if links:
+                self._trace("queue_prefetch_schedule", count=len(links), link=links[0])
                 self.player.prefetcher.schedule(links)
+            else:
+                self._trace("queue_prefetch_none")
             return
 
         results, _ = self._get_active_results()
