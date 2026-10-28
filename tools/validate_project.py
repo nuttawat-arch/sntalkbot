@@ -2005,6 +2005,20 @@ elif "stable_only=True" not in _queue_5140:
 else:
     ok("5.1.40 clean Queue EOF bypasses stale failure guards and retries use stable streams")
 
+if not all(token in _player_core_for_url for token in (
+    "def _extract_play_info_public_fast",
+    "def _probe_direct_stream_info",
+    "event=\"direct_probe\"" if False else "_probe_direct_stream_info(info)",
+    "public_ytdlp",
+    "resolve_stable_fallback",
+    "invalidate_fast_stream_info",
+)):
+    fail("5.1.41 validated cold-start resolver policy is incomplete")
+else:
+    ok("5.1.41 probes direct CDN URLs, races a short public yt-dlp path, and keeps stable cookie fallback")
+
+
+
 _queue_module_core = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
 _queue_url_start = _queue_module_core.find("    def _enqueue_url_task(self, link, user_id):")
 _queue_url_end = _queue_module_core.find("    def handle_append_playlist_command", _queue_url_start)
@@ -2030,15 +2044,15 @@ if (_play_block.count("self._pop_prefetched(link)") < 2
     or "info = self._resolve_play_info_fastest(link)" not in _play_block):
     fail("foreground playback does not bypass slow background prefetch")
 else:
-    ok("foreground playback waits at most 120ms for same-link prefetch and races direct/yt-dlp resolvers instead of serially adding fast-path latency")
+    ok("foreground playback waits at most 120ms for same-link prefetch and uses validated direct/public-fast resolution before stable fallback")
 _prefetch_start = _player_core.find("    def prefetch_stream_info(self, link):")
 _prefetch_end = _player_core.find("    def get_channel_link", _prefetch_start)
 _prefetch_block = _player_core[_prefetch_start:_prefetch_end]
 if not (
     "with self._ydl_lock:" in _prefetch_block
-    and "info = self._resolve_youtube_direct_audio(link)" in _prefetch_block
     and "info = self._extract_play_info_resilient(link)" in _prefetch_block
-    and _prefetch_block.find("info = self._resolve_youtube_direct_audio(link)") < _prefetch_block.find("with self._ydl_lock:", _prefetch_block.find("try:"))
+    and "info = self._resolve_youtube_direct_audio(link)" in _prefetch_block
+    and _prefetch_block.find("info = self._extract_play_info_resilient(link)") < _prefetch_block.find("info = self._resolve_youtube_direct_audio(link)")
     and _prefetch_block.find("info = self._extract_play_info_resilient(link)") < _prefetch_block.find("with self._ydl_lock:", _prefetch_block.find("try:"))
     and "_prefetch_inflight.pop(link, None)" in _prefetch_block
 ):
@@ -3049,14 +3063,16 @@ elif "stereowiden=delay=12:feedback=0.25:crossfeed=0.20:drymix=0.85" not in _aud
     fail("current stereowiden filter preset is missing")
 elif "extrastereo=m=1.8:c=1" not in _audio_source:
     fail("current Extra Stereo filter preset is missing")
-elif "bass=g=6:f=90:w=0.7" not in _audio_source:
-    fail("current bass/lowshelf filter preset is missing")
+elif "volume=-4dB" not in _audio_source or "bass=g=10:f=55:w=0.5" not in _audio_source:
+    fail("deep-bass preset/headroom stage is missing")
+elif "alimiter=limit=0.97:attack=5:release=80:level=0" not in _audio_source:
+    fail("bass peak limiter is missing")
 elif 'af_val = "scaletempo2"' in _audio_source:
     fail("legacy always-on scaletempo2 chain remains; mpv should manage pitch correction for speed changes")
 elif 'aformat=channel_layouts=stereo' not in _audio_source:
     fail("stereo effects do not normalize input layout before stereo-only libavfilter effects")
 else:
-    ok("3d/3d2/bass use current FFmpeg libavfilter parameters and mpv-managed speed pitch correction")
+    ok("3d/3d2/bass use current FFmpeg filters; bass restores deep 55 Hz character with headroom + peak limiting")
 
 # Production builds must be reproducible: direct dependencies are pinned, not
 # floating across a future major release without a code/validator review.
