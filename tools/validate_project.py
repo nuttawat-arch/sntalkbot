@@ -1014,6 +1014,9 @@ def validate_player_queue_and_radio_regressions():
         cog = module.PlayerCog.__new__(module.PlayerCog)
         cog.bot = bot; cog.player = player; cog._ = bot._; cog.loading_new_track = False; cog.autoplay_enabled = True
         cog._playback_context = {"kind":"queue","link":"a","token":"fixture","key":("queue","fixture","a")}
+        cog._radio_warm_lock = __import__("threading").RLock()
+        cog._radio_warm_seed = None
+        cog._radio_warm_event = __import__("threading").Event(); cog._radio_warm_event.set()
         plays = []
         def fake_play_queue(index):
             with player.queue_lock:
@@ -2049,16 +2052,16 @@ elif '"audio_buffer": sec.get("audio_buffer", "0.2")' not in _config_handler_514
 else:
     ok("5.1.43 migrates the historical 0.5s MPV audio buffer baseline to 0.2s once")
 
-if '"audio_buffer": 0.2' not in player_source_for_terminal:
+if '"audio_buffer": 0.2' not in _player_core_for_url:
     fail("5.1.43 MPV constructor does not use a 0.2s audio buffer")
-elif "SNTALKBOT_MPV_KEEP_AUDIO_OPEN" not in player_source_for_terminal:
+elif "SNTALKBOT_MPV_KEEP_AUDIO_OPEN" not in _player_core_for_url:
     fail("5.1.43 audio-stream-silence escape hatch is missing")
-elif 'if mpv_ao.casefold() == "pulse":\n                mpv_options["audio_stream_silence"] = "yes"' in player_source_for_terminal:
+elif 'if mpv_ao.casefold() == "pulse":\n                mpv_options["audio_stream_silence"] = "yes"' in _player_core_for_url:
     fail("5.1.43 still forces audio-stream-silence on every PulseAudio instance")
 else:
     ok("5.1.43 no longer forces mpv continuous-silence timing on the virtual PulseAudio sink")
 
-if not all(token in player_source_for_terminal for token in (
+if not all(token in _player_core_for_url for token in (
     "PLAYBACK_RESTART", "def _mark_playback_ready", "def wait_for_audio_ready",
     "audio_ready_timeout", "_playback_ready_event",
 )):
