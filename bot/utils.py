@@ -32,7 +32,7 @@ class BotUtils:
     """
     A class for standalone utility functions used by the bot.
     """
-    VERSION = "5.1.42"
+    VERSION = "5.1.43"
 
     @staticmethod
     def push_action_context(command, user="", requested=""):
