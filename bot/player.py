@@ -1616,6 +1616,21 @@ class Player(mpv.MPV):
             raise errors[-1]
         return None
 
+    def _extract_play_info_stable_fast(self, link):
+        """Prefer the short public yt-dlp path, then fall back to full recovery.
+
+        This path never uses the lightweight direct CDN URL. It is therefore
+        suitable for retries and background prefetch while avoiding the 10-16s
+        cookie-aware recovery cost for ordinary public media.
+        """
+        try:
+            info = self._extract_play_info_public_fast(link)
+            if info and info.get("url"):
+                return info
+        except Exception:
+            pass
+        return self._extract_play_info_resilient(link)
+
     def _extract_play_info_resilient(self, link):
         """Extract playable metadata with bounded URL/cookie fallbacks.
 
@@ -1944,7 +1959,7 @@ class Player(mpv.MPV):
                     if not info:
                         if stable_only:
                             _emit_playback_trace(self, "resolve_stable_start", link=link)
-                            info = self._extract_play_info_resilient(link)
+                            info = self._extract_play_info_stable_fast(link)
                             _emit_playback_trace(self, "resolve_stable_done", link=link)
                         else:
                             info = self._resolve_play_info_fastest(link)
@@ -2062,7 +2077,7 @@ class Player(mpv.MPV):
             # cache the stable yt-dlp stream info (including request headers)
             # rather than a lightweight player-endpoint URL that can later fail
             # in libmpv with error -13.
-            info = self._extract_play_info_resilient(link)
+            info = self._extract_play_info_stable_fast(link)
             if not info:
                 info = self._resolve_youtube_direct_audio(link)
             with self._ydl_lock:
