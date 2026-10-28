@@ -1233,7 +1233,7 @@ class Player(mpv.MPV):
                     "epoch": int(getattr(self, "active_playback_epoch", 0) or 0),
                     "playing": bool(getattr(self, "is_playing", False)),
                     "queue_mode": bool(getattr(self, "queue_mode", False)),
-                    "queue_index": int(getattr(self, "queue_index", -1) or -1),
+                    "queue_index": int(getattr(self, "queue_index", -1) if getattr(self, "queue_index", -1) is not None else -1),
                     "queue_len": len(getattr(self, "queue", []) or []),
                 }
                 for key, value in fields.items():
@@ -1821,10 +1821,15 @@ class Player(mpv.MPV):
             if pending or not any(f.done() and not f.cancelled() for f in futures):
                 executor.shutdown(wait=False, cancel_futures=True)
 
-    def play_stream(self, link, *, cancel_event=None):
-        """Play a URL using yt-dlp, with a direct HTTP stream fallback for radio/stream URLs."""
+    def play_stream(self, link, *, cancel_event=None, stable_only=False):
+        """Play a URL.
+
+        Queue retries and background-prefetched handoffs can request stable_only,
+        which bypasses the lightweight YouTube player endpoint and uses the
+        cookie-aware yt-dlp stream metadata/headers as the authoritative source.
+        """
         prepare_started = time.monotonic()
-        _emit_playback_trace(self, "play_stream_begin", link=link)
+        _emit_playback_trace(self, "play_stream_begin", link=link, stable_only=bool(stable_only))
         try:
             self.pause = False
             info = self._pop_prefetched(link)
@@ -1840,7 +1845,12 @@ class Player(mpv.MPV):
                         info = self._pop_prefetched(link)
                         from_prefetch = bool(info)
                     if not info:
-                        info = self._resolve_play_info_fastest(link)
+                        if stable_only:
+                            _emit_playback_trace(self, "resolve_stable_start", link=link)
+                            info = self._extract_play_info_resilient(link)
+                            _emit_playback_trace(self, "resolve_stable_done", link=link)
+                        else:
+                            info = self._resolve_play_info_fastest(link)
                 except Exception:
                     host = (urlparse(str(link)).hostname or "").lower()
                     if str(link).lower().startswith(("http://", "https://")) and not any(x in host for x in ("youtube.com", "youtu.be", "music.youtube.com")):
@@ -1950,9 +1960,13 @@ class Player(mpv.MPV):
                 return
             self._prefetch_inflight[link] = pending
         try:
-            info = self._resolve_youtube_direct_audio(link)
+            # Background prefetch has time to do the complete extraction, so
+            # cache the stable yt-dlp stream info (including request headers)
+            # rather than a lightweight player-endpoint URL that can later fail
+            # in libmpv with error -13.
+            info = self._extract_play_info_resilient(link)
             if not info:
-                info = self._extract_play_info_resilient(link)
+                info = self._resolve_youtube_direct_audio(link)
             with self._ydl_lock:
                 # The expensive network operation ran outside this lock.
                 # Keep only cache writes atomic with foreground playback.
