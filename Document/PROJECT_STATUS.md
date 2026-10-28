@@ -1,4 +1,14 @@
-# sntalkbot 5.1.38
+# sntalkbot 5.1.39
+
+## รอบ 28 ต.ค. 2569: Queue Trace / Terminal Readiness / Player Runtime Diagnostics (5.1.39 source)
+
+- **DONE (runtime evidence):** ผู้ใช้ publish 5.1.38 สำเร็จจริง: validator ผ่าน, Docker `5.1.38` และ `latest` ใช้ digest เดียวกัน, ZIP/เว็บไซต์สำเร็จ และ tag `v5.1.38` ถูก push. ปัญหาที่เหลือจึงเป็น Player runtime/Queue behavior ไม่ใช่ deployment mismatch.
+- **DONE (Queue root-cause hardening):** permanent `idle-active`/`eof-reached` จาก 5.1.38 มี race ใหม่ได้ หาก property terminal ของเพลงเก่าค้างหลัง `_arm_end_detection()` ของเพลงใหม่. เพิ่ม `_terminal_generation_ready()` ให้ property terminal ทำงานเฉพาะเมื่อ generation ปัจจุบันเคย START_FILE, active หรือมี time-pos แล้ว; ค่า terminal เก่าจึงไม่สามารถจบเพลงใหม่ก่อนเริ่ม.
+- **DONE (missed START_FILE recovery):** watchdog EOF ไม่บังคับ `_watchdog_seen_start` อย่างเดียวอีกต่อไป; generation ที่เห็น active/time-pos แล้วสามารถจบผ่าน `eof-reached` ได้แม้ START_FILE callback หาย.
+- **DONE (observer lifetime):** ลบ code path ที่ `stop_transport()` หรือ radio playback อาจถอด/ลงทะเบียน `idle-active` ซ้ำ. Terminal property observers เป็น single permanent observers ตลอดอายุ Player.
+- **DONE (observability):** เพิ่ม bounded `PLAYTRACE` ring 500 เหตุการณ์ + stdout JSON ต่อ instance โดยไม่บันทึก cookies/auth headers/full URLs. Trace ครอบคลุม arm, resolver race winner, prefetch begin/end, MPV START/END, idle/eof property, watchdog, terminal dispatch/drop, queue enqueue/play/prefetch/advance, Cog playback-end และ manual next.
+- **DONE (debug workflow):** instance ใดกำลังทดสอบให้ใช้ `sudo ttuhelper logs <name>` แล้วส่งช่วง `PLAYTRACE` ตั้งแต่ก่อนเริ่มเพลง 1 จนหลังเพลงจบ/ค้าง. เพราะ TTUHelper logs อ่าน Docker container ของ instance ชื่อนั้นโดยตรง จึงไม่ปนบอตอื่น.
+- **DOING (QA):** รัน Unit tests + validator จาก Complete Package 5.1.39 หลังประกอบแพ็กเกจ; live gate คือ Queue 3+ เพลง โดยปล่อยจบเองอย่างน้อย 2 handoff และเปรียบเทียบกับ manual `n` จาก PLAYTRACE เดียวกัน.
 
 ## รอบ 28 ต.ค. 2569: Redundant EOF / Resolver Race / Fast Discovery (5.1.38 source)
 
