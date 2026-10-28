@@ -1,4 +1,13 @@
-# sntalkbot 5.1.40
+# sntalkbot 5.1.41
+
+## รอบ 29 ต.ค. 2569: Fast First Track Validation / Deep Bass Recovery
+
+- **DONE (live trace root cause):** โหมดปกติบางเพลง resolve direct URL ได้ภายใน ~0.1–0.2 วินาทีและ MPV START_FILE สำเร็จ แต่ภายหลังจบด้วย error `-13` หลังหลายวินาที ก่อน retry แบบ stable จะใช้เพิ่ม ~10–16 วินาที. ปัญหาความรู้สึกว่าเพลงแรกช้าจึงมาจาก unvalidated direct stream มากกว่า search metadata.
+- **DONE (cold-start fix):** direct YouTube candidate ต้องผ่าน streamed Range probe แบบสั้นก่อนชนะ resolver; direct path แข่งกับ no-cookie public yt-dlp ที่ timeout/retry สั้น และใช้ full cookie-aware resilient extractor เฉพาะเมื่อ fast paths ทั้งคู่ล้ม. direct cache ที่ probe/retry fail ถูก invalidate.
+- **DONE (Queue preservation):** ไม่เปลี่ยน clean Queue EOF fast path/stable prefetch ของ 5.1.40; เพลง 2/3 ยังคงใช้ background stable yt-dlp stream info + headers เพื่อรักษา handoff ที่เร็วและเสถียร.
+- **DONE (Bass recovery):** ย้อนตรวจรุ่นแรกพบ Bass เดิมเน้นราว 50 Hz (+15 dB) ขณะที่รุ่นหลังย้ายเป็น +6 dB ที่ 90 Hz. 5.1.41 คืนคาแรกเตอร์ deep bass ที่ 55 Hz แต่เพิ่ม -4 dB headroom และ `alimiter` ป้องกัน clipping: `volume=-4dB,bass=g=10:f=55:w=0.5,alimiter=limit=0.97:attack=5:release=80:level=0`.
+- **DONE (offline QA):** Complete Package tree ผ่าน Unit tests 133/133, `python tools/validate_project.py`, และ FFmpeg runtime parse ของ Bass chain จริง.
+- **DOING (live QA):** ทดสอบ normal-mode cold start หลายเพลง โดย PLAYTRACE ควรเห็น `direct_probe valid=true` ก่อน direct win หรือ `public_ytdlp` win เมื่อ direct ไม่ผ่าน; ทดสอบ Bass ที่ volume ใช้งานจริงทั้ง Bass เดี่ยวและร่วม 3D/Extra Stereo.
 
 ## รอบ 29 ต.ค. 2569: Queue EOF Fast Path / Stable Prefetch / MPV -13 Recovery
 
