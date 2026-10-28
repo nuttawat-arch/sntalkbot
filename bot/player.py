@@ -23,6 +23,17 @@ class MediaAccessError(RuntimeError):
     category = "age_auth"
 
 
+def _emit_playback_trace(player, event, **fields):
+    """Diagnostics must never become a playback dependency."""
+    tracer = getattr(player, "trace_playback", None)
+    if callable(tracer):
+        try:
+            return tracer(event, **fields)
+        except Exception:
+            return None
+    return None
+
+
 class Player(mpv.MPV):
     def __init__(self, config_handler, cookiefile=None, state_store=None, *args, **kwargs):
         # Linux/Docker launchers set TTUTIL_MPV_AO=pulse so MPV sends audio to
@@ -1279,7 +1290,7 @@ class Player(mpv.MPV):
             self._watchdog_eof_since = None
             self._watchdog_near_end_since = None
             epoch = self.active_playback_epoch
-        self.trace_playback("arm", epoch=epoch, previous_entry=getattr(self, "_previous_mpv_entry_id", None))
+        _emit_playback_trace(self, "arm", epoch=epoch, previous_entry=getattr(self, "_previous_mpv_entry_id", None))
         return epoch
 
     def _cancel_end_detection(self):
@@ -1296,10 +1307,10 @@ class Player(mpv.MPV):
         """
         with self._end_dispatch_lock:
             if expected_epoch is not None and expected_epoch != self.active_playback_epoch:
-                self.trace_playback("terminal_drop", source=reason, drop="epoch", expected_epoch=expected_epoch)
+                _emit_playback_trace(self, "terminal_drop", source=reason, drop="epoch", expected_epoch=expected_epoch)
                 return False
             if self._intentional_stop or self._end_event_handled:
-                self.trace_playback("terminal_drop", source=reason,
+                _emit_playback_trace(self, "terminal_drop", source=reason,
                                     drop="intentional" if self._intentional_stop else "already_handled")
                 return False
             self._end_event_handled = True
@@ -1308,7 +1319,7 @@ class Player(mpv.MPV):
                 self.last_end_error = int(error or 0)
             except (TypeError, ValueError):
                 self.last_end_error = 0
-        self.trace_playback("terminal_dispatch", reason=self.last_end_reason, error=self.last_end_error)
+        _emit_playback_trace(self, "terminal_dispatch", reason=self.last_end_reason, error=self.last_end_error)
         # Hold the transition flag across the callback so a concurrent Queue
         # append cannot mistake this tiny end boundary for an idle fresh Queue.
         self.playback_end_transition = True
@@ -1421,7 +1432,7 @@ class Player(mpv.MPV):
                 else:
                     self._watchdog_near_end_since = None
         if reason is not None:
-            self.trace_playback("watchdog_terminal", reason=reason, position=position, duration=duration,
+            _emit_playback_trace(self, "watchdog_terminal", reason=reason, position=position, duration=duration,
                                 eof=reached_eof, idle=idle)
             if self._dispatch_end_once(reason, -1 if reason == "error" else 0, expected_epoch=epoch):
                 print(f"MPV watchdog recovered missing playback end (reason={reason}, epoch={epoch})")
@@ -1466,7 +1477,7 @@ class Player(mpv.MPV):
             self._active_mpv_entry_id = int(entry_id)
         self._awaiting_mpv_start = False
         self._watchdog_seen_start = True
-        self.trace_playback("start_file", entry_id=getattr(self, "_active_mpv_entry_id", None))
+        _emit_playback_trace(self, "start_file", entry_id=getattr(self, "_active_mpv_entry_id", None))
         try:
             startup = time.monotonic() - self.active_playback_started
             if startup >= 2.0:
@@ -1483,7 +1494,7 @@ class Player(mpv.MPV):
         """
         data = getattr(event, "data", None)
         entry_id = getattr(data, "playlist_entry_id", None)
-        self.trace_playback("end_file_signal", entry_id=entry_id,
+        _emit_playback_trace(self, "end_file_signal", entry_id=entry_id,
                             reason=getattr(data, "reason", None), error=getattr(data, "error", 0))
         active_id = getattr(self, "_active_mpv_entry_id", None)
         if entry_id is not None and getattr(self, "_awaiting_mpv_start", False):
@@ -1779,7 +1790,7 @@ class Player(mpv.MPV):
         if not self._youtube_video_id(link):
             return self._extract_play_info_resilient(link)
 
-        self.trace_playback("resolve_race_start", link=link)
+        _emit_playback_trace(self, "resolve_race_start", link=link)
         executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="SNTalkResolve")
         futures = {
             executor.submit(self._resolve_youtube_direct_audio, link): "direct",
@@ -1797,7 +1808,7 @@ class Player(mpv.MPV):
                         errors.append(exc)
                         continue
                     if info and info.get("url"):
-                        self.trace_playback("resolve_race_win", resolver=futures.get(future, "unknown"), link=link)
+                        _emit_playback_trace(self, "resolve_race_win", resolver=futures.get(future, "unknown"), link=link)
                         for other in pending:
                             other.cancel()
                         executor.shutdown(wait=False, cancel_futures=True)
@@ -1813,7 +1824,7 @@ class Player(mpv.MPV):
     def play_stream(self, link, *, cancel_event=None):
         """Play a URL using yt-dlp, with a direct HTTP stream fallback for radio/stream URLs."""
         prepare_started = time.monotonic()
-        self.trace_playback("play_stream_begin", link=link)
+        _emit_playback_trace(self, "play_stream_begin", link=link)
         try:
             self.pause = False
             info = self._pop_prefetched(link)
@@ -1873,7 +1884,7 @@ class Player(mpv.MPV):
                     raise
             self.current_link = link
             total_seconds = time.monotonic() - prepare_started
-            self.trace_playback("play_stream_loaded", link=link, resolve_ms=round(resolve_seconds * 1000), total_ms=round(total_seconds * 1000), prefetched=from_prefetch)
+            _emit_playback_trace(self, "play_stream_loaded", link=link, resolve_ms=round(resolve_seconds * 1000), total_ms=round(total_seconds * 1000), prefetched=from_prefetch)
             if total_seconds >= 2.0:
                 print(f"Playback preparation took {total_seconds:.2f}s "
                       f"(resolve={resolve_seconds:.2f}s; prefetched={from_prefetch})")
@@ -1932,7 +1943,7 @@ class Player(mpv.MPV):
 
     def prefetch_stream_info(self, link):
         started = time.monotonic()
-        self.trace_playback("prefetch_begin", link=link)
+        _emit_playback_trace(self, "prefetch_begin", link=link)
         pending = threading.Event()
         with self._ydl_lock:
             if link in self._prefetch_cache or link in self._prefetch_inflight:
@@ -1949,7 +1960,7 @@ class Player(mpv.MPV):
                     self._prefetch_cache[link] = info
                     self._prefetch_times[link] = time.monotonic()
             elapsed = time.monotonic() - started
-            self.trace_playback("prefetch_done", link=link, success=bool(info), ms=round(elapsed * 1000))
+            _emit_playback_trace(self, "prefetch_done", link=link, success=bool(info), ms=round(elapsed * 1000))
             if elapsed >= 2.0:
                 print(f"Next-track prefetch took {elapsed:.2f}s (success={bool(info)})")
         except Exception as e:
@@ -2102,7 +2113,7 @@ class Player(mpv.MPV):
         with self._end_dispatch_lock:
             self._intentional_stop = True
             self._end_event_handled = True
-        self.trace_playback("intentional_stop")
+        _emit_playback_trace(self, "intentional_stop")
         self.is_playing = False
         try:
             super().stop()
@@ -2131,7 +2142,7 @@ class Player(mpv.MPV):
         if value is not True:
             return
         ready = self._terminal_generation_ready()
-        self.trace_playback("idle_signal", ready=ready, intentional=bool(self._intentional_stop))
+        _emit_playback_trace(self, "idle_signal", ready=ready, intentional=bool(self._intentional_stop))
         if self._intentional_stop:
             self.is_playing = False
             return
@@ -2146,7 +2157,7 @@ class Player(mpv.MPV):
         if value is not True:
             return
         ready = self._terminal_generation_ready()
-        self.trace_playback("eof_property_signal", ready=ready, intentional=bool(self._intentional_stop))
+        _emit_playback_trace(self, "eof_property_signal", ready=ready, intentional=bool(self._intentional_stop))
         if self._intentional_stop or not ready:
             return
         self._dispatch_end_once("eof", 0)
