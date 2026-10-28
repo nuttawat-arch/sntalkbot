@@ -43,6 +43,13 @@ class PlayerCog:
         # long-running tasks in the general I/O executor. One ordered worker
         # preserves FIFO and keeps native libmpv callbacks lightweight.
         self._playback_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="TTBot_Playback")
+        # Related Radio discovery is warmed independently from the ordered
+        # playback worker. The current track may play for minutes, which is the
+        # ideal time to resolve recommendations and prefetch the next stream.
+        self._radio_warm_lock = threading.RLock()
+        self._radio_warm_seed = None
+        self._radio_warm_event = threading.Event()
+        self._radio_warm_event.set()
         self.player.end_callback = self._schedule_playback_end
         data_dir = os.getenv("TTUTIL_DATA_DIR", ".")
         os.makedirs(data_dir, exist_ok=True)
@@ -531,6 +538,86 @@ class PlayerCog:
     def _normal_discovery_available(self):
         return not self.player.queue_mode and not self.player.collection_results
 
+    def _current_radio_seed(self):
+        if self.player.radio_history and 0 <= self.player.radio_index < len(self.player.radio_history):
+            seed = dict(self.player.radio_history[self.player.radio_index])
+            if seed.get("link"):
+                return seed
+        if self.player.current_link:
+            return {
+                "title": self.player.media_title or "Unknown title",
+                "link": self.player.current_link,
+                "source": self.player.radio_source or "youtube",
+            }
+        return None
+
+    def _schedule_related_radio_warm(self):
+        """Discover and prefetch the next Related Radio item while music is playing."""
+        if self.player.queue_mode:
+            return False
+        if not (self.player.play_mode == 2 or self.autoplay_enabled):
+            return False
+        seed = self._current_radio_seed()
+        if not seed or not seed.get("link"):
+            return False
+        seed_link = str(seed["link"])
+
+        # If candidates already exist, prefetch the exact item autoplay will use.
+        if self.player.radio_candidates:
+            next_link = str(self.player.radio_candidates[0].get("link") or "")
+            if next_link:
+                self._trace("radio_prefetch_schedule", link=next_link, source="existing_candidates")
+                self.player.prefetcher.schedule([next_link])
+                return True
+
+        with self._radio_warm_lock:
+            if self._radio_warm_seed == seed_link and not self._radio_warm_event.is_set():
+                return True
+            self._radio_warm_seed = seed_link
+            self._radio_warm_event.clear()
+        self._trace("radio_warm_schedule", link=seed_link)
+        self.bot.io_pool.submit(self._warm_related_radio_task, seed)
+        return True
+
+    def _warm_related_radio_task(self, seed):
+        seed_link = str(seed.get("link") or "")
+        candidates = []
+        try:
+            candidates = self.player.related_radio(seed, seed.get("source") or self.player.radio_source, limit=30)
+            used = {str(item.get("link") or "") for item in self.player.radio_history}
+            candidates = [
+                dict(item) for item in candidates
+                if item.get("link") and str(item.get("link") or "") not in used
+            ]
+            current = self._current_radio_seed()
+            if (self.player.queue_mode or not current
+                    or str(current.get("link") or "") != seed_link):
+                self._trace("radio_warm_discard", link=seed_link, reason="seed_changed")
+                return
+            # Do not overwrite a newer synchronous discovery result.
+            if not self.player.radio_candidates:
+                self.player.radio_candidates = candidates
+            if self.player.radio_candidates:
+                next_link = str(self.player.radio_candidates[0].get("link") or "")
+                if next_link:
+                    self.player.prefetcher.schedule([next_link])
+                    self._trace("radio_prefetch_schedule", link=next_link, source="warm_complete")
+            self._trace("radio_warm_done", link=seed_link, count=len(self.player.radio_candidates))
+        except Exception as exc:
+            self._trace("radio_warm_error", link=seed_link, error=type(exc).__name__)
+            print(f"Related Radio warmup failed: {type(exc).__name__}: {exc}")
+        finally:
+            with self._radio_warm_lock:
+                if self._radio_warm_seed == seed_link:
+                    self._radio_warm_event.set()
+
+    def _wait_for_radio_warm(self, seed_link, timeout=0.35):
+        with self._radio_warm_lock:
+            same = self._radio_warm_seed == str(seed_link or "")
+            event = self._radio_warm_event
+        if same and not event.is_set():
+            event.wait(max(0.0, min(1.0, float(timeout))))
+
     def _play_radio_item(self, item, user_id=None, announce_private=False, autoplay=False):
         if not item or not item.get("link"):
             return False
@@ -545,6 +632,10 @@ class PlayerCog:
             self._set_playback_context("radio", item["link"], self.player.radio_index)
             self.bot.enableVoiceTransmission(True)
             self.player.play_stream(item["link"])
+            # radio_candidates is the list autoplay will actually consume.
+            # Prefetch from it immediately instead of warming unrelated search
+            # results that "."/"," navigation uses.
+            self._prefetch_next_for_current()
             if announce_private and user_id:
                 self.bot.privateMessage(user_id, self._("Playing: {title}").format(title=item.get("title", self.player.media_title)))
             elif autoplay:
@@ -593,6 +684,8 @@ class PlayerCog:
         used = {str(item.get("link") or "") for item in self.player.radio_history}
         while self.player.radio_candidates and str(self.player.radio_candidates[0].get("link") or "") in used:
             self.player.radio_candidates.pop(0)
+        if not self.player.radio_candidates:
+            self._wait_for_radio_warm(current.get("link"), timeout=0.35)
         if not self.player.radio_candidates:
             self.player.radio_candidates = self.player.related_radio(current, self.player.radio_source, limit=30)
             self.player.radio_candidates = [
@@ -903,12 +996,46 @@ class PlayerCog:
             self.bot.privateMessage(user_id, message)
 
     def _announce_track(self, title):
+        """Announce only after the current generation is genuinely producing audio.
+
+        TTS is mixed with music on the same PulseAudio sink. Announcing directly
+        after play_stream() used to let TTS finish while mpv was still buffering,
+        creating an apparent 2-5 second "dead gap" even though transport startup
+        was still in progress.
+        """
         if not self.bot.playback_config.get("announce_tracks", True):
             return
-        try:
-            self.bot.tts_cog.announce_player(self._("Now playing: {title}").format(title=title))
-        except Exception as exc:
-            print(f"Track announcement failed: {exc}")
+        expected_link = str(getattr(self.player, "current_link", "") or "")
+        expected_epoch = int(getattr(self.player, "active_playback_epoch", 0) or 0)
+        text = self._("Now playing: {title}").format(title=title)
+
+        def announce_when_ready():
+            waiter = getattr(self.player, "wait_for_audio_ready", None)
+            ready = True
+            if callable(waiter):
+                try:
+                    ready = bool(waiter(expected_epoch=expected_epoch, timeout=6.0))
+                except Exception:
+                    ready = False
+            if not ready:
+                self._trace("track_announce_skipped", reason="audio_not_ready", title=title)
+                return
+            if (int(getattr(self.player, "active_playback_epoch", 0) or 0) != expected_epoch
+                    or str(getattr(self.player, "current_link", "") or "") != expected_link
+                    or not bool(getattr(self.player, "is_playing", False))):
+                self._trace("track_announce_skipped", reason="stale_generation", title=title)
+                return
+            try:
+                self.bot.tts_cog.announce_player(text)
+                self._trace("track_announce_queued", title=title)
+            except Exception as exc:
+                print(f"Track announcement failed: {exc}")
+
+        pool = getattr(self.bot, "quick_task_pool", None)
+        if pool is not None and hasattr(pool, "submit"):
+            pool.submit(announce_when_ready)
+        else:
+            announce_when_ready()
 
     def _announce_queue(self, title=None, count=None, start=None, end=None, collection_title=None, nickname=None, collection_kind="playlist"):
         if not self.bot.playback_config.get("announce_queue", True):
@@ -2069,10 +2196,8 @@ class PlayerCog:
             self._submit_playback(self.on_playback_end)
 
     def _prefetch_next_for_current(self):
-        # Queue Mode is independent from playlist/collection state.  Resolve
-        # only the immediate successor: yt-dlp extractions share _ydl_lock,
-        # so prefetching songs 3-6 can occupy that lock when song 2 needs a
-        # fresh URL at the handoff.  The next transition schedules song 3.
+        # Queue Mode: resolve only the immediate FIFO successor. One expensive
+        # extraction should never let songs 3-6 block song 2 at handoff.
         if self.player.queue_mode:
             with self.player.queue_lock:
                 start = self.player.queue_index + 1 if self.player.queue_index >= 0 else 0
@@ -2080,9 +2205,6 @@ class PlayerCog:
                     item.get("link") for item in self.player.queue[start:start + 1]
                     if isinstance(item, dict) and item.get("link")
                 ]
-                # When the current queue item was chosen from search and there
-                # is no next queued song, warm the *next selectable result*.
-                # This makes . / , useful immediately after the first track.
                 if not links and 0 <= self.player.queue_index < len(self.player.queue):
                     entry = self.player.queue[self.player.queue_index]
                     results = entry.get("_search_results") or []
@@ -2098,12 +2220,39 @@ class PlayerCog:
                 self._trace("queue_prefetch_none")
             return
 
-        results, _ = self._get_active_results()
-        if not results:
+        # Authored playlist/channel/favorites order has priority while there is
+        # still a next item in that collection.
+        if self.player.collection_results:
+            current_index = self.player.current_collection_index
+            if current_index < len(self.player.collection_results) - 1:
+                link = self.player.collection_results[current_index + 1].get("link")
+                if link:
+                    self._trace("collection_prefetch_schedule", link=link)
+                    self.player.prefetcher.schedule([link])
+                return
+
+        # Normal M2/Autoplay does NOT auto-walk search_results; it consumes
+        # radio_candidates. Warm that exact state machine instead of wasting the
+        # prefetch worker on a search alternative that autoplay will never use.
+        if self.player.radio_candidates:
+            link = str(self.player.radio_candidates[0].get("link") or "")
+            if link:
+                self._trace("radio_prefetch_schedule", link=link, source="next_for_current")
+                self.player.prefetcher.schedule([link])
             return
-        current_index = self._get_active_index()
-        links = [item.get("link") for item in results[current_index + 1: current_index + 2] if item.get("link")]
-        self.player.prefetcher.schedule(links)
+        if self.player.play_mode == 2 or self.autoplay_enabled:
+            if self._schedule_related_radio_warm():
+                return
+
+        # With autoplay disabled, one search alternative is still useful for
+        # immediate "."/"," navigation.
+        if self.player.search_results:
+            current_index = self.player.current_search_index
+            if current_index < len(self.player.search_results) - 1:
+                link = self.player.search_results[current_index + 1].get("link")
+                if link:
+                    self._trace("search_prefetch_schedule", link=link)
+                    self.player.prefetcher.schedule([link])
 
     def handle_history_command(self, textmessage, *args):
         if args:
