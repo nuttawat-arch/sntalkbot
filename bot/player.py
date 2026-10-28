@@ -1542,8 +1542,6 @@ class Player(mpv.MPV):
             self.is_playing = False
             raise
         self.current_link = str(link)
-        if not self._mpv_end_event_registered:
-            self.observe_property('idle-active', self._on_idle_active)
         self.add_to_recent_history(self.media_title, self.current_link)
         return True
 
