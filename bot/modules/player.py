@@ -140,7 +140,17 @@ class PlayerCog:
     # ---------------- Queue state machine ----------------
     def _submit_playback(self, callback, *args):
         pool = getattr(self, "_playback_pool", None) or self.bot.io_pool
-        return pool.submit(callback, *args)
+        future = pool.submit(callback, *args)
+        def _report(done):
+            try:
+                exc = done.exception()
+            except Exception:
+                return
+            if exc is not None:
+                self._trace("playback_worker_error", callback=getattr(callback, "__name__", "callback"), error=repr(exc))
+                print(f"Playback worker error in {getattr(callback, '__name__', 'callback')}: {exc!r}")
+        future.add_done_callback(_report)
+        return future
 
     def _trace(self, event, **fields):
         tracer = getattr(self.player, "trace_playback", None)
@@ -370,7 +380,7 @@ class PlayerCog:
             # current cookie snapshot using the existing extractor path.
             if hasattr(self.player, "invalidate_stream_info"):
                 self.player.invalidate_stream_info(link)
-            self.player.play_stream(link, cancel_event=cancel)
+            self.player.play_stream(link, cancel_event=cancel, stable_only=True)
             if cancel.is_set():
                 return
             self.bot.doChangeStatus(
@@ -1779,6 +1789,21 @@ class PlayerCog:
         # once; if the previous track was non-queue, pending queue starts at item 1.
         end_reason = str(getattr(self.player, "last_end_reason", "") or "").lower()
         end_error = int(getattr(self.player, "last_end_error", 0) or 0)
+
+        # Clean Queue EOF is already generation-deduped by Player._dispatch_end_once().
+        # Do not route it through generic retry/cancel markers; that path can
+        # suppress a legitimate handoff and was the exact 5.1.39 stall seen live.
+        if end_reason == "eof":
+            with self.player.queue_lock:
+                queue_has_current = self.player.queue_index >= 0 and bool(self.player.queue)
+                queue_has_pending = bool(self.player.queue)
+            if queue_has_current or (self.player.queue_mode and queue_has_pending):
+                self._trace("queue_clean_eof_fastpath", queue_has_current=queue_has_current, queue_has_pending=queue_has_pending)
+                self._reset_failure_budget()
+                if self._advance_queue_after_current(remember=queue_has_current):
+                    return
+                self._finish_natural_playback()
+                return
 
         with self._ensure_failure_state():
             if hasattr(self.player, "active_playback_epoch") or getattr(self, "_sync_error_serial", 0):
