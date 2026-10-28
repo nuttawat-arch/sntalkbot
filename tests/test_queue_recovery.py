@@ -575,11 +575,22 @@ class StreamMetadataTests(unittest.TestCase):
         finally:
             release.set();worker.join(2);timer.join(2)
 
-    def test_eof_property_observer_dispatches_without_end_file(self):
+    def test_eof_property_observer_dispatches_without_end_file_after_current_started(self):
         self._arm_watchdog_fixture()
+        self.player._watchdog_seen_active=True
         self.player._on_eof_reached('eof-reached', True)
         self.player.end_callback.assert_called_once()
         self.assertEqual(self.player.last_end_reason,'eof')
+
+    def test_stale_terminal_properties_cannot_end_new_generation_before_start(self):
+        self._arm_watchdog_fixture()
+        self.player._watchdog_seen_start=False
+        self.player._watchdog_seen_active=False
+        self.player._watchdog_seen_position=False
+        self.player._on_eof_reached('eof-reached', True)
+        self.player._on_idle_active('idle-active', True)
+        self.player.end_callback.assert_not_called()
+        self.assertFalse(self.player._end_event_handled)
 
     def test_idle_observer_remains_permanent_after_intentional_stop(self):
         self._arm_watchdog_fixture()
@@ -588,6 +599,19 @@ class StreamMetadataTests(unittest.TestCase):
         self.player._on_idle_active('idle-active', True)
         self.player.unobserve_property.assert_not_called()
         self.player.end_callback.assert_not_called()
+
+    def test_watchdog_accepts_eof_after_active_even_when_start_file_was_missed(self):
+        self._arm_watchdog_fixture()
+        self.player.idle_active=False
+        self.player._watchdog_seen_start=False
+        self.player._watchdog_seen_active=True
+        self.player.active_playback_started=time.monotonic()-8
+        self.module.Player.__getitem__=lambda _self,key: True if key=='eof-reached' else (7.5 if key=='time-pos' else False)
+        self.player._playback_watchdog_tick()
+        self.player._watchdog_eof_since=time.monotonic()-2
+        self.player._playback_watchdog_tick()
+        self.player.end_callback.assert_called_once()
+        self.assertEqual(self.player.last_end_reason,'eof')
 
     def test_native_eof_property_recovers_when_idle_never_flips(self):
         self._arm_watchdog_fixture()
