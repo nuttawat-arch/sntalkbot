@@ -1,4 +1,15 @@
-# sntalkbot 5.1.43
+# sntalkbot 5.1.44
+
+## รอบ 29 ต.ค. 2569: Queue Cold-Start Stable Backup / 1.5s Direct Guard
+
+- **DONE (live trace root cause):** Normal M2/Autoplay ของ 5.1.43 ทำงานเร็วแล้ว: cold direct resolve ประมาณครึ่งวินาที, audio-ready ต่ำกว่า 1 วินาที และเพลงถัดไปใช้ Related Radio prefetch. ปัญหาที่เหลืออยู่เฉพาะ Queue เพลงแรก: direct YouTube URL ผ่าน Range probe และ START_FILE แต่ไม่เกิด audio-ready จากนั้นค้างจน MPV `error=-13` ราว 30 วินาที ก่อน stable retry จึงเล่นได้.
+- **DONE (normal freeze):** ไม่แก้ resolver/prefetch/Related Radio ของ Normal 5.1.43. เพิ่ม validator บังคับว่า Queue direct-start recovery มี call site เดียวภายใน `_play_from_queue()` และห้ามอยู่ใน normal `_play_radio_item()`.
+- **DONE (speculative stable backup):** ตอน Queue ว่างและ item แรกถูก reserve ให้เล่น ระบบเริ่ม background stable yt-dlp prefetch ของ item เดียวกันก่อนส่งงานเข้า playback worker. Fast direct path ยังเริ่มตามเดิม จึงไม่เสียความเร็วเมื่อ direct URL ใช้งานได้จริง.
+- **DONE (Queue-only readiness guard):** ถ้า Queue ใช้ resolver=`direct` จะรอ audio-ready สูงสุด 1.5 วินาที. ถ้าพร้อมจะคง direct เดิม; ถ้าไม่พร้อมและ queue token/link/epoch ยังเป็น item เดิม จะ invalidate เฉพาะ fast-direct cache, หยุด transport เดิม และเรียก `play_stream(..., stable_only=True)`. stable call จะหยิบ speculative prefetch ที่เสร็จแล้วก่อน หรือ resolve stable ต่อโดยไม่รอ MPV -13 หลายสิบวินาที.
+- **DONE (resolver observability):** `play_stream_loaded` บันทึก `resolver=direct|public_ytdlp|prefetch|stable|stable_fallback` และ Player เก็บ `last_stream_resolution_source` เพื่อให้ Queue guard ทำงานเฉพาะ direct CDN load.
+- **DONE (stale safety):** guard ตรวจ queue index, URL, queue token และ playback epoch หลังรอ readiness; manual skip/replacement จึงไม่สามารถถูก guard เก่าหยุดเพลงใหม่.
+- **DONE (offline QA):** Complete Package 5.1.43 ที่ใช้งานจริงถูก patch เป็น 5.1.44 candidate แล้วผ่าน Unit tests **147/147** และ `python tools/validate_project.py` ครบ รวม cold backup schedule, good-direct keep, slow-direct stable fallback, prefetched handoff bypass และ Normal M2 isolation.
+- **DOING (live QA):** Queue เพลงแรกที่ direct ดีควรเห็น `queue_direct_start_ready` ภายใน ~1.5s; direct ที่เสียควรเห็น `queue_direct_start_fallback -> queue_direct_start_recovered` โดยไม่รอ MPV -13 ~30s. เพลงถัดไปที่ prefetch สำเร็จควรยังเห็น `resolver=prefetch` และ handoff ระดับ ms เหมือน 5.1.43.
 
 ## รอบ 29 ต.ค. 2569: Full Player Audit / Related-Radio Prewarm / Audio-Ready Announcements
 
