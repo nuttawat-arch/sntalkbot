@@ -2128,6 +2128,60 @@ else:
     else:
         ok("5.1.45 guards direct/prefetch/public/stable YouTube Queue handoffs at 1.5s and leaves normal M2 untouched")
 
+# 5.1.46 fixes explicit u <link> separately from Queue/Normal discovery.
+# Direct URL playback must serialize with EOF/retry/manual transport work, prove
+# actual audio readiness, rotate retry strategy, and stop rather than falling
+# through into M2/Autoplay after the requested URL exhausts its retry budget.
+_direct_url_start = _queue_5140.find("    def handle_play_url_command(")
+_direct_url_end = _queue_5140.find("    def _enqueue_url_task(", _direct_url_start)
+_direct_url_block = _queue_5140[_direct_url_start:_direct_url_end]
+_retry_start_5146 = _queue_5140.find("    def _perform_retry_playback_context(")
+_retry_end_5146 = _queue_5140.find("    def _teamtalk_voice_tx_active", _retry_start_5146)
+_retry_block_5146 = _queue_5140[_retry_start_5146:_retry_end_5146]
+_end_start_5146 = _queue_5140.find("    def on_playback_end(")
+_end_end_5146 = _queue_5140.find("    def _repeat_current_track", _end_start_5146)
+_end_block_5146 = _queue_5140[_end_start_5146:_end_end_5146]
+_normal_start_5146 = _queue_5140.find("    def _play_radio_item(")
+_normal_end_5146 = _queue_5140.find("    def _ensure_radio_seed", _normal_start_5146)
+_normal_block_5146 = _queue_5140[_normal_start_5146:_normal_end_5146]
+if not all(token in _queue_5140 for token in (
+    "def _direct_url_context_matches",
+    "def _guard_direct_url_audio_ready",
+    "def _play_direct_url_task",
+    "url_start_ready",
+    "url_start_timeout",
+    "url_retry_exhausted",
+)):
+    fail("5.1.46 explicit URL readiness/ownership helpers are incomplete")
+elif 'self._submit_playback(self._play_direct_url_task, link, textmessage.nFromUserID, token)' not in _direct_url_block:
+    fail("5.1.46 u <link> still starts transport outside the ordered playback executor")
+elif "self.player.play_stream(link)" in _direct_url_block:
+    fail("5.1.46 u <link> still contains a synchronous command-thread play_stream call")
+elif not all(token in _retry_block_5146 for token in (
+    'if retry_kind == "direct":',
+    "stable_only = int(context.get(\"attempt\", 1) or 1) % 2 == 1",
+    "_guard_direct_url_audio_ready(",
+    "retry_play_stream",
+)):
+    fail("5.1.46 direct URL retries do not rotate stable/fresh-fast strategies with readiness checks")
+elif not all(token in _end_block_5146 for token in (
+    'context_kind == "direct"',
+    "url_retry_exhausted",
+    "stopped instead of switching to another item",
+    "self._finish_natural_playback()",
+)):
+    fail("5.1.46 exhausted direct URL failures can still fall into another playback source")
+elif "_guard_direct_url_audio_ready" in _normal_block_5146:
+    fail("5.1.46 changed normal search/Related-Radio startup behavior")
+elif not all(token in _player_core_for_url for token in (
+    "def invalidate_prefetched_stream_info",
+    'self.last_stream_resolution_source = "radio_webpage"',
+    '"radio_webpage_loaded"',
+)):
+    fail("5.1.46 URL cache isolation/resolved-radio observability is incomplete")
+else:
+    ok("5.1.46 serializes explicit URL playback, gates real audio, rotates fresh retry paths and never auto-switches after URL exhaustion")
+
 _queue_module_core = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
 _queue_url_start = _queue_module_core.find("    def _enqueue_url_task(self, link, user_id):")
 _queue_url_end = _queue_module_core.find("    def handle_append_playlist_command", _queue_url_start)
