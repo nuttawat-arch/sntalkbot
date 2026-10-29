@@ -1,4 +1,16 @@
-# sntalkbot 5.1.45
+# sntalkbot 5.1.46
+
+## รอบ 30 ต.ค. 2569: Explicit URL Playback Serialization / Audio-Ready Retry Isolation
+
+- **DONE (scope freeze):** รอบนี้ไม่แก้ Queue/Original/Normal discovery. โฟกัสเฉพาะคำสั่ง `u <link>` แบบเล่นทันทีและ retry ของ direct URL.
+- **DONE (root cause - concurrency):** direct URL เดิมเรียก `play_stream()` จาก TeamTalk command thread ขณะที่ EOF/retry/manual transport ใช้ ordered playback executor. retry เก่าที่กำลัง `stop_transport()/resolve` จึงสามารถชนกับ URL ใหม่และทำให้พฤติกรรมเป็นบางครั้งได้. 5.1.46 ส่ง URL playback เข้า executor เดียวกันทั้งหมดและมี request token กันคำสั่ง URL เก่าแซงคำสั่งใหม่.
+- **DONE (root cause - false success):** `play_stream()/START_FILE` ไม่ได้แปลว่าเสียงเริ่มแล้ว. Explicit URL ต้องเกิด audio-ready ภายใน 1.5s; ถ้าไม่พร้อมจะหยุด generation นั้น, invalidate stream metadata และส่ง synthetic `-13` เข้า retry path ทันที ไม่รอ libmpv ค้างหลายวินาที.
+- **DONE (root cause - 4 tries then switch):** default retry budget 3 ครั้ง + initial play = 4 attempts. เมื่อ direct URL ใช้ budget หมด เดิม `on_playback_end()` สามารถไหลต่อเข้า M2/Autoplay Related Radio จึงดูเหมือนข้ามไปอีกรายการทั้งที่ผู้ใช้ต้องการ URL เดิม. 5.1.46 direct failure ที่หมด budget จะหยุด playback/คืน idle และไม่เปลี่ยนไปเพลงอื่น.
+- **DONE (fresh-request strategy):** retry ของ direct URL ไม่บังคับ `stable_only=True` ซ้ำทุกครั้งอีกต่อไป. รอบ retry ใช้ stable -> fresh fastest resolver -> stable ตามลำดับ โดย invalidate stream info ก่อนทุก attempt; fresh-fast รอบกลางเลียนแบบสิ่งที่เกิดเมื่อผู้ใช้วาง URL เดิมซ้ำเอง.
+- **DONE (cache isolation):** explicit URL request ทิ้งเฉพาะ prefetched signed URL เก่าก่อนรอบแรก แต่ยังคง fast cache ที่มี direct probe เพื่อไม่ทำให้ URL ที่ดีช้าลง. เมื่อ audio-ready fail จึง invalidate ทั้ง prefetch + fast cache.
+- **DONE (resolved webpage observability):** radio/webpage fallback บันทึก `last_stream_resolution_source=radio_webpage` และ PLAYTRACE `radio_webpage_loaded`.
+- **DONE (offline QA):** full package candidate ผ่าน Unit tests **154/154** และ `python tools/validate_project.py` ครบ รวม URL ordered-worker, fresh-cache policy, 1.5s readiness failure, stable/fast retry rotation และ direct exhaustion isolation from Autoplay.
+- **DOING (live QA):** ทดสอบ URL เดิมซ้ำหลายรอบ โดย PLAYTRACE ควรเห็น `url_play_request -> url_start_ready`; URL ที่ได้ signed stream ไม่ดีควรเห็น `url_start_timeout` แล้ว retry ใหม่โดยไม่ต้องกด stop/play และเมื่อ retry หมดต้องเห็น `url_retry_exhausted` โดยไม่กระโดดไป Related Radio.
 
 ## รอบ 30 ต.ค. 2569: Queue Prefetch Audio-Ready Guard / Bounded Stable Refresh
 
