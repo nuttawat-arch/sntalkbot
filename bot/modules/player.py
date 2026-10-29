@@ -452,6 +452,19 @@ class PlayerCog:
         """
         self._trace("queue_after_enqueue", should_start=bool(should_start))
         if should_start:
+            cold_link = None
+            with self.player.queue_lock:
+                if 0 <= self.player.queue_index < len(self.player.queue):
+                    current = self.player.queue[self.player.queue_index]
+                    if isinstance(current, dict):
+                        cold_link = current.get("link")
+            if cold_link:
+                # Keep the fast direct path, but start a stable yt-dlp backup in
+                # parallel. If the direct CDN URL accepts START_FILE then hangs
+                # before audio-ready, Queue can swap to this backup immediately
+                # instead of waiting tens of seconds for MPV error -13.
+                self._trace("queue_cold_backup_prefetch", link=cold_link)
+                self.player.prefetcher.schedule([cold_link])
             self._submit_playback(self._play_from_queue, 0)
         else:
             self._prefetch_next_for_current()
@@ -1708,6 +1721,65 @@ class PlayerCog:
                 self.player.queue[index] = updated
                 return
 
+    def _recover_slow_queue_direct_start(self, video, timeout=1.5):
+        """Replace a Queue-only direct CDN load that never becomes audio-ready.
+
+        Normal M2/Autoplay intentionally keeps its 5.1.43 resolver behavior.
+        Queue cold-starts additionally have a stable background prefetch, so a
+        direct URL that passed the tiny HTTP probe but stalls inside libmpv can
+        be abandoned quickly without waiting for the eventual MPV -13.
+        """
+        if str(getattr(self.player, "last_stream_resolution_source", "") or "") != "direct":
+            return False
+        link = str(video.get("link") or "")
+        token = str(video.get("_queue_token") or "")
+        if not link:
+            return False
+        epoch = int(getattr(self.player, "active_playback_epoch", 0) or 0)
+        waiter = getattr(self.player, "wait_for_audio_ready", None)
+        if not callable(waiter):
+            return False
+        try:
+            if waiter(expected_epoch=epoch, timeout=timeout):
+                self._trace("queue_direct_start_ready", link=link, epoch=epoch)
+                return False
+        except Exception as exc:
+            self._trace("queue_direct_start_wait_error", link=link, error=type(exc).__name__)
+            return False
+
+        # The user may have skipped/replaced the item while the readiness guard
+        # was waiting. Never let a stale guard stop the newly selected song.
+        with self.player.queue_lock:
+            index = self.player.queue_index
+            if index < 0 or index >= len(self.player.queue):
+                return False
+            current = self.player.queue[index]
+            if str(current.get("link") or "") != link:
+                return False
+            if token and str(current.get("_queue_token") or "") != token:
+                return False
+        if int(getattr(self.player, "active_playback_epoch", 0) or 0) != epoch:
+            return False
+
+        self._trace("queue_direct_start_fallback", link=link, epoch=epoch, timeout_ms=round(timeout * 1000))
+        # A terminal event for the failed direct generation may already be
+        # queued on the same single playback executor. The fresh stable load
+        # rearms Player with a new epoch; that stale callback then sees
+        # last_end_reason=None and becomes harmless.
+        self._deferred_playback_end = False
+        self._stop_transport_for_replacement()
+        invalidator = getattr(self.player, "invalidate_fast_stream_info", None)
+        if callable(invalidator):
+            invalidator(link)
+        self.player.current_link = link
+        self.bot.enableVoiceTransmission(True)
+        self.player.play_stream(link, stable_only=True)
+        self._trace(
+            "queue_direct_start_recovered", link=link,
+            resolver=str(getattr(self.player, "last_stream_resolution_source", "") or ""),
+        )
+        return True
+
     def _play_from_queue(self, index, expected_token=None, expected_link=None):
         self._trace("queue_play_request", requested_index=index, has_expected_token=bool(expected_token), has_expected_link=bool(expected_link))
         with self.player.queue_lock:
@@ -1740,7 +1812,11 @@ class PlayerCog:
             self.bot.enableVoiceTransmission(True)
             self._trace("queue_voice_enabled", requested_index=index)
             self.player.play_stream(video['link'])
-            self._trace("queue_play_loaded", requested_index=index, title=self.player.media_title)
+            self._trace(
+                "queue_play_loaded", requested_index=index, title=self.player.media_title,
+                resolver=str(getattr(self.player, "last_stream_resolution_source", "") or ""),
+            )
+            self._recover_slow_queue_direct_start(video)
             # As soon as current playback is live, prepare the next FIFO items.
             # This keeps queue-to-queue handoff fast even for short tracks.
             self._prefetch_next_for_current()
