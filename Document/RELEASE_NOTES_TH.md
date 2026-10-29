@@ -1,3 +1,15 @@
+# SNTalkBot 5.1.44 — Queue Cold-Start Stable Backup
+
+- คงพฤติกรรม Normal M2/Autoplay ของ 5.1.43 ไว้ทั้งหมด เพราะ live trace ยืนยันว่าเพลงแรกและเพลงต่อไปเริ่มเร็วแล้ว.
+- แก้เฉพาะ Queue เพลงแรกที่ direct YouTube URL ผ่าน probe/START_FILE แต่ไม่เกิด audio-ready และค้างจน MPV -13 หลายสิบวินาที.
+- Queue cold-start เริ่ม stable yt-dlp prefetch ของเพลงเดียวกันเป็น backup แบบ background ขณะ fast direct path ยังทำงานตามเดิม.
+- ถ้า resolver=direct แต่ไม่เกิด audio-ready ภายใน 1.5 วินาที ระบบจะตรวจ link/token/epoch แล้วสลับไป stable stream ทันทีแทนการรอ MPV error.
+- direct ที่ดีจะไม่ถูก restart; เพลงถัดไปที่ใช้ stable prefetch อยู่แล้วจะไม่เข้า guard นี้.
+- เพิ่ม resolver source ใน PLAYTRACE: direct, public_ytdlp, prefetch, stable หรือ stable_fallback.
+- Offline QA ผ่าน Unit tests 147/147 และ project validator ครบ โดยมี gate ยืนยันว่า recovery ใหม่อยู่เฉพาะ Queue และไม่แตะ Normal Related Radio.
+
+---
+
 # SNTalkBot 5.1.43 — Full Player Audit / Related Radio Prewarm / Audio-Ready TTS
 
 - แก้ latency เพลงลำดับหลังใน normal M2/Autoplay: prewarm YouTube/YouTube Music Related Radio ระหว่างเพลงปัจจุบันและ prefetch stream ของ `radio_candidates[0]` ซึ่งเป็นเพลงที่ autoplay จะเล่นจริง แทนการอุ่น search alternative ที่ไม่ได้ถูก consume.
