@@ -1,3 +1,14 @@
+# SNTalkBot 5.1.45 — Queue Prefetch Audio-Ready Recovery
+
+- แก้ช่องโหว่ของ 5.1.44 ที่ guard เฉพาะ `resolver=direct` ทำให้เพลง Queue ที่มาจาก `prefetch` สามารถโหลดเร็วแต่เงียบยาวจน MPV `-13`.
+- Queue ของ YouTube/YouTube Music ตรวจ audio-ready ภายใน 1.5 วินาทีทั้ง direct, prefetch, public yt-dlp และ stable handoff.
+- stream ที่ไม่พร้อมจะถูก re-resolve stable ทันที; stable ที่ยังเงียบจะ refresh อีกหนึ่งครั้งแบบมีขอบเขต ไม่รอ MPV error หลายสิบวินาที.
+- ตรวจ queue token/link/playback epoch ทุกครั้ง ป้องกัน recovery เก่าไปหยุดเพลงที่ผู้ใช้เลือกใหม่.
+- Normal M2/Autoplay ไม่เปลี่ยนพฤติกรรม.
+- QA ออฟไลน์ผ่าน Queue recovery 87/87 และ full unit tests 149/149; project validator ตรวจ Queue-only scope เพิ่มเติม.
+
+---
+
 # SNTalkBot 5.1.44 — Queue Cold-Start Stable Backup
 
 - คงพฤติกรรม Normal M2/Autoplay ของ 5.1.43 ไว้ทั้งหมด เพราะ live trace ยืนยันว่าเพลงแรกและเพลงต่อไปเริ่มเร็วแล้ว.
