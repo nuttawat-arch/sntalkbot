@@ -171,6 +171,57 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(order[0],('voice',True))
         self.assertEqual(order[1][0],'play')
 
+    def test_queue_cold_start_prewarms_same_item_as_stable_backup(self):
+        self.player.prefetcher=SimpleNamespace(schedule=Mock())
+        self.cog._play_from_queue=Mock()
+        self.cog._after_queue_enqueue(True)
+        self.player.prefetcher.schedule.assert_called_once_with([self.player.queue[0]['link']])
+        self.assertEqual(len(self.pool.jobs),1)
+        fn,args=self.pool.jobs[0]
+        self.assertEqual(fn,self.cog._play_from_queue)
+        self.assertEqual(args,(0,))
+
+    def test_queue_direct_start_ready_keeps_fast_path(self):
+        self.player.last_stream_resolution_source='direct'
+        self.player.active_playback_epoch=7
+        self.player.wait_for_audio_ready=Mock(return_value=True)
+        self.player.invalidate_fast_stream_info=Mock()
+        self.player.play_stream=Mock()
+        item=dict(self.player.queue[0])
+        recovered=self.cog._recover_slow_queue_direct_start(item,timeout=1.5)
+        self.assertFalse(recovered)
+        self.player.wait_for_audio_ready.assert_called_once_with(expected_epoch=7,timeout=1.5)
+        self.player.invalidate_fast_stream_info.assert_not_called()
+        self.player.play_stream.assert_not_called()
+
+    def test_queue_direct_start_without_audio_ready_switches_to_stable_backup(self):
+        self.player.last_stream_resolution_source='direct'
+        self.player.active_playback_epoch=7
+        self.player.is_playing=True
+        self.player.wait_for_audio_ready=Mock(return_value=False)
+        self.player.invalidate_fast_stream_info=Mock()
+        calls=[]
+        def stable_play(link,**kwargs):
+            calls.append((link,kwargs))
+            self.player.active_playback_epoch=8
+            self.player.last_stream_resolution_source='prefetch'
+            self.player.last_end_reason=None
+            self.player.is_playing=True
+        self.player.play_stream=Mock(side_effect=stable_play)
+        item=dict(self.player.queue[0])
+        recovered=self.cog._recover_slow_queue_direct_start(item,timeout=1.5)
+        self.assertTrue(recovered)
+        self.player.invalidate_fast_stream_info.assert_called_once_with(item['link'])
+        self.assertEqual(calls,[(item['link'],{'stable_only':True})])
+        self.bot.enableVoiceTransmission.assert_called_with(True)
+
+    def test_queue_direct_start_guard_never_runs_for_prefetched_handoff(self):
+        self.player.last_stream_resolution_source='prefetch'
+        self.player.wait_for_audio_ready=Mock()
+        item=dict(self.player.queue[0])
+        self.assertFalse(self.cog._recover_slow_queue_direct_start(item))
+        self.player.wait_for_audio_ready.assert_not_called()
+
     def test_queue_selection_is_enqueued_and_stale_restart_skipped(self):
         first={'title':'A','link':'https://youtube.com/watch?v=a'}
         second={'title':'B','link':'https://youtube.com/watch?v=b'}
