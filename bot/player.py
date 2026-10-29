@@ -1650,6 +1650,8 @@ class Player(mpv.MPV):
             self.is_playing = False
             raise
         self.current_link = str(link)
+        self.last_stream_resolution_source = "radio_webpage"
+        _emit_playback_trace(self, "radio_webpage_loaded", link=link)
         self.add_to_recent_history(self.media_title, self.current_link)
         return True
 
@@ -2169,10 +2171,14 @@ class Player(mpv.MPV):
                 return None
         return info
 
-    def invalidate_stream_info(self, link):
+    def invalidate_prefetched_stream_info(self, link):
+        """Drop only a signed/background prefetch entry for an explicit fresh request."""
         with self._ydl_lock:
             self._prefetch_cache.pop(link, None)
             self._prefetch_times.pop(link, None)
+
+    def invalidate_stream_info(self, link):
+        self.invalidate_prefetched_stream_info(link)
         self.invalidate_fast_stream_info(link)
 
     def prefetch_stream_info(self, link):
