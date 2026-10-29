@@ -1,3 +1,16 @@
+# SNTalkBot 5.1.46 — Explicit URL Playback Recovery
+
+- แก้เฉพาะ `u <link>` แบบเล่นทันที โดยไม่เปลี่ยน Queue/Normal/Related Radio.
+- URL playback ถูก serialize เข้า ordered playback executor เดียวกับ EOF/retry/manual transport ป้องกัน worker เก่าหยุดหรือแทนที่ลิงก์ใหม่.
+- หลัง `play_stream()` ต้องพิสูจน์ audio-ready ภายใน 1.5 วินาที; silent START_FILE จะ fail-fast เป็น `-13` เพื่อเริ่ม recovery ทันที.
+- retry direct URL สลับ strategy เป็น stable -> fresh fastest -> stable แทน stable-only ซ้ำทุกครั้ง; fresh-fast จำลองการวาง URL เดิมใหม่โดยอัตโนมัติ.
+- explicit URL รอบใหม่ทิ้งเฉพาะ prefetched signed URL เก่า แต่ยังใช้ fast cache ที่มี probe; เมื่อเกิด silent start จึง invalidate cache ทั้งหมด.
+- เมื่อ initial + 3 retries หมด จะหยุด playback แทนการไหลเข้า M2/Autoplay และเปลี่ยนไปเพลงอื่น.
+- เพิ่ม PLAYTRACE `url_play_request`, `url_start_ready`, `url_start_timeout`, `retry_play_stream`, `url_retry_exhausted` และ `radio_webpage_loaded`.
+- Offline QA ผ่าน Unit tests 154/154 และ project validator ครบ.
+
+---
+
 # SNTalkBot 5.1.45 — Queue Prefetch Audio-Ready Recovery
 
 - แก้ช่องโหว่ของ 5.1.44 ที่ guard เฉพาะ `resolver=direct` ทำให้เพลง Queue ที่มาจาก `prefetch` สามารถโหลดเร็วแต่เงียบยาวจน MPV `-13`.
