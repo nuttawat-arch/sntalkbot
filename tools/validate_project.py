@@ -2086,40 +2086,47 @@ if _radio_prefetch_pos < 0 or _search_prefetch_pos < 0 or _radio_prefetch_pos > 
 else:
     ok("5.1.43 normal M2/Autoplay prewarms the actual radio_candidates stream path")
 
-# 5.1.44 is deliberately Queue-only. Live 5.1.43 traces proved normal M2 is
-# already fast, while a Queue first item could pass the direct Range probe,
-# never reach audio-ready, and only fail with MPV -13 roughly 30 seconds later.
+# 5.1.45 keeps the fix Queue-only but broadens the readiness guard from
+# resolver=direct to every YouTube signed-URL handoff used by Queue. Live
+# 5.1.44 traces showed a prefetched stream loading in 2ms, never becoming
+# audio-ready, then waiting ~15s for MPV -13; the old direct-only guard skipped it.
 if not all(token in _player_core_for_url for token in (
     'info["_sntalkbot_resolver"] = resolver',
     "self.last_stream_resolution_source = resolution_source",
     "resolver=resolution_source",
 )):
-    fail("5.1.44 stream resolver source tagging is incomplete")
+    fail("5.1.45 stream resolver source tagging is incomplete")
 elif not all(token in _queue_5140 for token in (
     "queue_cold_backup_prefetch",
-    "def _recover_slow_queue_direct_start",
-    'last_stream_resolution_source',
+    "def _queue_item_matches_start_guard",
+    "def _recover_slow_queue_start",
+    'guarded_sources = {"direct", "prefetch", "public_ytdlp", "stable", "stable_fallback"}',
     "waiter(expected_epoch=epoch, timeout=timeout)",
-    "queue_direct_start_fallback",
+    "queue_start_fallback",
+    "queue_stable_start_timeout",
     "self.player.play_stream(link, stable_only=True)",
-    "queue_direct_start_recovered",
+    "queue_start_recovered",
+    'raise OSError(-13, "Queue stream did not become audio-ready")',
 )):
-    fail("5.1.44 Queue cold-start speculative backup / readiness fallback is incomplete")
-elif _queue_5140.count("_recover_slow_queue_direct_start(") != 2:
-    fail("5.1.44 Queue direct-start recovery escaped its single Queue call site")
+    fail("5.1.45 Queue signed-URL readiness recovery is incomplete")
 else:
     _qplay_start = _queue_5140.find("    def _play_from_queue(")
     _qplay_end = _queue_5140.find("    def handle_pause_resume_command", _qplay_start)
     _qplay_block = _queue_5140[_qplay_start:_qplay_end]
+    _retry_start = _queue_5140.find("    def _perform_retry_playback_context(")
+    _retry_end = _queue_5140.find("    def _teamtalk_voice_tx_active", _retry_start)
+    _retry_block = _queue_5140[_retry_start:_retry_end]
     _normal_start = _queue_5140.find("    def _play_radio_item(")
     _normal_end = _queue_5140.find("    def _ensure_radio_seed", _normal_start)
     _normal_block = _queue_5140[_normal_start:_normal_end]
-    if "_recover_slow_queue_direct_start(video)" not in _qplay_block:
-        fail("5.1.44 Queue playback does not invoke the direct-start readiness guard")
-    elif "_recover_slow_queue_direct_start" in _normal_block:
-        fail("5.1.44 changed the already-good normal Related Radio startup path")
+    if "_recover_slow_queue_start(video)" not in _qplay_block:
+        fail("5.1.45 Queue playback does not guard initial/prefetched signed-URL handoffs")
+    elif '_recover_slow_queue_start(retry_item, timeout=1.5, stable_attempts=1)' not in _retry_block:
+        fail("5.1.45 Queue stable retry is not guarded against another silent signed URL")
+    elif "_recover_slow_queue_start" in _normal_block:
+        fail("5.1.45 changed the already-good normal Related Radio startup path")
     else:
-        ok("5.1.44 adds a Queue-only 1.5s direct-start guard with stable backup and leaves normal M2 untouched")
+        ok("5.1.45 guards direct/prefetch/public/stable YouTube Queue handoffs at 1.5s and leaves normal M2 untouched")
 
 _queue_module_core = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
 _queue_url_start = _queue_module_core.find("    def _enqueue_url_task(self, link, user_id):")
