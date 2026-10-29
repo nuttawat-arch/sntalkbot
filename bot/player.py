@@ -2013,6 +2013,8 @@ class Player(mpv.MPV):
                         if not valid:
                             self.invalidate_fast_stream_info(link)
                             continue
+                    info = dict(info)
+                    info["_sntalkbot_resolver"] = resolver
                     _emit_playback_trace(self, "resolve_race_win", resolver=resolver, link=link)
                     for other in pending:
                         other.cancel()
@@ -2022,7 +2024,11 @@ class Player(mpv.MPV):
             executor.shutdown(wait=False, cancel_futures=True)
 
         _emit_playback_trace(self, "resolve_stable_fallback", link=link)
-        return self._extract_play_info_resilient(link)
+        info = self._extract_play_info_resilient(link)
+        if info:
+            info = dict(info)
+            info["_sntalkbot_resolver"] = "stable_fallback"
+        return info
 
     def play_stream(self, link, *, cancel_event=None, stable_only=False):
         """Play a URL.
@@ -2037,6 +2043,7 @@ class Player(mpv.MPV):
             self.pause = False
             info = self._pop_prefetched(link)
             from_prefetch = bool(info)
+            resolution_source = "prefetch" if from_prefetch else None
             if not info:
                 try:
                     # Only cache bookkeeping is serialized. An unrelated
@@ -2047,13 +2054,17 @@ class Player(mpv.MPV):
                         pending.wait(timeout=0.12)
                         info = self._pop_prefetched(link)
                         from_prefetch = bool(info)
+                        if from_prefetch:
+                            resolution_source = "prefetch"
                     if not info:
                         if stable_only:
                             _emit_playback_trace(self, "resolve_stable_start", link=link)
                             info = self._extract_play_info_stable_fast(link)
+                            resolution_source = "stable"
                             _emit_playback_trace(self, "resolve_stable_done", link=link)
                         else:
                             info = self._resolve_play_info_fastest(link)
+                            resolution_source = str((info or {}).get("_sntalkbot_resolver") or "fast")
                 except Exception:
                     host = (urlparse(str(link)).hostname or "").lower()
                     if str(link).lower().startswith(("http://", "https://")) and not any(x in host for x in ("youtube.com", "youtu.be", "music.youtube.com")):
@@ -2062,6 +2073,9 @@ class Player(mpv.MPV):
                     raise
             if cancel_event is not None and cancel_event.is_set():
                 return False
+            if resolution_source is None:
+                resolution_source = "stable" if stable_only else str((info or {}).get("_sntalkbot_resolver") or "unknown")
+            self.last_stream_resolution_source = resolution_source
             resolve_seconds = time.monotonic() - prepare_started
             self.media_title = info.get('title') or "Unknown title"
             if self._requires_temp_download(info, link):
@@ -2097,7 +2111,13 @@ class Player(mpv.MPV):
                     raise
             self.current_link = link
             total_seconds = time.monotonic() - prepare_started
-            _emit_playback_trace(self, "play_stream_loaded", link=link, resolve_ms=round(resolve_seconds * 1000), total_ms=round(total_seconds * 1000), prefetched=from_prefetch)
+            _emit_playback_trace(
+                self, "play_stream_loaded", link=link,
+                resolve_ms=round(resolve_seconds * 1000),
+                total_ms=round(total_seconds * 1000),
+                prefetched=from_prefetch,
+                resolver=resolution_source,
+            )
             if total_seconds >= 2.0:
                 print(f"Playback preparation took {total_seconds:.2f}s "
                       f"(resolve={resolve_seconds:.2f}s; prefetched={from_prefetch})")
