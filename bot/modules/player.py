@@ -399,7 +399,26 @@ class PlayerCog:
             # current cookie snapshot using the existing extractor path.
             if hasattr(self.player, "invalidate_stream_info"):
                 self.player.invalidate_stream_info(link)
-            self.player.play_stream(link, cancel_event=cancel, stable_only=True)
+            retry_kind = str(context.get("kind") or "")
+            if retry_kind == "direct":
+                # Attempt 1: fresh stable yt-dlp. Attempt 2: re-run the normal
+                # fast resolver exactly like re-pasting the URL. Attempt 3:
+                # stable once more. This avoids repeating one bad signed-URL
+                # strategy for the entire retry budget.
+                stable_only = int(context.get("attempt", 1) or 1) % 2 == 1
+            else:
+                stable_only = True
+            self._trace(
+                "retry_play_stream", link=link, kind=retry_kind,
+                attempt=int(context.get("attempt", 0) or 0), stable_only=stable_only,
+            )
+            self.player.play_stream(link, cancel_event=cancel, stable_only=stable_only)
+            if cancel.is_set():
+                return
+            if retry_kind == "direct":
+                self._guard_direct_url_audio_ready(
+                    link, str(context.get("token") or ""), timeout=1.5
+                )
             if cancel.is_set():
                 return
             if context.get("kind") == "queue":
@@ -414,6 +433,8 @@ class PlayerCog:
                 ttstr(self.bot.bot_config['gender']),
                 ttstr(self._("Playing: {title}").format(title=self.player.media_title)),
             )
+            if retry_kind == "direct":
+                self._announce_track(self.player.media_title)
             self._prefetch_next_for_current()
         except Exception as exc:
             error = exc
@@ -1086,6 +1107,118 @@ class PlayerCog:
         except Exception as exc:
             print(f"Queue announcement failed: {exc}")
 
+    def _direct_url_context_matches(self, link, token, expected_epoch=None):
+        """Check that a URL-start guard still owns the active direct request."""
+        context = getattr(self, "_playback_context", None) or {}
+        if str(context.get("kind") or "") != "direct":
+            return False
+        if str(context.get("link") or "") != str(link or ""):
+            return False
+        if token and str(context.get("token") or "") != str(token):
+            return False
+        if expected_epoch is not None:
+            if int(getattr(self.player, "active_playback_epoch", 0) or 0) != int(expected_epoch):
+                return False
+        return True
+
+    def _guard_direct_url_audio_ready(self, link, token, timeout=1.5):
+        """Require actual audio for an explicit u <link> request.
+
+        play_stream()/START_FILE only prove that libmpv accepted a URL. Signed
+        media URLs can still stall and later fail with MPV -13. Explicit URL
+        requests therefore get a short readiness gate just like Queue handoffs,
+        but this helper never changes Normal search/Related-Radio behavior.
+        """
+        waiter = getattr(self.player, "wait_for_audio_ready", None)
+        if not callable(waiter):
+            return True
+        epoch = int(getattr(self.player, "active_playback_epoch", 0) or 0)
+        source = str(getattr(self.player, "last_stream_resolution_source", "") or "")
+        try:
+            ready = bool(waiter(expected_epoch=epoch, timeout=timeout))
+        except Exception as exc:
+            self._trace(
+                "url_start_wait_error", link=link, epoch=epoch,
+                resolver=source, error=type(exc).__name__,
+            )
+            return True  # Do not break installations without readiness support.
+        if ready:
+            self._trace("url_start_ready", link=link, epoch=epoch, resolver=source)
+            return True
+        if not self._direct_url_context_matches(link, token, expected_epoch=epoch):
+            return False
+        self._trace(
+            "url_start_timeout", link=link, epoch=epoch, resolver=source,
+            timeout_ms=round(float(timeout) * 1000),
+        )
+        self._stop_transport_for_replacement()
+        invalidator = getattr(self.player, "invalidate_stream_info", None)
+        if callable(invalidator):
+            invalidator(link)
+        raise OSError(-13, "Requested URL did not become audio-ready")
+
+    def _play_direct_url_task(self, link, user_id, token):
+        """Serialize explicit URL playback with EOF/retry/manual transport work."""
+        # A newer URL request supersedes a queued older one before it can touch mpv.
+        if token != getattr(self, "_latest_direct_url_token", token):
+            self._trace("url_request_drop", link=link, reason="superseded")
+            return
+        self.player.clear_collection()
+        self.loading_new_track = True
+        error = None
+        try:
+            self._stop_transport_for_replacement()
+            # Explicit user requests are fresh requests. Do not consume a signed
+            # prefetch/fast cache entry left by an older failed attempt.
+            invalidator = getattr(self.player, "invalidate_stream_info", None)
+            if callable(invalidator):
+                invalidator(link)
+            self.player.current_link = link
+            self._set_playback_context("direct", link, token)
+            self.bot.enableVoiceTransmission(True)
+            self._trace("url_play_request", link=link, token=str(token)[-16:])
+            self.player.play_stream(link)
+            self._guard_direct_url_audio_ready(link, token, timeout=1.5)
+        except Exception as exc:
+            error = exc
+            self.bot.privateMessage(user_id, self._("Error playing stream: {e}").format(e=str(exc)))
+            self._mark_sync_play_error(exc)
+        finally:
+            self._finish_loading_transition()
+
+        if error is not None:
+            self._submit_playback(self.on_playback_end)
+            return
+        if not self._direct_url_context_matches(
+            link, token, expected_epoch=int(getattr(self.player, "active_playback_epoch", 0) or 0)
+        ):
+            return
+
+        user_nickname = self._nickname(user_id)
+        self._send_playback_message(
+            self._("{nickname} requested playing from a URL").format(nickname=user_nickname)
+        )
+        self.bot.doChangeStatus(
+            ttstr(self.bot.bot_config['gender']),
+            ttstr(self._("Playing: {title}").format(title=self.player.media_title)),
+        )
+        self._announce_track(self.player.media_title)
+        try:
+            host = (urlparse(str(link)).hostname or "").lower()
+        except Exception:
+            host = ""
+        self._log_action(
+            "playback_started", source="url", host=host or "unknown",
+            title=self.player.media_title, mode="direct",
+        )
+        if "youtube.com" in str(link) or "youtu.be" in str(link):
+            source = "ytmusic" if "music.youtube.com" in str(link) else "youtube"
+            self.player.reset_radio_history(
+                {"title": self.player.media_title, "link": link, "source": source}, source
+            )
+        else:
+            self.player.clear_radio_history()
+
     def handle_play_url_command(self, textmessage, *args):
         if not self._is_in_same_channel(textmessage.nFromUserID):
             return
@@ -1107,40 +1240,13 @@ class PlayerCog:
             self.bot.io_pool.submit(self._enqueue_url_task, link, textmessage.nFromUserID)
             return
 
-        self.player.clear_collection()
-        self.loading_new_track = True
-        try:
-            if self.player.is_playing:
-                self.player.stop_transport()
-            self.player.current_link = link
-            self._set_playback_context("direct", link, f"request-{time.time_ns()}")
-            self.bot.enableVoiceTransmission(True)
-            self.player.play_stream(link)
-        except Exception as e:
-            self.bot.privateMessage(textmessage.nFromUserID, self._("Error playing stream: {e}").format(e=str(e)))
-            self._mark_sync_play_error(e)
-            self._finish_loading_transition()
-            self._submit_playback(self.on_playback_end)
-            return
-        finally:
-            if self.loading_new_track:
-                self._finish_loading_transition()
-        user_nickname = self._nickname(textmessage.nFromUserID)
-        self._send_playback_message(self._("{nickname} requested playing from a URL").format(nickname=user_nickname))
-        self.bot.doChangeStatus(ttstr(self.bot.bot_config['gender']), ttstr(self._("Playing: {title}").format(title=self.player.media_title)))
-        self._announce_track(self.player.media_title)
-        try:
-            host = (urlparse(str(link)).hostname or "").lower()
-        except Exception:
-            host = ""
-        self._log_action(
-            "playback_started", source="url", host=host or "unknown", title=self.player.media_title, mode="direct"
-        )
-        if "youtube.com" in str(link) or "youtu.be" in str(link):
-            source = "ytmusic" if "music.youtube.com" in str(link) else "youtube"
-            self.player.reset_radio_history({"title": self.player.media_title, "link": link, "source": source}, source)
-        else:
-            self.player.clear_radio_history()
+        token = f"request-{time.time_ns()}"
+        self._latest_direct_url_token = token
+        self.bot.privateMessage(textmessage.nFromUserID, self._("Opening URL..."))
+        # URL transport must use the same ordered executor as EOF/retry/manual
+        # next. The old direct call ran on the TeamTalk command thread and could
+        # race an already-running retry that stopped/replaced the fresh URL.
+        self._submit_playback(self._play_direct_url_task, link, textmessage.nFromUserID, token)
 
     def _enqueue_url_task(self, link, user_id):
         try:
@@ -2113,6 +2219,22 @@ class PlayerCog:
             return
         if end_reason != "error":
             self._reset_failure_budget()
+
+        context_kind = str((getattr(self, "_playback_context", None) or {}).get("kind") or "")
+        if end_reason == "error" and context_kind == "direct":
+            maximum = max(1, min(5, int(self.bot.playback_config.get("playback_retry_attempts", 3))))
+            if int(getattr(self, "_failure_count", 0) or 0) >= maximum:
+                self._trace(
+                    "url_retry_exhausted", link=getattr(self.player, "current_link", None),
+                    attempts=1 + int(getattr(self, "_failure_count", 0) or 0),
+                    error=end_error,
+                )
+                self._send_playback_message(
+                    self._("The requested URL could not start after several fresh attempts. Playback was stopped instead of switching to another item.")
+                )
+                self._finish_natural_playback()
+                return
+
         with self.player.queue_lock:
             queue_has_current = self.player.queue_index >= 0 and bool(self.player.queue)
             queue_has_pending = bool(self.player.queue)
