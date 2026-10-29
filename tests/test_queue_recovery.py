@@ -267,6 +267,119 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(self.cog._recover_slow_queue_start(item))
         self.player.wait_for_audio_ready.assert_not_called()
 
+    def test_direct_url_command_uses_ordered_playback_worker(self):
+        link='https://www.youtube.com/watch?v=directurl01'
+        self.player.queue_mode=False
+        self.player.classify_collection_link=Mock(return_value=None)
+        self.player.play_stream=Mock()
+        self.cog._play_direct_url_task=Mock()
+        self.cog.handle_play_url_command(SimpleNamespace(nFromUserID=7),link)
+        self.player.play_stream.assert_not_called()
+        self.assertEqual(len(self.pool.jobs),1)
+        fn,args=self.pool.jobs[0]
+        self.assertEqual(fn,self.cog._play_direct_url_task)
+        self.assertEqual(args[0],link)
+        self.assertEqual(args[1],7)
+        self.assertTrue(str(args[2]).startswith('request-'))
+
+    def test_direct_url_task_discards_prefetch_but_keeps_fast_cache_until_needed(self):
+        link='https://www.youtube.com/watch?v=directurl02'
+        token='request-test'
+        self.player.queue_mode=False
+        self.player.clear_collection=Mock()
+        self.player.clear_radio_history=Mock()
+        self.player.reset_radio_history=Mock()
+        self.player.transport_is_active=Mock(return_value=False)
+        self.player.invalidate_prefetched_stream_info=Mock()
+        self.player.invalidate_stream_info=Mock()
+        self.player.wait_for_audio_ready=Mock(return_value=True)
+        self.player.active_playback_epoch=10
+        self.player.media_title='Direct URL'
+        self.player.last_stream_resolution_source='direct'
+        self.player.play_stream=Mock()
+        self.cog._latest_direct_url_token=token
+        self.cog._send_playback_message=Mock()
+        self.cog._announce_track=Mock()
+        self.cog._log_action=Mock()
+        self.cog._play_direct_url_task(link,7,token)
+        self.player.invalidate_prefetched_stream_info.assert_called_once_with(link)
+        self.player.invalidate_stream_info.assert_not_called()
+        self.player.play_stream.assert_called_once_with(link)
+        self.player.wait_for_audio_ready.assert_called_once_with(expected_epoch=10,timeout=1.5)
+        self.player.reset_radio_history.assert_called_once()
+
+    def test_direct_url_silent_start_fails_fast_and_invalidates_all_stream_metadata(self):
+        link='https://www.youtube.com/watch?v=directurl03'
+        token='request-silent'
+        self.player.queue_mode=False
+        self.player.active_playback_epoch=7
+        self.player.is_playing=True
+        self.player.transport_is_active=Mock(return_value=True)
+        self.player.wait_for_audio_ready=Mock(return_value=False)
+        self.player.invalidate_stream_info=Mock()
+        self.player.stop_transport.reset_mock()
+        self.cog._set_playback_context('direct',link,token)
+        with self.assertRaises(OSError) as raised:
+            self.cog._guard_direct_url_audio_ready(link,token,timeout=1.5)
+        self.assertEqual(raised.exception.errno,-13)
+        self.player.stop_transport.assert_called_once()
+        self.player.invalidate_stream_info.assert_called_once_with(link)
+
+    def test_direct_url_retry_rotates_stable_then_fresh_fast_strategy(self):
+        link='https://www.youtube.com/watch?v=directurl04'
+        token='request-rotate'
+        self.player.queue_mode=False
+        self.player.queue_index=-1
+        self.player.current_link=link
+        self.player.active_playback_epoch=4
+        self.player.stop_transport=Mock()
+        self.player.invalidate_stream_info=Mock()
+        self.player.wait_for_audio_ready=Mock(return_value=True)
+        self.player.media_title='Rotate'
+        self.cog._announce_track=Mock()
+        self.cog._prefetch_next_for_current=Mock()
+        calls=[]
+        def play_stream(value,**kwargs):
+            calls.append((value,kwargs))
+            self.player.active_playback_epoch+=1
+            self.player.current_link=value
+            self.player.last_end_reason=None
+            self.player.is_playing=True
+        self.player.play_stream=Mock(side_effect=play_stream)
+        self.cog._set_playback_context('direct',link,token)
+
+        for attempt in (1,2):
+            context=dict(self.cog._playback_context)
+            context['attempt']=attempt
+            context['cancel']=threading.Event()
+            self.cog._retry_pending=context
+            self.cog._failure_key=context['key']
+            self.cog._perform_retry_playback_context(context)
+
+        self.assertEqual(len(calls),2)
+        self.assertTrue(calls[0][1]['stable_only'])
+        self.assertFalse(calls[1][1]['stable_only'])
+        self.assertEqual(self.player.invalidate_stream_info.call_count,2)
+
+    def test_exhausted_direct_url_never_falls_into_autoplay_related(self):
+        link='https://www.youtube.com/watch?v=directurl05'
+        self.player.queue_mode=False
+        self.player.queue_index=-1
+        self.player.current_link=link
+        self.player.last_end_reason='error'
+        self.player.last_end_error=-13
+        self.player.is_playing=False
+        self.player.play_mode=2
+        self.cog.autoplay_enabled=True
+        self.cog._set_playback_context('direct',link,'request-exhausted')
+        self.cog._failure_count=3
+        self.cog._autoplay_related_or_finish=Mock()
+        self.cog._finish_natural_playback=Mock()
+        self.cog.on_playback_end()
+        self.cog._finish_natural_playback.assert_called_once()
+        self.cog._autoplay_related_or_finish.assert_not_called()
+        self.assertTrue(any('stopped instead of switching' in str(x) for x in self.messages))
+
     def test_queue_selection_is_enqueued_and_stale_restart_skipped(self):
         first={'title':'A','link':'https://youtube.com/watch?v=a'}
         second={'title':'B','link':'https://youtube.com/watch?v=b'}
