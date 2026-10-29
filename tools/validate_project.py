@@ -2086,9 +2086,40 @@ if _radio_prefetch_pos < 0 or _search_prefetch_pos < 0 or _radio_prefetch_pos > 
 else:
     ok("5.1.43 normal M2/Autoplay prewarms the actual radio_candidates stream path")
 
-
-
-
+# 5.1.44 is deliberately Queue-only. Live 5.1.43 traces proved normal M2 is
+# already fast, while a Queue first item could pass the direct Range probe,
+# never reach audio-ready, and only fail with MPV -13 roughly 30 seconds later.
+if not all(token in _player_core_for_url for token in (
+    'info["_sntalkbot_resolver"] = resolver',
+    "self.last_stream_resolution_source = resolution_source",
+    "resolver=resolution_source",
+)):
+    fail("5.1.44 stream resolver source tagging is incomplete")
+elif not all(token in _queue_5140 for token in (
+    "queue_cold_backup_prefetch",
+    "def _recover_slow_queue_direct_start",
+    'last_stream_resolution_source',
+    "waiter(expected_epoch=epoch, timeout=timeout)",
+    "queue_direct_start_fallback",
+    "self.player.play_stream(link, stable_only=True)",
+    "queue_direct_start_recovered",
+)):
+    fail("5.1.44 Queue cold-start speculative backup / readiness fallback is incomplete")
+elif _queue_5140.count("_recover_slow_queue_direct_start(") != 2:
+    fail("5.1.44 Queue direct-start recovery escaped its single Queue call site")
+else:
+    _qplay_start = _queue_5140.find("    def _play_from_queue(")
+    _qplay_end = _queue_5140.find("    def handle_pause_resume_command", _qplay_start)
+    _qplay_block = _queue_5140[_qplay_start:_qplay_end]
+    _normal_start = _queue_5140.find("    def _play_radio_item(")
+    _normal_end = _queue_5140.find("    def _ensure_radio_seed", _normal_start)
+    _normal_block = _queue_5140[_normal_start:_normal_end]
+    if "_recover_slow_queue_direct_start(video)" not in _qplay_block:
+        fail("5.1.44 Queue playback does not invoke the direct-start readiness guard")
+    elif "_recover_slow_queue_direct_start" in _normal_block:
+        fail("5.1.44 changed the already-good normal Related Radio startup path")
+    else:
+        ok("5.1.44 adds a Queue-only 1.5s direct-start guard with stable backup and leaves normal M2 untouched")
 
 _queue_module_core = (ROOT / "bot" / "modules" / "player.py").read_text(encoding="utf-8")
 _queue_url_start = _queue_module_core.find("    def _enqueue_url_task(self, link, user_id):")
