@@ -1,4 +1,14 @@
-# sntalkbot 5.1.44
+# sntalkbot 5.1.45
+
+## รอบ 30 ต.ค. 2569: Queue Prefetch Audio-Ready Guard / Bounded Stable Refresh
+
+- **DONE (live 5.1.44 root cause):** เพลงแรก `ปลุกระดม` ใช้ Queue search ~2.00s, resolve direct ~2.04s และ audio-ready ~1.01s; ช้ากว่า Normal แต่ไม่ใช่ dead-air หลัก. อาการช้ามากอยู่ที่เพลงถัดไป `คืนดีกับชีวิต`: `resolver=prefetch` โหลดเพียง ~2ms แต่ไม่เกิด audio-ready, timeout ที่ ~6s, MPV `-13` หลัง ~15s และ stable retry แรกยัง `-13` ซ้ำก่อนรอบต่อไปจึงพร้อมเสียง.
+- **DONE (5.1.44 gap):** readiness guard เดิมทำงานเฉพาะ `resolver=direct`; จึงข้าม prefetched yt-dlp signed URL โดยตั้งใจจาก regression test เดิม. Live trace พิสูจน์ว่าข้อสมมตินี้ผิด เพราะ stable/prefetched URL ก็เสียหลัง START_FILE ได้.
+- **DONE (Queue-only signed-URL guard):** ขยาย guard เฉพาะ YouTube/YouTube Music Queue ให้ครอบคลุม `direct`, `prefetch`, `public_ytdlp`, `stable`, `stable_fallback`. ทุก handoff รอ audio-ready สูงสุด 1.5s; healthy stream ผ่านทันทีโดยไม่ restart.
+- **DONE (bounded stable refresh):** ถ้า stream เงียบเกิน 1.5s จะตรวจ queue link/token/epoch ก่อน stop. direct fallback รอบแรกยังเก็บ speculative stable backup; prefetched/stable timeout จะ invalidate stream cache แล้ว re-resolve stable สด. ถ้า stable แรกยังเงียบ จะ refresh stable อีกหนึ่งครั้งทันทีแทนการรอ MPV `-13` 10-20s.
+- **DONE (retry hardening):** Queue retry ที่ `stable_only=True` ถูก readiness-guard เช่นกัน; ถ้ายังไม่พร้อมจะส่ง synthetic `-13` เข้า retry budget เดิมทันที. Normal M2/Autoplay ไม่เรียก guard นี้.
+- **DONE (offline QA):** Queue recovery tests **87/87** และ full unit tests **149/149** ผ่านบน Complete Package 5.1.44 ที่ patch เป็น 5.1.45 candidate. Validator เพิ่ม gate ว่า Normal `_play_radio_item()` ต้องไม่มี Queue readiness guard.
+- **DOING (live QA):** ใน Queue ควรเห็น `queue_start_ready` สำหรับ handoff ปกติ หรือ `queue_start_fallback -> queue_start_recovered` ภายในช่วงสั้น; หาก stable แรกเสียควรเห็น `queue_stable_start_timeout` แล้ว recover โดยไม่รอ MPV `-13` หลายสิบวินาที.
 
 ## รอบ 29 ต.ค. 2569: Queue Cold-Start Stable Backup / 1.5s Direct Guard
 
