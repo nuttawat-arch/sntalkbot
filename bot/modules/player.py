@@ -458,13 +458,14 @@ class PlayerCog:
                     current = self.player.queue[self.player.queue_index]
                     if isinstance(current, dict):
                         cold_link = current.get("link")
-            if cold_link:
+            prefetcher = getattr(self.player, "prefetcher", None)
+            if cold_link and prefetcher is not None and hasattr(prefetcher, "schedule"):
                 # Keep the fast direct path, but start a stable yt-dlp backup in
                 # parallel. If the direct CDN URL accepts START_FILE then hangs
                 # before audio-ready, Queue can swap to this backup immediately
                 # instead of waiting tens of seconds for MPV error -13.
                 self._trace("queue_cold_backup_prefetch", link=cold_link)
-                self.player.prefetcher.schedule([cold_link])
+                prefetcher.schedule([cold_link])
             self._submit_playback(self._play_from_queue, 0)
         else:
             self._prefetch_next_for_current()
