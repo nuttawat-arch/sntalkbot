@@ -1170,7 +1170,7 @@ class PlayerCog:
             self._stop_transport_for_replacement()
             # Explicit user requests are fresh requests. Do not consume a signed
             # prefetch/fast cache entry left by an older failed attempt.
-            invalidator = getattr(self.player, "invalidate_stream_info", None)
+            invalidator = getattr(self.player, "invalidate_prefetched_stream_info", None)
             if callable(invalidator):
                 invalidator(link)
             self.player.current_link = link
