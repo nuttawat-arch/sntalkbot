@@ -1972,57 +1972,70 @@ class Player(mpv.MPV):
             return False
 
     def _resolve_play_info_fastest(self, link):
-        """Resolve public YouTube quickly without gambling on an unverified CDN URL.
+        """Resolve in parallel, preferring stable URLs without waiting long.
 
-        Race the lightweight direct endpoint against a short no-cookie yt-dlp
-        extraction.  The direct candidate must pass a tiny HTTP probe before it
-        can win.  Only if both fast paths fail do we enter the full cookie-aware
-        recovery extractor used for restricted media.
+        Direct HTTP audio bypasses yt-dlp entirely. For YouTube, public yt-dlp
+        extraction and the lightweight resolver run concurrently. Prefer the
+        public yt-dlp URL (with playback headers) when readily available.
+        A validated direct URL can win after a short 350 ms grace, avoiding the
+        cold-start penalty of waiting for the slow extractor indefinitely.
         """
-        if not self._youtube_video_id(link):
+        parsed = urlparse(str(link or ""))
+        host = (parsed.hostname or "").lower()
+        is_youtube = host == "youtu.be" or host == "youtube.com" or host.endswith(".youtube.com")
+        if (parsed.scheme in ("http", "https") and host and not is_youtube
+                and self._looks_like_direct_stream(link)):
+            _emit_playback_trace(self, "resolve_direct_http", link=link)
+            title = unquote(parsed.path.rsplit("/", 1)[-1]) or host
+            return {"url": str(link), "title": title, "_sntalkbot_resolver": "direct_http"}
+
+        if not is_youtube or not self._youtube_video_id(link):
             return self._extract_play_info_resilient(link)
 
         _emit_playback_trace(self, "resolve_race_start", link=link)
         executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="SNTalkResolve")
         futures = {
-            executor.submit(self._resolve_youtube_direct_audio, link): "direct",
             executor.submit(self._extract_play_info_public_fast, link): "public_ytdlp",
+            executor.submit(self._resolve_youtube_direct_audio, link): "direct",
         }
         pending = set(futures)
-        errors = []
+        direct_ready = None
         try:
             while pending:
-                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                timeout = 0.35 if direct_ready is not None else None
+                done, pending = wait(pending, timeout=timeout, return_when=FIRST_COMPLETED)
+                if not done and direct_ready is not None:
+                    _emit_playback_trace(self, "resolve_direct_grace_win", link=link)
+                    return direct_ready
                 for future in done:
-                    resolver = futures.get(future, "unknown")
+                    resolver = futures[future]
                     try:
                         info = future.result()
                     except Exception as exc:
-                        errors.append(exc)
+                        _emit_playback_trace(
+                            self, "resolve_candidate_failed", resolver=resolver,
+                            link=link, error=type(exc).__name__,
+                        )
                         continue
                     if not info or not info.get("url"):
                         continue
-                    if resolver == "direct":
-                        probe_started = time.monotonic()
-                        valid = self._probe_direct_stream_info(info)
-                        _emit_playback_trace(
-                            self,
-                            "direct_probe",
-                            link=link,
-                            valid=bool(valid),
-                            ms=round((time.monotonic() - probe_started) * 1000),
-                        )
-                        if not valid:
-                            self.invalidate_fast_stream_info(link)
-                            continue
-                    info = dict(info)
-                    info["_sntalkbot_resolver"] = resolver
-                    _emit_playback_trace(self, "resolve_race_win", resolver=resolver, link=link)
-                    for other in pending:
-                        other.cancel()
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    return info
+                    if resolver == "public_ytdlp":
+                        info = dict(info)
+                        info["_sntalkbot_resolver"] = resolver
+                        _emit_playback_trace(self, "resolve_public_win", link=link)
+                        return info
+                    if self._probe_direct_stream_info(info):
+                        direct_ready = dict(info)
+                        direct_ready["_sntalkbot_resolver"] = "direct"
+                        _emit_playback_trace(self, "resolve_direct_validated", link=link)
+                    else:
+                        self.invalidate_fast_stream_info(link)
+                if direct_ready is not None and not pending:
+                    _emit_playback_trace(self, "resolve_direct_win", link=link)
+                    return direct_ready
         finally:
+            for future in pending:
+                future.cancel()
             executor.shutdown(wait=False, cancel_futures=True)
 
         _emit_playback_trace(self, "resolve_stable_fallback", link=link)
@@ -2031,7 +2044,6 @@ class Player(mpv.MPV):
             info = dict(info)
             info["_sntalkbot_resolver"] = "stable_fallback"
         return info
-
     def play_stream(self, link, *, cancel_event=None, stable_only=False):
         """Play a URL.
 

@@ -1,3 +1,15 @@
+# SNTalkBot 5.1.47 — Playback Startup Latency Candidate (ยังไม่เผยแพร่)
+
+- ฐานซอร์ส 5.1.46 พร้อมแก้ URL/YouTube/Queue startup โดยไม่เปลี่ยน mpv หรือ TeamTalk transport.
+- Direct HTTP audio URL เปิดผ่าน mpv โดยตรง; YouTube resolver ยังคงทำงานขนานและเลือก signed URL ผ่าน probe.
+- เพิ่ม URL ลง Queue ได้ทันที แล้วอัปเดตชื่อหลังเริ่มเล่น ลดเวลาในการเพิ่มคิวและลดการดึง metadata ซ้ำ.
+- ปรับ startup readiness guard ไม่ให้รีสตาร์ต stream ที่เพียงแค่บัฟเฟอร์เกิน 1.5s โดยไม่มี MPV error; actual END_FILE/watchdog/retry เดิมยังอยู่.
+- ลด blocking fade-out 1.2s เมื่อขอเพลงใหม่ในโหมดปกติ.
+- เพิ่มและปรับ regression tests; ยังต้องทดสอบ YouTube/TeamTalk real-time และวัด latency ก่อน merge/publish.
+- ตรึงขอบเขต: ไม่ดาวน์เกรด Queue/Normal/Related Radio จาก 5.1.46 โดยตั้งใจ.
+
+---
+
 # SNTalkBot 5.1.46 — Explicit URL Playback Recovery
 
 - แก้เฉพาะ `u <link>` แบบเล่นทันที โดยไม่เปลี่ยน Queue/Normal/Related Radio.

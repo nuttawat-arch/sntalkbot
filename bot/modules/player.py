@@ -474,31 +474,15 @@ class PlayerCog:
         return transport or self._teamtalk_voice_tx_active()
 
     def _after_queue_enqueue(self, should_start):
-        """Start a newly-reserved first queue item only after its queue announcement.
-
-        If playback is already active, schedule/preload the oldest pending queue
-        items immediately so the end-of-track handoff does not wait on metadata.
-        """
+        """Start Queue promptly; do not race two extractors on its first URL."""
         self._trace("queue_after_enqueue", should_start=bool(should_start))
         if should_start:
-            cold_link = None
-            with self.player.queue_lock:
-                if 0 <= self.player.queue_index < len(self.player.queue):
-                    current = self.player.queue[self.player.queue_index]
-                    if isinstance(current, dict):
-                        cold_link = current.get("link")
-            prefetcher = getattr(self.player, "prefetcher", None)
-            if cold_link and prefetcher is not None and hasattr(prefetcher, "schedule"):
-                # Keep the fast direct path, but start a stable yt-dlp backup in
-                # parallel. If the direct CDN URL accepts START_FILE then hangs
-                # before audio-ready, Queue can swap to this backup immediately
-                # instead of waiting tens of seconds for MPV error -13.
-                self._trace("queue_cold_backup_prefetch", link=cold_link)
-                prefetcher.schedule([cold_link])
+            # The foreground worker already resolves this item. Starting the
+            # same yt-dlp request on the prefetch worker wastes bandwidth and
+            # occasionally hands mpv an older signed CDN URL.
             self._submit_playback(self._play_from_queue, 0)
         else:
             self._prefetch_next_for_current()
-
     def _advance_queue_after_current(self, *, remember=True):
         """Consume only the current queue item and continue with the oldest pending item."""
         self._trace("queue_advance_begin", remember=bool(remember), end_reason=getattr(self.player, "last_end_reason", None))
@@ -1122,41 +1106,31 @@ class PlayerCog:
         return True
 
     def _guard_direct_url_audio_ready(self, link, token, timeout=1.5):
-        """Require actual audio for an explicit u <link> request.
+        """Observe startup without killing a legitimate buffering URL.
 
-        play_stream()/START_FILE only prove that libmpv accepted a URL. Signed
-        media URLs can still stall and later fail with MPV -13. Explicit URL
-        requests therefore get a short readiness gate just like Queue handoffs,
-        but this helper never changes Normal search/Related-Radio behavior.
+        START_FILE does not guarantee audible samples, but a short absence of
+        PLAYBACK_RESTART/time-pos is not an MPV error. Let END_FILE and the
+        existing watchdog handle actual failures rather than manufacturing -13
+        and restarting the same song several times.
         """
+        if not self._direct_url_context_matches(link, token):
+            return False
         waiter = getattr(self.player, "wait_for_audio_ready", None)
         if not callable(waiter):
             return True
         epoch = int(getattr(self.player, "active_playback_epoch", 0) or 0)
         source = str(getattr(self.player, "last_stream_resolution_source", "") or "")
         try:
-            ready = bool(waiter(expected_epoch=epoch, timeout=timeout))
+            ready = bool(waiter(expected_epoch=epoch, timeout=min(0.15, max(0.0, float(timeout)))))
         except Exception as exc:
-            self._trace(
-                "url_start_wait_error", link=link, epoch=epoch,
-                resolver=source, error=type(exc).__name__,
-            )
-            return True  # Do not break installations without readiness support.
-        if ready:
-            self._trace("url_start_ready", link=link, epoch=epoch, resolver=source)
+            self._trace("url_start_wait_error", link=link, epoch=epoch,
+                        resolver=source, error=type(exc).__name__)
             return True
         if not self._direct_url_context_matches(link, token, expected_epoch=epoch):
             return False
-        self._trace(
-            "url_start_timeout", link=link, epoch=epoch, resolver=source,
-            timeout_ms=round(float(timeout) * 1000),
-        )
-        self._stop_transport_for_replacement()
-        invalidator = getattr(self.player, "invalidate_stream_info", None)
-        if callable(invalidator):
-            invalidator(link)
-        raise OSError(-13, "Requested URL did not become audio-ready")
-
+        self._trace("url_start_ready" if ready else "url_start_buffering",
+                    link=link, epoch=epoch, resolver=source)
+        return True
     def _play_direct_url_task(self, link, user_id, token):
         """Serialize explicit URL playback with EOF/retry/manual transport work."""
         # A newer URL request supersedes a queued older one before it can touch mpv.
@@ -1250,6 +1224,32 @@ class PlayerCog:
 
     def _enqueue_url_task(self, link, user_id):
         try:
+            parsed = urlparse(str(link or ""))
+            if parsed.scheme in ("http", "https") and parsed.hostname:
+                # Queue is a list of requested links, not a list of already
+                # resolved expiring CDN URLs. Insert immediately and resolve
+                # only when the item reaches playback/prefetch.
+                host = parsed.hostname.lower()
+                youtube = (host == "youtu.be" or host == "youtube.com"
+                           or host.endswith(".youtube.com"))
+                title = "YouTube URL" if youtube else (parsed.path.rsplit("/", 1)[-1] or host)
+                video = {"title": title[:180], "link": link, "_title_pending": True}
+                queue_range = self._enqueue_queue_items([video], user_id=user_id)
+                start, _end, should_start = queue_range or (None, None, False)
+                user_nickname = self._nickname(user_id)
+                self._send_playback_message(
+                    self._("{nickname} added to queue {position}: {title}").format(
+                        nickname=user_nickname, position=start or "?", title=title
+                    )
+                )
+                self._announce_queue(title=title, start=start, nickname=user_nickname)
+                self._after_queue_enqueue(should_start)
+                self._log_action(
+                    "queue_added", source="url", position=start or "?",
+                    host=host, title=title
+                )
+                return
+
             info = None
             ydl_error = None
             try:
@@ -1577,7 +1577,7 @@ class PlayerCog:
                 if self.player.is_playing:
                     self.loading_new_track = True
                     try:
-                        self.player.fade_out_and_stop()
+                        self.player.stop_transport()
                         self.bot.enableVoiceTransmission(False)
                     finally:
                         self._finish_loading_transition()
@@ -1640,7 +1640,7 @@ class PlayerCog:
             if self.player.is_playing:
                 self.loading_new_track = True
                 try:
-                    self.player.fade_out_and_stop()
+                    self.player.stop_transport()
                     self.bot.enableVoiceTransmission(False)
                 finally:
                     self._finish_loading_transition()
@@ -1855,96 +1855,34 @@ class PlayerCog:
         return True
 
     def _recover_slow_queue_start(self, video, timeout=1.5, stable_attempts=2):
-        """Fail fast on a YouTube Queue handoff that never becomes audio-ready.
+        """Observe Queue startup, allowing normal network buffering to finish.
 
-        5.1.44 guarded only resolver=direct. Live 5.1.44 logs proved that a
-        prefetched yt-dlp URL can load in a few milliseconds, emit START_FILE,
-        then remain silent until MPV eventually reports -13 around 15 seconds
-        later. Queue therefore guards every YouTube network handoff source that
-        can carry a signed CDN URL: direct, prefetch, public_ytdlp and stable.
-
-        Healthy handoffs return as soon as PLAYBACK_RESTART/time-pos marks the
-        current generation ready. A silent generation is replaced immediately
-        with a fresh stable yt-dlp URL. If that fresh URL also stays silent, one
-        additional bounded stable refresh is attempted before the normal Queue
-        retry/skip state machine receives a synthetic -13 startup failure.
-
-        Normal M2/Autoplay is intentionally untouched.
+        Before this change, a 1.5-second wait could stop a valid stream and
+        re-resolve up to two more times. An actual mpv END_FILE error/watchdog
+        timeout already flows through the per-item retry state machine.
         """
         source = str(getattr(self.player, "last_stream_resolution_source", "") or "")
-        guarded_sources = {"direct", "prefetch", "public_ytdlp", "stable", "stable_fallback"}
-        if source not in guarded_sources:
+        if source not in {"direct", "prefetch", "public_ytdlp", "stable", "stable_fallback"}:
             return False
         link = str(video.get("link") or "")
         host = (urlparse(link).hostname or "").lower()
-        if not link or not any(name in host for name in ("youtube.com", "youtu.be", "music.youtube.com")):
+        if not (host == "youtu.be" or host == "youtube.com" or host.endswith(".youtube.com")):
             return False
         waiter = getattr(self.player, "wait_for_audio_ready", None)
         if not callable(waiter):
             return False
-
         epoch = int(getattr(self.player, "active_playback_epoch", 0) or 0)
         try:
-            if waiter(expected_epoch=epoch, timeout=timeout):
-                self._trace("queue_start_ready", link=link, epoch=epoch, resolver=source)
-                return False
+            ready = bool(waiter(expected_epoch=epoch, timeout=min(0.15, max(0.0, float(timeout)))))
         except Exception as exc:
-            self._trace("queue_start_wait_error", link=link, error=type(exc).__name__, resolver=source)
+            self._trace("queue_start_wait_error", link=link, epoch=epoch,
+                        resolver=source, error=type(exc).__name__)
             return False
         if not self._queue_item_matches_start_guard(video, expected_epoch=epoch):
             return False
-
-        self._trace(
-            "queue_start_fallback", link=link, epoch=epoch, resolver=source,
-            timeout_ms=round(timeout * 1000),
-        )
-        attempts = max(1, min(3, int(stable_attempts or 1)))
-        for attempt in range(1, attempts + 1):
-            self._deferred_playback_end = False
-            self._stop_transport_for_replacement()
-            # Preserve the speculative stable backup on the first direct
-            # fallback. Every other timeout means the current URL itself is
-            # suspect, so clear both prefetch and fast caches before resolving.
-            if source == "direct" and attempt == 1:
-                invalidator = getattr(self.player, "invalidate_fast_stream_info", None)
-            else:
-                invalidator = getattr(self.player, "invalidate_stream_info", None)
-            if callable(invalidator):
-                invalidator(link)
-            self.player.current_link = link
-            self.bot.enableVoiceTransmission(True)
-            self.player.play_stream(link, stable_only=True)
-            new_epoch = int(getattr(self.player, "active_playback_epoch", 0) or 0)
-            new_source = str(getattr(self.player, "last_stream_resolution_source", "") or "")
-            try:
-                ready = waiter(expected_epoch=new_epoch, timeout=timeout)
-            except Exception as exc:
-                self._trace(
-                    "queue_stable_start_wait_error", link=link, epoch=new_epoch,
-                    attempt=attempt, error=type(exc).__name__, resolver=new_source,
-                )
-                ready = False
-            if ready:
-                self._trace(
-                    "queue_start_recovered", link=link, epoch=new_epoch,
-                    attempt=attempt, resolver=new_source,
-                )
-                return True
-            if not self._queue_item_matches_start_guard(video, expected_epoch=new_epoch):
-                return False
-            self._trace(
-                "queue_stable_start_timeout", link=link, epoch=new_epoch,
-                attempt=attempt, resolver=new_source, timeout_ms=round(timeout * 1000),
-            )
-            source = new_source or "stable"
-
-        # Do not wait another 10-20 seconds for libmpv to discover the same
-        # dead signed URL. Route this through the existing immediate -13 retry
-        # budget, which remains Queue-context/token guarded.
-        self._deferred_playback_end = False
-        self._stop_transport_for_replacement()
-        raise OSError(-13, "Queue stream did not become audio-ready")
-
+        self._trace("queue_start_ready" if ready else "queue_start_buffering",
+                    link=link, epoch=epoch, resolver=source)
+        return False
     def _play_from_queue(self, index, expected_token=None, expected_link=None):
         self._trace("queue_play_request", requested_index=index, has_expected_token=bool(expected_token), has_expected_link=bool(expected_link))
         with self.player.queue_lock:
@@ -1977,6 +1915,17 @@ class PlayerCog:
             self.bot.enableVoiceTransmission(True)
             self._trace("queue_voice_enabled", requested_index=index)
             self.player.play_stream(video['link'])
+            # Replace the provisional URL label after mpv has real metadata.
+            if video.get("_title_pending") and self.player.media_title:
+                with self.player.queue_lock:
+                    if 0 <= index < len(self.player.queue):
+                        current = self.player.queue[index]
+                        if (current.get("link") == video.get("link") and
+                                current.get("_queue_token") == video.get("_queue_token")):
+                            updated = dict(current)
+                            updated["title"] = self.player.media_title
+                            updated.pop("_title_pending", None)
+                            self.player.queue[index] = updated
             self._trace(
                 "queue_play_loaded", requested_index=index, title=self.player.media_title,
                 resolver=str(getattr(self.player, "last_stream_resolution_source", "") or ""),
