@@ -171,6 +171,21 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(order[0],('voice',True))
         self.assertEqual(order[1][0],'play')
 
+    def test_url_enqueue_does_not_wait_for_ytdlp_metadata(self):
+        link='https://www.youtube.com/watch?v=abcdefghijk'
+        self.player._extract_play_info_resilient=Mock(side_effect=AssertionError('yt-dlp should not be used to enqueue'))
+        self.cog._enqueue_queue_items=Mock(return_value=(1,1,True))
+        self.cog._announce_queue=Mock()
+        self.cog._after_queue_enqueue=Mock()
+        self.cog._log_action=Mock()
+        self.cog._enqueue_url_task(link,42)
+        self.cog._enqueue_queue_items.assert_called_once()
+        entry=self.cog._enqueue_queue_items.call_args.args[0][0]
+        self.assertEqual(entry['link'],link)
+        self.assertTrue(entry['_title_pending'])
+        self.player._extract_play_info_resilient.assert_not_called()
+        self.cog._after_queue_enqueue.assert_called_once_with(True)
+
     def test_queue_cold_start_uses_one_foreground_resolver(self):
         self.player.prefetcher=SimpleNamespace(schedule=Mock())
         self.cog._play_from_queue=Mock()
