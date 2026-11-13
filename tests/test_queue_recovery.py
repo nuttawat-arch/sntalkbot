@@ -171,16 +171,15 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(order[0],('voice',True))
         self.assertEqual(order[1][0],'play')
 
-    def test_queue_cold_start_prewarms_same_item_as_stable_backup(self):
+    def test_queue_cold_start_uses_one_foreground_resolver(self):
         self.player.prefetcher=SimpleNamespace(schedule=Mock())
         self.cog._play_from_queue=Mock()
         self.cog._after_queue_enqueue(True)
-        self.player.prefetcher.schedule.assert_called_once_with([self.player.queue[0]['link']])
+        self.player.prefetcher.schedule.assert_not_called()
         self.assertEqual(len(self.pool.jobs),1)
         fn,args=self.pool.jobs[0]
         self.assertEqual(fn,self.cog._play_from_queue)
         self.assertEqual(args,(0,))
-
     def test_queue_direct_start_ready_keeps_fast_path(self):
         self.player.last_stream_resolution_source='direct'
         self.player.active_playback_epoch=7
@@ -190,74 +189,46 @@ class RecoveryTests(unittest.TestCase):
         item=dict(self.player.queue[0])
         recovered=self.cog._recover_slow_queue_start(item,timeout=1.5)
         self.assertFalse(recovered)
-        self.player.wait_for_audio_ready.assert_called_once_with(expected_epoch=7,timeout=1.5)
+        self.player.wait_for_audio_ready.assert_called_once_with(expected_epoch=7,timeout=0.15)
         self.player.invalidate_fast_stream_info.assert_not_called()
         self.player.play_stream.assert_not_called()
-
-    def test_queue_direct_start_without_audio_ready_switches_to_stable_backup(self):
+    def test_queue_buffering_direct_does_not_force_restart(self):
         self.player.last_stream_resolution_source='direct'
         self.player.active_playback_epoch=7
         self.player.is_playing=True
-        self.player.wait_for_audio_ready=Mock(side_effect=[False,True])
+        self.player.wait_for_audio_ready=Mock(return_value=False)
         self.player.invalidate_fast_stream_info=Mock()
-        self.player.invalidate_stream_info=Mock()
-        calls=[]
-        def stable_play(link,**kwargs):
-            calls.append((link,kwargs))
-            self.player.active_playback_epoch=8
-            self.player.last_stream_resolution_source='prefetch'
-            self.player.last_end_reason=None
-            self.player.is_playing=True
-        self.player.play_stream=Mock(side_effect=stable_play)
+        self.player.play_stream=Mock()
+        self.player.stop_transport.reset_mock()
         item=dict(self.player.queue[0])
-        recovered=self.cog._recover_slow_queue_start(item,timeout=1.5)
-        self.assertTrue(recovered)
-        self.player.invalidate_fast_stream_info.assert_called_once_with(item['link'])
+        self.assertFalse(self.cog._recover_slow_queue_start(item,timeout=1.5))
+        self.player.wait_for_audio_ready.assert_called_once_with(expected_epoch=7,timeout=0.15)
+        self.player.invalidate_fast_stream_info.assert_not_called()
+        self.player.play_stream.assert_not_called()
+        self.player.stop_transport.assert_not_called()
+    def test_queue_prefetched_buffering_preserves_live_url(self):
+        self.player.last_stream_resolution_source='prefetch'
+        self.player.active_playback_epoch=7
+        self.player.is_playing=True
+        self.player.wait_for_audio_ready=Mock(return_value=False)
+        self.player.invalidate_stream_info=Mock()
+        self.player.play_stream=Mock()
+        item=dict(self.player.queue[0])
+        self.assertFalse(self.cog._recover_slow_queue_start(item,timeout=1.5))
         self.player.invalidate_stream_info.assert_not_called()
-        self.assertEqual(calls,[(item['link'],{'stable_only':True})])
-        self.bot.enableVoiceTransmission.assert_called_with(True)
-
-    def test_queue_prefetched_handoff_without_audio_ready_is_re_resolved_immediately(self):
-        self.player.last_stream_resolution_source='prefetch'
+        self.player.play_stream.assert_not_called()
+    def test_queue_stable_buffering_does_not_start_retry_chain(self):
+        self.player.last_stream_resolution_source='stable'
         self.player.active_playback_epoch=7
         self.player.is_playing=True
-        self.player.wait_for_audio_ready=Mock(side_effect=[False,True])
+        self.player.wait_for_audio_ready=Mock(return_value=False)
         self.player.invalidate_stream_info=Mock()
-        calls=[]
-        def stable_play(link,**kwargs):
-            calls.append((link,kwargs))
-            self.player.active_playback_epoch=8
-            self.player.last_stream_resolution_source='stable'
-            self.player.last_end_reason=None
-            self.player.is_playing=True
-        self.player.play_stream=Mock(side_effect=stable_play)
+        self.player.play_stream=Mock()
         item=dict(self.player.queue[0])
-        recovered=self.cog._recover_slow_queue_start(item,timeout=1.5)
-        self.assertTrue(recovered)
-        self.player.invalidate_stream_info.assert_called_once_with(item['link'])
-        self.assertEqual(calls,[(item['link'],{'stable_only':True})])
-
-    def test_queue_stable_refresh_timeout_retries_once_without_waiting_for_mpv_minus13(self):
-        self.player.last_stream_resolution_source='prefetch'
-        self.player.active_playback_epoch=7
-        self.player.is_playing=True
-        self.player.wait_for_audio_ready=Mock(side_effect=[False,False,True])
-        self.player.invalidate_stream_info=Mock()
-        calls=[]
-        def stable_play(link,**kwargs):
-            calls.append((link,kwargs))
-            self.player.active_playback_epoch+=1
-            self.player.last_stream_resolution_source='stable'
-            self.player.last_end_reason=None
-            self.player.is_playing=True
-        self.player.play_stream=Mock(side_effect=stable_play)
-        item=dict(self.player.queue[0])
-        recovered=self.cog._recover_slow_queue_start(item,timeout=1.5,stable_attempts=2)
-        self.assertTrue(recovered)
-        self.assertEqual(len(calls),2)
-        self.assertEqual(self.player.invalidate_stream_info.call_count,2)
-        self.assertEqual(self.player.wait_for_audio_ready.call_count,3)
-
+        self.assertFalse(self.cog._recover_slow_queue_start(item,timeout=1.5,stable_attempts=2))
+        self.player.wait_for_audio_ready.assert_called_once()
+        self.player.invalidate_stream_info.assert_not_called()
+        self.player.play_stream.assert_not_called()
     def test_queue_start_guard_does_not_touch_non_youtube_prefetch(self):
         self.store.replace_queue([{'title':'radio','link':'https://example.test/live','_queue_token':'radio'}])
         self.player.queue=self.store.queue();self.player.queue_index=0
@@ -305,10 +276,10 @@ class RecoveryTests(unittest.TestCase):
         self.player.invalidate_prefetched_stream_info.assert_called_once_with(link)
         self.player.invalidate_stream_info.assert_not_called()
         self.player.play_stream.assert_called_once_with(link)
-        self.player.wait_for_audio_ready.assert_called_once_with(expected_epoch=10,timeout=1.5)
+        self.player.wait_for_audio_ready.assert_called_once_with(expected_epoch=10,timeout=0.15)
         self.player.reset_radio_history.assert_called_once()
 
-    def test_direct_url_silent_start_fails_fast_and_invalidates_all_stream_metadata(self):
+    def test_direct_url_silent_start_keeps_buffering_without_cache_invalidation(self):
         link='https://www.youtube.com/watch?v=directurl03'
         token='request-silent'
         self.player.queue_mode=False
@@ -319,12 +290,10 @@ class RecoveryTests(unittest.TestCase):
         self.player.invalidate_stream_info=Mock()
         self.player.stop_transport.reset_mock()
         self.cog._set_playback_context('direct',link,token)
-        with self.assertRaises(OSError) as raised:
-            self.cog._guard_direct_url_audio_ready(link,token,timeout=1.5)
-        self.assertEqual(raised.exception.errno,-13)
-        self.player.stop_transport.assert_called_once()
-        self.player.invalidate_stream_info.assert_called_once_with(link)
-
+        self.assertTrue(self.cog._guard_direct_url_audio_ready(link,token,timeout=1.5))
+        self.player.wait_for_audio_ready.assert_called_once_with(expected_epoch=7,timeout=0.15)
+        self.player.stop_transport.assert_not_called()
+        self.player.invalidate_stream_info.assert_not_called()
     def test_direct_url_retry_rotates_stable_then_fresh_fast_strategy(self):
         link='https://www.youtube.com/watch?v=directurl04'
         token='request-rotate'
@@ -818,7 +787,7 @@ class StreamMetadataTests(unittest.TestCase):
         self.assertTrue(probe({'url':'https://cdn.example/audio','http_headers':{}}))
         self.assertEqual(self.player._stream_http.get.call_args.kwargs['headers']['Range'],'bytes=0-1')
 
-    def test_invalid_direct_candidate_falls_through_to_public_ytdlp_fast_path(self):
+    def test_fast_resolver_uses_public_ytdlp_before_speculative_cdn(self):
         self.player._youtube_video_id=self.module.Player._youtube_video_id
         self.player._resolve_youtube_direct_audio=Mock(return_value={'url':'https://bad.example/audio','title':'Direct'})
         self.player._extract_play_info_public_fast=Mock(return_value={'url':'https://good.example/audio','title':'Public'})
@@ -828,8 +797,20 @@ class StreamMetadataTests(unittest.TestCase):
         resolve=self.module.Player._resolve_play_info_fastest.__get__(self.player)
         info=resolve('https://www.youtube.com/watch?v=abcdefghijk')
         self.assertEqual(info['url'],'https://good.example/audio')
-        self.player.invalidate_fast_stream_info.assert_called_once()
+        self.assertEqual(info['_sntalkbot_resolver'],'public_ytdlp')
+        self.player._resolve_youtube_direct_audio.assert_not_called()
+        self.player.invalidate_fast_stream_info.assert_not_called()
+    def test_direct_http_audio_skips_ytdlp_entirely(self):
+        self.player._extract_play_info_resilient=Mock()
+        self.player._extract_play_info_public_fast=Mock()
+        self.player._looks_like_direct_stream=Mock(return_value=True)
+        resolve=self.module.Player._resolve_play_info_fastest.__get__(self.player)
+        link='https://cdn.example/audio.mp3?token=abc'
+        info=resolve(link)
+        self.assertEqual(info['url'],link)
+        self.assertEqual(info['_sntalkbot_resolver'],'direct_http')
         self.player._extract_play_info_resilient.assert_not_called()
+        self.player._extract_play_info_public_fast.assert_not_called()
 
     def test_fast_resolver_uses_stable_fallback_only_when_both_fast_paths_fail(self):
         self.player._youtube_video_id=self.module.Player._youtube_video_id
